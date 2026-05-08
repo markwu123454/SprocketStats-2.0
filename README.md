@@ -80,7 +80,7 @@ Releases for the analysis tool are available on GitHub Releases
 
 ## Ownership & Inquiries
 
-SprocketStats is a privately developed project authored and maintained by **Mark Wu (Mai Wu)**.
+SprocketStats is a privately developed project authored by Mark Wu and maintained by Mark Wu and the Team Sprocket Scouting Subteam.
 
 It is licensed for use by **Team 3473 (Team Sprocket)** and is **primarily developed to support that team's competition workflows**.
 
