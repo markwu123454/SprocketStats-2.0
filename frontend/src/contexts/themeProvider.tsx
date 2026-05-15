@@ -17,7 +17,7 @@ export default function ThemeProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         const load = async () => {
             const t = await getSetting("theme")
-            if (t) setThemeState(t)
+            setThemeState(t ?? "light")
         }
         void load()
     }, [])
@@ -25,7 +25,7 @@ export default function ThemeProvider({ children }: { children: ReactNode }) {
     // Apply theme + persist
     useEffect(() => {
         const root = document.documentElement
-        root.classList.remove("theme-2026", "theme-2025", "theme-dark", "theme-light")
+        root.classList.remove("theme-2026", "theme-2025", "theme-dark", "theme-light", "theme-3473", "theme-968")
         if (theme) root.classList.add(`theme-${theme.toLowerCase()}`)
         if (theme) void setSetting({ theme })
     }, [theme])
