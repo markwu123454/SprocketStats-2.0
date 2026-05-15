@@ -3,168 +3,15 @@
 
 @plugin 'tailwind-scrollbar';
 
-@custom-variant theme-light (&:is(.theme-light *));
-@custom-variant theme-dark (&:is(.theme-dark *));
 @custom-variant theme-2025 (&:is(.theme-2025 *));
 @custom-variant theme-2026 (&:is(.theme-2026 *));
-@custom-variant theme-3473 (&:is(.theme-3473 *));
-
-@custom-variant dark (&:is(.dark *));
-
-@theme inline {
-    --radius-sm: calc(var(--radius) - 4px);
-    --radius-md: calc(var(--radius) - 2px);
-    --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) + 4px);
-    --color-background: var(--background);
-    --color-foreground: var(--foreground);
-    --color-card: var(--card);
-    --color-card-foreground: var(--card-foreground);
-    --color-popover: var(--popover);
-    --color-popover-foreground: var(--popover-foreground);
-    --color-primary: var(--primary);
-    --color-primary-foreground: var(--primary-foreground);
-    --color-secondary: var(--secondary);
-    --color-secondary-foreground: var(--secondary-foreground);
-    --color-muted: var(--muted);
-    --color-muted-foreground: var(--muted-foreground);
-    --color-accent: var(--accent);
-    --color-accent-foreground: var(--accent-foreground);
-    --color-destructive: var(--destructive);
-    --color-border: var(--border);
-    --color-input: var(--input);
-    --color-ring: var(--ring);
-    --color-chart-1: var(--chart-1);
-    --color-chart-2: var(--chart-2);
-    --color-chart-3: var(--chart-3);
-    --color-chart-4: var(--chart-4);
-    --color-chart-5: var(--chart-5);
-    --color-sidebar: var(--sidebar);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-ring: var(--sidebar-ring);
-}
-
-:root {
-    --radius: 0.625rem;
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.141 0.005 285.823);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.141 0.005 285.823);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.141 0.005 285.823);
-    --primary: oklch(0.21 0.006 285.885);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.967 0.001 286.375);
-    --secondary-foreground: oklch(0.21 0.006 285.885);
-    --muted: oklch(0.967 0.001 286.375);
-    --muted-foreground: oklch(0.552 0.016 285.938);
-    --accent: oklch(0.967 0.001 286.375);
-    --accent-foreground: oklch(0.21 0.006 285.885);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.92 0.004 286.32);
-    --input: oklch(0.92 0.004 286.32);
-    --ring: oklch(0.705 0.015 286.067);
-    --chart-1: oklch(0.646 0.222 41.116);
-    --chart-2: oklch(0.6 0.118 184.704);
-    --chart-3: oklch(0.398 0.07 227.392);
-    --chart-4: oklch(0.828 0.189 84.429);
-    --chart-5: oklch(0.769 0.188 70.08);
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.141 0.005 285.823);
-    --sidebar-primary: oklch(0.21 0.006 285.885);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.967 0.001 286.375);
-    --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
-    --sidebar-border: oklch(0.92 0.004 286.32);
-    --sidebar-ring: oklch(0.705 0.015 286.067);
-}
-
-.dark {
-    --background: oklch(0.141 0.005 285.823);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.21 0.006 285.885);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.21 0.006 285.885);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.92 0.004 286.32);
-    --primary-foreground: oklch(0.21 0.006 285.885);
-    --secondary: oklch(0.274 0.006 286.033);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.274 0.006 286.033);
-    --muted-foreground: oklch(0.705 0.015 286.067);
-    --accent: oklch(0.274 0.006 286.033);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.552 0.016 285.938);
-    --chart-1: oklch(0.488 0.243 264.376);
-    --chart-2: oklch(0.696 0.17 162.48);
-    --chart-3: oklch(0.769 0.188 70.08);
-    --chart-4: oklch(0.627 0.265 303.9);
-    --chart-5: oklch(0.645 0.246 16.439);
-    --sidebar: oklch(0.21 0.006 285.885);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.274 0.006 286.033);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.552 0.016 285.938);
-}
-
-@layer base {
-    * {
-        @apply border-border outline-ring/50;
-    }
-
-    body {
-        @apply bg-background text-foreground;
-    }
-}
-
-
-.theme-light {
-    --theme-bg: rgb(255 255 255 / 0.70);
-    --theme-border: #d4d4d8;
-    --theme-text: #18181b;
-    --theme-bg-page: #f4f4f5;
-    --theme-h1-color: #18181b;
-    --theme-subtext-color: #52525b;
-    --theme-button-bg: #f4f4f5;
-    --theme-button-hover: #e4e4e7;
-    --theme-text-contrast: #c2410c;
-    --scrollbar-track: transparent;
-    --scrollbar-thumb: #d4d4d8;
-    --scrollbar-thumb-hover: #a1a1aa;
-}
-
-.theme-dark {
-    --theme-bg: rgb(24 24 27 / 0.50);
-    --theme-border: #27272a;
-    --theme-text: #ffffff;
-    --theme-bg-page: #09090b;
-    --theme-h1-color: #ffffff;
-    --theme-subtext-color: #a1a1aa;
-    --theme-button-bg: #3f3f46;
-    --theme-button-hover: #52525b;
-    --theme-text-contrast: #fbbf24;
-    --scrollbar-track: transparent;
-    --scrollbar-thumb: #3f3f46;
-    --scrollbar-thumb-hover: #52525b;
-}
-
+@custom-variant theme-2027 (&:is(.theme-2027 *));
 
 .theme-2025 {
     --theme-bg: rgba(11, 35, 79, 0.6);
     --theme-border: #1a4598;
     --theme-text: #ffffff;
-    --theme-bg-page: url('/seasons/2025/expanded.avif');
+    --theme-bg-page: url('/seasons/2025/expanded.png');
     --theme-h1-color: #ffffff;
     --theme-subtext-color: #d4d4d8;
     --theme-button-bg: rgba(16, 43, 106, 0.95);
@@ -173,13 +20,16 @@
     --scrollbar-track: transparent;
     --scrollbar-thumb: #1b3d80;
     --scrollbar-thumb-hover: #2563eb;
+
+    --theme-season-name: "REEFSCAPE";
+    --theme-season-tag: "2025 · DIVE";
 }
 
 .theme-2026 {
     --theme-bg: rgba(254, 247, 220, 0.6);
     --theme-border: #e6ddae;
     --theme-text: #3b2d00;
-    --theme-bg-page: url('/seasons/2026/expanded.avif');
+    --theme-bg-page: url('/seasons/2026/expanded.png');
     --theme-h1-color: #3b2d00;
     --theme-subtext-color: #5a4800;
     --theme-button-bg: #fff8e5;
@@ -188,49 +38,28 @@
     --scrollbar-track: transparent;
     --scrollbar-thumb: #bdaf67;
     --scrollbar-thumb-hover: #d6c98a;
+
+    --theme-season-name: "REBUILT";
+    --theme-season-tag: "2026 · AGE";
 }
-.theme-3473 {
-    --theme-bg: rgba(76, 29, 149, 0.6);
-    --theme-border: #6d28d9;
-    --theme-text: #ffffff;
-    --theme-bg-page: radial-gradient(80% 110% at 10% 10%, #4c2c7a, #1f0b46),
-    linear-gradient(135deg, #140a2a, #1f0b46);
-    --theme-h1-color: #ffffff;
-    --theme-subtext-color: #d4d4d8;
-    --theme-button-bg: #7c3aed;
-    --theme-button-hover: #8b5cf6;
-    --theme-text-contrast: #d8b4fe;
+
+.theme-2027 {
+    --theme-bg: rgba(10, 47, 49, 0.6);
+    --theme-border: #2d6160;
+    --theme-text: #f0f7f4;
+    --theme-bg-page: url('/seasons/2027/expanded.png');
+    --theme-h1-color: #f5f1e3;
+    --theme-subtext-color: #a8c9c2;
+    --theme-button-bg: rgba(15, 60, 61, 0.95);
+    --theme-button-hover: #1a5556;
+    --theme-text-contrast: #f5d547;
     --scrollbar-track: transparent;
-    --scrollbar-thumb: #6d28d9;
-    --scrollbar-thumb-hover: #8b5cf6;
+    --scrollbar-thumb: #2d6160;
+    --scrollbar-thumb-hover: #45908d;
+
+    --theme-season-name: "BIOCORE";
+    --theme-season-tag: "2027 · CANOPY";
 }
-
-.theme-968 {
-    /* Core surfaces */
-    --theme-bg: rgba(153, 27, 27, 0.65);        /* deep red, softened */
-    --theme-border: #611515;                   /* darker red for structure */
-    --theme-bg-page: radial-gradient(
-        80% 110% at 10% 10%,
-        #7f1d1d,
-        #450a0a
-    );
-
-    /* Text */
-    --theme-text: #fefefe;                     /* warm white, not pure */
-    --theme-h1-color: #ffffff;
-    --theme-subtext-color: #fecaca;            /* pale red, softer contrast */
-    --theme-text-contrast: #fee2e2;            /* accents, links, highlights */
-
-    /* Buttons */
-    --theme-button-bg: #dc2626;                /* brand-forward red */
-    --theme-button-hover: #ef4444;             /* brighter, but brief */
-
-    /* Scrollbar */
-    --scrollbar-track: transparent;
-    --scrollbar-thumb: #991b1b;
-    --scrollbar-thumb-hover: #dc2626;
-}
-
 
 @layer utilities {
     .theme-bg {
@@ -294,125 +123,20 @@
     .theme-scrollbar::-webkit-scrollbar-thumb:hover {
         background-color: var(--scrollbar-thumb-hover);
     }
-}
 
-@layer utilities {
-    /* Firefox */
-    .scrollbar-purple {
-        scrollbar-width: thin;
-        scrollbar-color: #a855f7 transparent; /* purple-500 */
+    .theme-button-hover {
+        background: var(--theme-button-hover);
     }
 
-    /* WebKit */
-    .scrollbar-purple::-webkit-scrollbar {
-        width: 10px;
-        height: 10px;
+    .theme-text-contrast {
+        color: var(--theme-text-contrast);
     }
 
-    .scrollbar-purple::-webkit-scrollbar-track {
-        background: transparent;
+    .theme-season-name::before {
+        content: var(--theme-season-name);
     }
 
-    .scrollbar-purple::-webkit-scrollbar-thumb {
-        background-color: #a855f7; /* purple-500 */
-        border-radius: 9999px;
+    .theme-season-tag::before {
+        content: var(--theme-season-tag);
     }
-
-    .scrollbar-purple::-webkit-scrollbar-thumb:hover {
-        background-color: #9333ea; /* purple-600 */
-    }
-}
-
-@layer utilities {
-    /* Firefox */
-    .scrollbar-dark {
-        scrollbar-color: #52525b transparent; /* zinc-600 */
-    }
-
-    /* WebKit */
-    .scrollbar-dark::-webkit-scrollbar {
-        width: 10px;
-        height: 10px;
-    }
-
-    .scrollbar-dark::-webkit-scrollbar-track {
-        background: transparent;
-    }
-
-    .scrollbar-dark::-webkit-scrollbar-thumb {
-        background-color: #52525b; /* zinc-600 */
-        border-radius: 9999px;
-    }
-
-    .scrollbar-dark::-webkit-scrollbar-thumb:hover {
-        background-color: #71717a; /* zinc-500 */
-    }
-}
-
-@keyframes slide-up {
-  from {
-    transform: translateY(16px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-.animate-slide-up {
-  animation: slide-up 200ms ease-out;
-}
-
-@keyframes slide-down {
-  from {
-    transform: translateY(0);
-    opacity: 1;
-  }
-  to {
-    transform: translateY(100%);
-    opacity: 0;
-  }
-}
-
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  10%, 30%, 50%, 70%, 90% { transform: translateX(-3px); }
-  20%, 40%, 60%, 80% { transform: translateX(3px); }
-}
-
-.animate-slide-up {
-  animation: slide-up 0.3s ease-out;
-}
-
-.animate-slide-down {
-  animation: slide-down 0.3s ease-in;
-}
-
-.animate-shake {
-  animation: shake 0.75s ease-in-out;
-}
-
-
-/* On the root page wrapper or body when this page mounts */
-.scouting-page {
-  -webkit-touch-callout: none;    /* disable long-press callout on iOS */
-  -webkit-user-select: none;
-  user-select: none;
-  overscroll-behavior: none;       /* kill pull-to-refresh AND swipe-nav */
-  -webkit-overflow-scrolling: auto; /* disable iOS momentum scroll bouncing */
-}
-
-/* For the scrollable phases container specifically */
-.scouting-page .phase-scroll {
-  touch-action: pan-y;             /* allow vertical scroll/drag only, block horizontal swipe */
-  overscroll-behavior: contain;    /* prevent scroll chaining to parent/browser */
-}
-
-/* Re-enable interaction on text inputs in post phase */
-.scouting-page input[type="text"],
-.scouting-page textarea {
-  -webkit-user-select: text;
-  user-select: text;
-  touch-action: auto;
 }

@@ -2,7 +2,7 @@ import Dexie, { type Table } from "dexie"
 
 export type Settings = {
     key: string
-    theme?: "light" | "dark" | "2025" | "2026" | "3473" | "968"
+    theme?: "theme-2025" | "theme-2026" | "theme-2027"
 }
 
 class SettingsDatabase extends Dexie {

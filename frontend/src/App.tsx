@@ -6,7 +6,6 @@ import {AuthProvider} from "@/contexts/authContext.tsx"
 
 import AuthWrapper from "@/components/wrappers/AuthWrapper.tsx"
 
-const NotFoundPage = lazy(() => import("@/pages/NotFoundPage.tsx"))
 const LoginPage = lazy(() => import("@/pages/LoginPage.tsx"))
 const DashboardPage = lazy(() => import("@/pages/DashboardPage.tsx"))
 const AppShell = lazy(() => import("@/layouts/AppShell.tsx"))
@@ -34,8 +33,6 @@ export default function App() {
                                         </AuthWrapper>
                                     }/>
                                 </Route>
-
-                                <Route path="*" element={<NotFoundPage/>}/>
                             </Routes>
                         </Suspense>
                     </div>

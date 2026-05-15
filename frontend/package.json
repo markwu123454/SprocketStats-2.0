@@ -50,7 +50,11 @@
     "recharts": "^3.1.0",
     "tailwind-merge": "^3.3.1",
     "tailwind-scrollbar": "^4.0.2",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "workbox-core": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1",
+    "workbox-strategies": "^7.4.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.1",

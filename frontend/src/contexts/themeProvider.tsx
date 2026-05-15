@@ -1,37 +1,38 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
-import { getSetting, getSettingSync, setSetting, type Settings } from "@/db/settingsDb.ts"
+import { createContext, useContext, useState, type ReactNode } from "react"
+
+type Theme = "theme-2025" | "theme-2026" | "theme-2027"
 
 type ThemeContextType = {
-    theme: Settings["theme"]
-    setTheme: (t: Settings["theme"]) => void
+    theme: Theme
+    setTheme: (t: Theme) => void
 }
 
 const ThemeContext = createContext<ThemeContextType | null>(null)
 
+const THEME_KEY = "app-theme"
+const DEFAULT_THEME: Theme = "theme-2027"
+
+// Apply theme synchronously on app startup
+function initializeTheme(): Theme {
+    const stored = localStorage.getItem(THEME_KEY) as Theme | null
+    const theme = stored ?? DEFAULT_THEME
+    if (!stored) {
+        localStorage.setItem(THEME_KEY, theme)
+    }
+    document.documentElement.classList.add(theme)
+    return theme
+}
+
 export default function ThemeProvider({ children }: { children: ReactNode }) {
-    const [theme, setThemeState] = useState<Settings["theme"]>(() =>
-        getSettingSync("theme")
-    )
+    const [theme, setThemeState] = useState<Theme>(() => initializeTheme())
 
-    // Async load for Dexie consistency
-    useEffect(() => {
-        const load = async () => {
-            const t = await getSetting("theme")
-            setThemeState(t ?? "light")
-        }
-        void load()
-    }, [])
-
-    // Apply theme + persist
-    useEffect(() => {
-        const root = document.documentElement
-        root.classList.remove("theme-2026", "theme-2025", "theme-dark", "theme-light", "theme-3473", "theme-968")
-        if (theme) root.classList.add(`theme-${theme.toLowerCase()}`)
-        if (theme) void setSetting({ theme })
-    }, [theme])
-
-    const setTheme = (t: Settings["theme"]) => {
+    const setTheme = (t: Theme) => {
         setThemeState(t)
+        localStorage.setItem(THEME_KEY, t)
+
+        // Update DOM
+        document.documentElement.classList.remove("theme-2025", "theme-2026", "theme-2027")
+        document.documentElement.classList.add(t)
     }
 
     return (
