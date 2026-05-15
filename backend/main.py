@@ -10,17 +10,8 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 
 import db
-import tba_db as tba
 from endpoints import (
-    admin,
-    attendance,
-    auth,
-    data,
     general,
-    match_scouting,
-    pit_scouting,
-    push_notification,
-    cron,
 )
 
 
@@ -31,7 +22,6 @@ async def lifespan(app: FastAPI):
     # Initialize the databases
     #await db.init_db()
     await db.run_migrations()
-    await tba.get_db_pool()
 
     yield
 
@@ -65,12 +55,4 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(admin.router)
-app.include_router(attendance.router)
-app.include_router(auth.router)
-app.include_router(data.router)
 app.include_router(general.router)
-app.include_router(match_scouting.router)
-app.include_router(pit_scouting.router)
-app.include_router(push_notification.router)
-app.include_router(cron.router)
