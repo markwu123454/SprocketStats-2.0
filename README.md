@@ -9,6 +9,8 @@
 SprocketStats is a cross-platform scouting system for **FIRST Robotics Competition (FRC)** teams.
 It is designed for fast, reliable match and team data collection, and seamless analysis and data interpretation.
 
+### THIS VERSION OF THE CODE IS ARCHIVED, DO NOT TOUCH
+
 ---
 
 ## License & Usage Notice
