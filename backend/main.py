@@ -8,33 +8,38 @@ from fastapi import FastAPI
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 import db
-from endpoints import (
-    general,
-)
+from endpoints import general, auth
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Starting up...")
-
-    # Initialize the databases
-    #await db.init_db()
+    await db.init_db()
     await db.run_migrations()
-
     yield
-
     print("Shutting down...")
+    await db.close_pool()
+
 
 app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent), name="static")
 
 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-    s.connect(("8.8.8.8", 80))  # Connect to a public DNS server to get the local IP
+    s.connect(("8.8.8.8", 80))
     local_ip = s.getsockname()[0]
 
 load_dotenv()
+
+# SessionMiddleware must come before CORSMiddleware
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.environ["SESSION_SECRET"],
+    https_only=os.environ.get("ENV") == "production",
+    same_site="lax",
+)
 
 regex_patterns = []
 for origin in [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]:
@@ -56,3 +61,4 @@ app.add_middleware(
 )
 
 app.include_router(general.router)
+app.include_router(auth.router, prefix="/auth")
