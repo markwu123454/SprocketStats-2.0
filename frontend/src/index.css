@@ -159,6 +159,7 @@
     --scrollbar-thumb-hover: #52525b;
 }
 
+
 .theme-2025 {
     --theme-bg: rgba(11, 35, 79, 0.6);
     --theme-border: #1a4598;
@@ -188,7 +189,6 @@
     --scrollbar-thumb: #bdaf67;
     --scrollbar-thumb-hover: #d6c98a;
 }
-
 .theme-3473 {
     --theme-bg: rgba(76, 29, 149, 0.6);
     --theme-border: #6d28d9;
