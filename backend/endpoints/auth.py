@@ -42,11 +42,11 @@ def _issue_jwt(user: dict) -> str:
     )
 
 
-def get_current_user(session: str | None = Cookie(default=None)) -> dict:
-    if not session:
+def get_current_user(auth_token: str | None = Cookie(default=None)) -> dict:
+    if not auth_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     try:
-        return jwt.decode(session, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return jwt.decode(auth_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except ExpiredSignatureError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
     except JWTError:
@@ -71,14 +71,13 @@ async def callback(request: Request):
         raise HTTPException(status_code=400, detail="No userinfo in token response")
 
     user = await db.upsert_user(user_info)
-    # given_name comes from Google's userinfo, not stored in DB, so pull from token
     user_dict = dict(user)
     user_dict["given_name"] = user_info.get("given_name")
     session_jwt = _issue_jwt(user_dict)
 
     response = RedirectResponse(url=f"{FRONTEND_URL}/dashboard")
     response.set_cookie(
-        key="session",
+        key="auth_token",
         value=session_jwt,
         httponly=True,
         secure=os.environ.get("ENV") == "production",
@@ -92,7 +91,7 @@ async def callback(request: Request):
 @router.post("/logout")
 async def logout(_: dict = Depends(get_current_user)):
     response = JSONResponse({"ok": True})
-    response.delete_cookie("session", path="/")
+    response.delete_cookie("auth_token", path="/")
     return response
 
 

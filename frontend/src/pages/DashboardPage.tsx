@@ -20,7 +20,6 @@ export default function DashboardPage() {
                         src={user.picture}
                         alt={user.name}
                         className="w-12 h-12 rounded-full ring-2"
-                        style={{ ringColor: "var(--theme-border)" }}
                         referrerPolicy="no-referrer"
                     />
                 )}

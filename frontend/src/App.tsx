@@ -29,7 +29,7 @@ export default function App() {
 
                                 <Route element={<AppShell/>}>
                                     <Route path="/dashboard" element={
-                                        <AuthWrapper member mode="optimistic">
+                                        <AuthWrapper>
                                             <DashboardPage/>
                                         </AuthWrapper>
                                     }/>

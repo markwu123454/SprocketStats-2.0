@@ -31,7 +31,7 @@ export default function ThemeProvider({ children }: { children: ReactNode }) {
     }, [theme])
 
     const setTheme = (t: Settings["theme"]) => {
-        setThemeState(t?.toLowerCase() as Settings["theme"])
+        setThemeState(t)
     }
 
     return (

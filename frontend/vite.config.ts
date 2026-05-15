@@ -22,8 +22,8 @@ export default defineConfig({
                 short_name: "Spstats",
                 start_url: "/",
                 display: "standalone",
-                background_color: "#000000",
-                theme_color: "#000000",
+                background_color: "#ffffff",
+                theme_color: "#ffffff",
                 icons: [
                     {src: "/pwa/sprocket_logo_128.png", sizes: "128x128", type: "image/png"},
                     {src: "/pwa/sprocket_logo_192.png", sizes: "192x192", type: "image/png"},

@@ -4,7 +4,7 @@ import { LayoutDashboard, LogOut, ChevronDown } from "lucide-react"
 import { useState, useRef, useEffect } from "react"
 
 export default function AppShell() {
-    const { user, signOut } = useAuth()
+    const { user, logout } = useAuth()
     const location = useLocation()
     const [menuOpen, setMenuOpen] = useState(false)
     const menuRef = useRef<HTMLDivElement>(null)
@@ -93,7 +93,7 @@ export default function AppShell() {
                                         <p className="text-xs theme-subtext-color truncate">{user.email}</p>
                                     </div>
                                     <button
-                                        onClick={() => { setMenuOpen(false); signOut() }}
+                                        onClick={() => { setMenuOpen(false); void logout() }}
                                         className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
                                     >
                                         <LogOut size={14} />

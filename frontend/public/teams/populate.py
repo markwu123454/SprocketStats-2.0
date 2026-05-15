@@ -107,7 +107,7 @@ def shorten_event_name(name: str) -> str:
 async def get_all_events(session):
     """Fetch all events from TBA for all years up to CURRENT_YEAR."""
     event_map = {}
-    for year in range(1992, CURRENT_YEAR + 2):
+    for year in range(1992, CURRENT_YEAR + 1):
         log.info(f"Fetching events for {year}...")
         data = await fetch_json(session, f"{BASE_URL}/events/{year}")
         if not data:
