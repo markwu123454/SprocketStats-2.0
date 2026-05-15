@@ -1,82 +1,106 @@
-import uuid
-from datetime import datetime, timezone, timedelta
-from fastapi import Depends, HTTPException, APIRouter, Request
-from google.oauth2 import id_token
-from google.auth.transport import requests as g_requests
 import os
+from datetime import datetime, timedelta, timezone
+
+from authlib.integrations.starlette_client import OAuth
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse, RedirectResponse
+from jose import ExpiredSignatureError, JWTError, jwt
+
 import db
-import enums
 
 router = APIRouter()
 
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+JWT_SECRET = os.environ["JWT_SECRET"]
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
-@router.post("/auth/login")
-async def login(_: Request, body: dict):
-    """
-    Authenticates via Google ID token and issues a session.
-    """
-    token = body.get("credential")
-    if not token:
-        raise HTTPException(status_code=400, detail="Missing credential")
+oauth = OAuth()
+oauth.register(
+    name="google",
+    client_id=os.environ["GOOGLE_CLIENT_ID"],
+    client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile", "prompt": "select_account"},
+)
 
-    try:
-        info = id_token.verify_oauth2_token(
-            token,
-            g_requests.Request(),
-            os.getenv("GOOGLE_CLIENT_ID"),
-            clock_skew_in_seconds=5
-        )
-        email = info["email"]
-        name = info.get("name", email.split("@")[0])
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid Google token: {e}")
 
-    # ensure user exists or create placeholder
-    await db.create_user_if_missing(email, name)
-    user = await db.get_user_by_email(email)
-
-    # Check user approval status
-    if user["approval"] == "banned":
-        raise HTTPException(status_code=403, detail="Account has been banned")
-
-    if user["approval"] not in ["approved", "autoapproved"]:
-        raise HTTPException(status_code=403, detail="Account pending approval")
-
-    # --- build session ---
-    session_id = str(uuid.uuid4())
-    expires_dt = datetime.now(timezone.utc) + timedelta(hours=8)
-
-    session_data = {
-        "email": user["email"],
-        "name": user["name"],
-        "permissions": {
-            "dev": user["perm_dev"],
-            "admin": user["perm_admin"],
-            "match_scouting": user["perm_match_scout"],
-            "pit_scouting": user["perm_pit_scout"],
+def _issue_jwt(user: dict) -> str:
+    now = datetime.now(timezone.utc)
+    return jwt.encode(
+        {
+            "sub": user["id"],
+            "email": user["email"],
+            "name": user.get("name"),
+            "given_name": user.get("given_name"),
+            "picture": user.get("picture"),
+            "iat": now,
+            "exp": now + timedelta(minutes=JWT_EXPIRE_MINUTES),
         },
-        "expires": expires_dt.isoformat(),
-    }
+        JWT_SECRET,
+        algorithm=JWT_ALGORITHM,
+    )
 
-    await db.add_session(session_id, session_data, expires_dt)
 
+def get_current_user(auth_token: str | None = Cookie(default=None)) -> dict:
+    if not auth_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    try:
+        return jwt.decode(auth_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
+
+
+@router.get("/login")
+async def login(request: Request):
+    redirect_uri = str(request.url_for("callback"))
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+
+@router.get("/callback", name="callback")
+async def callback(request: Request):
+    try:
+        token = await oauth.google.authorize_access_token(request)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"OAuth error: {exc}")
+
+    user_info = token.get("userinfo")
+    if not user_info:
+        raise HTTPException(status_code=400, detail="No userinfo in token response")
+
+    user = await db.upsert_user(user_info)
+    user_dict = dict(user)
+    user_dict["given_name"] = user_info.get("given_name")
+    session_jwt = _issue_jwt(user_dict)
+
+    response = RedirectResponse(url=f"{FRONTEND_URL}/dashboard")
+    response.set_cookie(
+        key="auth_token",
+        value=session_jwt,
+        httponly=True,
+        secure=os.environ.get("ENV") == "production",
+        samesite="lax",
+        max_age=JWT_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+    return response
+
+
+@router.post("/logout")
+async def logout(_: dict = Depends(get_current_user)):
+    response = JSONResponse({"ok": True})
+    response.delete_cookie("auth_token", path="/")
+    return response
+
+
+@router.get("/me")
+async def me(user: dict = Depends(get_current_user)):
     return {
-        "uuid": session_id,
-        "name": user["name"],
+        "id": user["sub"],
         "email": user["email"],
-        "expires": session_data["expires"],
-        "permissions": session_data["permissions"],
+        "name": user.get("name"),
+        "given_name": user.get("given_name"),
+        "picture": user.get("picture"),
     }
-
-
-@router.get("/auth/verify")
-async def verify(session: enums.SessionInfo = Depends(db.require_session())):
-    """
-    Verifies the session UUID and returns identity + permissions.
-    """
-    return {
-        "email": session.email,
-        "name": session.name,
-        "permissions": session.permissions.model_dump(),
-    }
-

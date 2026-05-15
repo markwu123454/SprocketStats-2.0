@@ -8,43 +8,38 @@ from fastapi import FastAPI
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 import db
-import tba_db as tba
-from endpoints import (
-    admin,
-    attendance,
-    auth,
-    data,
-    general,
-    match_scouting,
-    pit_scouting,
-    push_notification,
-    cron,
-)
+from endpoints import general, auth
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Starting up...")
-
-    # Initialize the databases
-    #await db.init_db()
+    await db.init_db()
     await db.run_migrations()
-    await tba.get_db_pool()
-
     yield
-
     print("Shutting down...")
+    await db.close_pool()
+
 
 app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent), name="static")
 
 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-    s.connect(("8.8.8.8", 80))  # Connect to a public DNS server to get the local IP
+    s.connect(("8.8.8.8", 80))
     local_ip = s.getsockname()[0]
 
 load_dotenv()
+
+# SessionMiddleware must come before CORSMiddleware
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.environ["SESSION_SECRET"],
+    https_only=os.environ.get("ENV") == "production",
+    same_site="lax",
+)
 
 regex_patterns = []
 for origin in [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]:
@@ -65,12 +60,5 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(admin.router)
-app.include_router(attendance.router)
-app.include_router(auth.router)
-app.include_router(data.router)
 app.include_router(general.router)
-app.include_router(match_scouting.router)
-app.include_router(pit_scouting.router)
-app.include_router(push_notification.router)
-app.include_router(cron.router)
+app.include_router(auth.router, prefix="/auth")

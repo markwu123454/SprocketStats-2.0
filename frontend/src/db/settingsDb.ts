@@ -1,91 +1,36 @@
-import Dexie, {type Table} from "dexie"
+import Dexie, { type Table } from "dexie"
 
-// 1. Typed settings object
 export type Settings = {
-    theme?: "dark" | "light" | "2025" | "2026" | "3473" | "968"
-    field_orientation?: "0" | "90" | "180" | "270"
-    match_scouting_device_type?: "mobile" | "tablet"
-    match_ab_test?: "default" | "a" | "b"
-    debug?: boolean
-} & Record<string, string | boolean | number | undefined>
-
-export const DEFAULT_SETTINGS: Required<Pick<Settings, "theme" | "field_orientation">> &
-    Omit<Settings, "theme" | "field_orientation"> = {
-    theme: "2026",
-    field_orientation: "180",
-    match_scouting_device_type: "mobile",
-    match_ab_test: "default",
-    debug: "false"
+    key: string
+    theme?: "theme-2025" | "theme-2026" | "theme-2027"
 }
 
-export interface SettingRow {
-    key: "global"
-    value: Settings
-}
-
-const GLOBAL_KEY = "global" as const
-
-class SettingsDB extends Dexie {
-    settings!: Table<SettingRow, string>
+class SettingsDatabase extends Dexie {
+    settings!: Table<Settings>
 
     constructor() {
-        super("SettingsDB")
-        this.version(1).stores({
-            settings: "&key"
-        })
+        super("sprocket-settings")
+        this.version(1).stores({ settings: "key" })
     }
 }
 
-export const settingsDB = new SettingsDB()
+const db = new SettingsDatabase()
 
-// Get full settings object or specific key (proper overloads)
-export function getSetting(): Promise<Settings>
-export function getSetting<K extends keyof Settings>(key: K): Promise<Settings[K]>
-export async function getSetting<K extends keyof Settings>(
-    key?: K
-) {
-    const entry = await settingsDB.settings.get(GLOBAL_KEY)
-
-    const value: Settings = {
-        ...DEFAULT_SETTINGS,
-        ...(entry?.value ?? {})
-    }
-
-    if (key === undefined) {
-        return value
-    }
-
-    return value[key]
-}
-
-
-// Set partial or full settings (atomic)
-export async function setSetting(patch: Partial<Settings>) {
-    await settingsDB.transaction("rw", settingsDB.settings, async () => {
-        const current = (await settingsDB.settings.get(GLOBAL_KEY))?.value ?? {}
-        const updated = {...current, ...patch}
-        await settingsDB.settings.put({key: GLOBAL_KEY, value: updated})
-
-        // Mirror to localStorage for instant sync access
-        for (const [k, v] of Object.entries(patch)) {
-            if (v !== undefined) localStorage.setItem(`setting_${k}`, String(v))
-        }
-    })
-}
-
-// Fast, synchronous read (for startup UI only)
-export function getSettingSync<K extends keyof Settings>(
+export async function getSetting<K extends keyof Omit<Settings, "key">>(
     key: K
-): Settings[K] {
-    try {
-        const cached = localStorage.getItem(`setting_${key}`)
-        if (cached !== null) {
-            if (cached === "true") return true as Settings[K]
-            if (cached === "false") return false as Settings[K]
-            return cached as Settings[K]
-        }
-    } catch { /* empty */
-    }
-    return DEFAULT_SETTINGS[key] as Settings[K]
+): Promise<Settings[K] | undefined> {
+    const row = await db.settings.get(key)
+    return row?.[key] as Settings[K] | undefined
 }
 
+export function getSettingSync<K extends keyof Omit<Settings, "key">>(
+    _key: K
+): Settings[K] | undefined {
+    return undefined
+}
+
+export async function setSetting(values: Partial<Omit<Settings, "key">>) {
+    for (const [key, value] of Object.entries(values)) {
+        await db.settings.put({ key, [key]: value })
+    }
+}
