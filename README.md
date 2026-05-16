@@ -15,8 +15,8 @@ It is designed for fast, reliable match and team data collection, and seamless a
 
 **This software is source-available but proprietary.**
 
--  You MAY view and review the source code
--  You may NOT use, run, modify, or distribute this software without explicit written permission
+- You MAY view and review the source code
+- You may NOT use, run, modify, or distribute this software without explicit written permission
 
 This repository is published for **reference and transparency only**.
 
@@ -46,6 +46,7 @@ annual game changes.
 This project is **actively maintained** and used in real competition settings by **Team 3473 (Team Sprocket)**.
 
 Some areas are under active development and refactoring, particularly:
+
 - Mobile offline caching and sync logic
 - Mobile push notifications based on scouting assignment
 - Advanced analytics workflows
@@ -57,17 +58,20 @@ Public documentation may lag behind internal changes.
 ## System Overview
 
 ### Frontend
+
 - React + Vite (TypeScript)
 - Tailwind CSS
 - Progressive Web App (PWA)
 - Stateless client design for scalability
 
 ### Backend
+
 - Python FastAPI server
 - Async-first architecture for concurrent device connections
 - TBA API integration for teams, matches, and metadata
 
 ### Analysis Tooling
+
 - Separate desktop-oriented application for:
   - Statistical analysis
   - Algorithm testing
@@ -101,7 +105,7 @@ If you have been granted permission to use this software, you must provide attri
 
 ## License
 
-Copyright © 2025 Mark Wu (Mai Wu)
+Copyright © 2025–2026 Mark Wu (Mai Wu)
 
-This project is licensed under the **Polyform Strict License 1.0**.  
+All rights reserved. No use, reproduction, modification, or distribution is permitted without explicit written permission from the author. 
 See [LICENSE.md](LICENSE.md) for complete terms.
