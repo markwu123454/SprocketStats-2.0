@@ -17,7 +17,7 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000"
+const API = import.meta.env.VITE_BACKEND_URL
 
 export function AuthProvider({children}: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null)
