@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/authContext.tsx";
 
@@ -167,20 +167,292 @@ export default function LoginPage() {
     const season = useThemeSeasonInfo();
     const [timeInfo] = useState<TimeInfo>(() => getTimeInfo());
 
+    // ── Bottom sheet drag (mobile only) ──────────────────────────
+    // Geometry (mobile): the Google button is the anchor. Its
+    // distance from the sheet bottom (the "clamp") interpolates from
+    // CLAMP_PEEK → CLAMP_EXPANDED as the sheet opens. In the peek
+    // state the button sits low (small clamp) so there's no dead
+    // space beneath it; as you expand, it rises to make room for the
+    // terms/footer that fade into the widened clamp zone below it.
+    // The heading fades into the space revealed above. The button's
+    // motion is tied 1:1 to drag/snap progress, so it tracks the
+    // sheet smoothly with no jump.
+    const CLAMP_PEEK     = 34;   // peek: button sits low, near bottom
+    const CLAMP_EXPANDED = 92;   // expanded: room for terms/footer
+    const PEEK_HEIGHT    = 132;  // handle + button + small clamp
+    const EXPAND_HEIGHT  = 320;  // adds room above for the heading
+    const sheetRef    = useRef<HTMLElement>(null);
+    const dragStart   = useRef<{ y: number; h: number } | null>(null);
+    const [sheetHeight, setSheetHeight] = useState<number>(PEEK_HEIGHT);
+    const [dragging,    setDragging]    = useState(false);
+
+    const isMobile = () => typeof window !== "undefined" && window.innerWidth < 768;
+    const snapTo   = (h: number) => { setSheetHeight(h); setDragging(false); };
+
+    // Track whether we're in mobile view reactively
+    const [isMobileView, setIsMobileView] = useState(() => isMobile());
+    useEffect(() => {
+        const handler = () => setIsMobileView(window.innerWidth < 768);
+        window.addEventListener("resize", handler);
+        return () => window.removeEventListener("resize", handler);
+    }, []);
+
+    // Lock document scroll while this full-screen page is mounted so
+    // the body can't rubber-band / scroll behind the fixed root
+    // (the "scrolls up to reveal Kickoff" bug on mobile Safari).
+    useEffect(() => {
+        const html = document.documentElement;
+        const body = document.body;
+        const prev = {
+            htmlOverflow: html.style.overflow,
+            bodyOverflow: body.style.overflow,
+            bodyOverscroll: body.style.overscrollBehavior,
+            bodyHeight: body.style.height,
+        };
+        html.style.overflow = "hidden";
+        body.style.overflow = "hidden";
+        body.style.overscrollBehavior = "none";
+        body.style.height = "100%";
+        return () => {
+            html.style.overflow = prev.htmlOverflow;
+            body.style.overflow = prev.bodyOverflow;
+            body.style.overscrollBehavior = prev.bodyOverscroll;
+            body.style.height = prev.bodyHeight;
+        };
+    }, []);
+
+    const onPointerDown = (e: React.PointerEvent) => {
+        if (!isMobile()) return;
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        dragStart.current = { y: e.clientY, h: sheetHeight };
+        setDragging(true);
+    };
+
+    const onPointerMove = (e: React.PointerEvent) => {
+        if (!dragStart.current || !isMobile()) return;
+        const delta = dragStart.current.y - e.clientY;
+        const next  = Math.max(PEEK_HEIGHT, Math.min(EXPAND_HEIGHT, dragStart.current.h + delta));
+        setSheetHeight(next);
+    };
+
+    const onPointerUp = (e: React.PointerEvent) => {
+        if (!dragStart.current || !isMobile()) return;
+        const velocity = dragStart.current.y - e.clientY;
+        const mid      = (PEEK_HEIGHT + EXPAND_HEIGHT) / 2;
+        if (velocity > 50)       snapTo(EXPAND_HEIGHT);
+        else if (velocity < -50) snapTo(PEEK_HEIGHT);
+        else                     snapTo(sheetHeight > mid ? EXPAND_HEIGHT : PEEK_HEIGHT);
+        dragStart.current = null;
+    };
+
     useEffect(() => {
         if (!loading && user) navigate("/dashboard", { replace: true });
     }, [user, loading, navigate]);
 
-    return (
-        <div className="grid h-screen" style={{ gridTemplateColumns: "1.05fr 0.95fr" }}>
+    // Continuous 0→1 fade value, used only while the finger is down
+    // so the text tracks the drag. Eased so it stays hidden through
+    // the first bit of travel, then fades in over the rest.
+    const dragProgress = Math.min(1, Math.max(0,
+        (sheetHeight - PEEK_HEIGHT) / (EXPAND_HEIGHT - PEEK_HEIGHT)
+    ));
+    const reveal = dragProgress < 0.3
+        ? 0
+        : Math.pow((dragProgress - 0.3) / 0.7, 0.85);
 
-            {/* ══ LEFT — split-art ══ */}
+    // Live button clamp: interpolates CLAMP_PEEK → CLAMP_EXPANDED
+    // linearly with the sheet so the button glides down toward the
+    // bottom as you collapse and rises as you expand. On desktop it
+    // is irrelevant (mobile-only CSS), so just hold the peek value.
+    const btnClamp = isMobileView
+        ? CLAMP_PEEK + (CLAMP_EXPANDED - CLAMP_PEEK) * dragProgress
+        : CLAMP_PEEK;
+
+    // Resting state: at/above the midpoint counts as expanded. When
+    // not dragging, the CSS transition smooths the opacity change so
+    // there are no jumps; the text never affects layout because it's
+    // absolutely overlaid relative to the (stable) button.
+    const expanded =
+        !isMobileView || sheetHeight > (PEEK_HEIGHT + EXPAND_HEIGHT) / 2;
+
+    return (
+        <div
+            className="login-root grid"
+            style={{
+                gridTemplateColumns: "1.05fr 0.95fr",
+                height: "100vh",
+            }}
+        >
+            <style>{`
+                @media (min-width: 768px) {
+                    .login-root {
+                        grid-template-columns: 1.05fr 0.95fr !important;
+                        grid-template-rows: 1fr !important;
+                    }
+                    .login-aside {
+                        position: relative !important;
+                        height: auto !important;
+                    }
+                    .login-section {
+                        position: relative !important;
+                        border-radius: 0 !important;
+                        border-left: 1px solid var(--theme-border) !important;
+                        border-top: none !important;
+                        margin-top: 0 !important;
+                        padding: 28px 56px !important;
+                    }
+                    /* Desktop keeps the original stacked form: heading
+                       block, button, then terms/footer — all in normal
+                       flow, vertically centred. */
+                    .login-reveal-head {
+                        margin-bottom: 26px !important;
+                    }
+                    .login-reveal-head > p {
+                        margin-top: 6px !important;
+                    }
+                }
+                @media (max-width: 767px) {
+                    .login-root {
+                        display: flex !important;
+                        flex-direction: column !important;
+                        /* Pin to the *visual* viewport. position:fixed
+                           + dvh means the document has nothing taller
+                           than the screen to scroll, and the dynamic
+                           viewport unit excludes the browser toolbar,
+                           so the sheet can't be pushed behind it. */
+                        position: fixed !important;
+                        top: 0 !important;
+                        left: 0 !important;
+                        right: 0 !important;
+                        bottom: 0 !important;
+                        height: 100dvh !important;
+                        max-height: 100dvh !important;
+                        overflow: hidden !important;
+                        overscroll-behavior: none !important;
+                    }
+                    .login-aside {
+                        flex: 1 1 0 !important;
+                        min-height: 0 !important;
+                    }
+                    /* Background pinned to the viewport — does not move
+                       when the bottom sheet expands/collapses. */
+                    .login-bg-image,
+                    .login-bg-scrim {
+                        position: fixed !important;
+                        top: 0 !important;
+                        left: 0 !important;
+                        right: 0 !important;
+                        bottom: 0 !important;
+                        height: 100dvh !important;
+                    }
+                    /* Sheet becomes a bottom-anchored flex column.
+                       No flexible grid track → content height is
+                       stable, so fading text never reflows. */
+                    .login-section {
+                        flex: 0 0 auto !important;
+                        display: flex !important;
+                        flex-direction: column !important;
+                        justify-content: flex-end !important;
+                        border-radius: 20px 20px 0 0 !important;
+                        border-left: none !important;
+                        border-top: 1px solid var(--theme-border) !important;
+                        padding: 0 24px !important;
+                        margin-top: 0 !important;
+                        z-index: 10 !important;
+                        overflow: hidden !important;
+                        cursor: grab !important;
+                        user-select: none !important;
+                    }
+                    .login-section:active {
+                        cursor: grabbing !important;
+                    }
+                    .login-drag-handle {
+                        display: block !important;
+                        position: absolute !important;
+                        top: 12px !important;
+                        left: 50% !important;
+                        transform: translateX(-50%) !important;
+                        margin: 0 !important;
+                    }
+                    .login-logo-row {
+                        display: none !important;
+                    }
+                    .login-time-badge {
+                        top: 20px !important;
+                        right: 20px !important;
+                    }
+                    .login-hero-content {
+                        padding: 20px !important;
+                    }
+                    /* Form column. The button is the only in-flow
+                       child; its distance from the sheet bottom (the
+                       clamp) is driven by --btn-clamp. It transitions
+                       on snap so the button glides, and tracks the
+                       finger directly while dragging. */
+                    .login-form-center {
+                        position: relative !important;
+                        width: 100% !important;
+                        max-width: 360px !important;
+                        margin: 0 auto !important;
+                        padding: 0 0 var(--btn-clamp, 92px) !important;
+                        transition: padding-bottom 0.38s cubic-bezier(0.32, 0.72, 0, 1) !important;
+                    }
+                    .login-section .login-reveal-head {
+                        position: absolute !important;
+                        left: 0 !important;
+                        right: 0 !important;
+                        bottom: calc(var(--btn-clamp, 92px) + 52px) !important;
+                        margin-bottom: 20px !important;
+                        transition: bottom 0.38s cubic-bezier(0.32, 0.72, 0, 1) !important;
+                    }
+                    .login-section .login-reveal-foot {
+                        position: absolute !important;
+                        left: 0 !important;
+                        right: 0 !important;
+                        top: calc(100% - var(--btn-clamp, 92px) + 14px) !important;
+                        transition: top 0.38s cubic-bezier(0.32, 0.72, 0, 1) !important;
+                    }
+                    .login-section .login-reveal-foot > p {
+                        margin-top: 0 !important;
+                    }
+                    /* While actively dragging, the clamp tracks the
+                       finger 1:1 — no transition lag. */
+                    .login-section.login-dragging .login-form-center,
+                    .login-section.login-dragging .login-reveal-head,
+                    .login-section.login-dragging .login-reveal-foot {
+                        transition: none !important;
+                    }
+                    /* Smooth fade — two resting states, CSS transition
+                       between them. No per-frame JS, no layout change. */
+                    .login-section .login-expand-only {
+                        opacity: 0;
+                        transform: translateY(8px);
+                        transition: opacity 0.34s ease, transform 0.34s ease;
+                        pointer-events: none;
+                        will-change: opacity, transform;
+                    }
+                    .login-section[data-expanded="true"] .login-expand-only {
+                        opacity: 1;
+                        transform: translateY(0);
+                        pointer-events: auto;
+                    }
+                    /* While actively dragging, track the finger with a
+                       continuous reveal value (set inline via --reveal)
+                       instead of the snap transition. */
+                    .login-section.login-dragging .login-expand-only {
+                        opacity: var(--reveal, 0);
+                        transform: translateY(calc((1 - var(--reveal, 0)) * 8px));
+                        transition: none;
+                    }
+                }
+            `}</style>
+
+            {/* ══ LEFT / TOP — split-art ══ */}
             <aside
-                className="relative overflow-hidden"
+                className="login-aside relative overflow-hidden"
                 style={{ color: "var(--theme-h1-color)" }}
             >
                 <div
-                    className="absolute inset-0"
+                    className="login-bg-image absolute inset-0"
                     style={{
                         backgroundImage: "var(--theme-bg-page)",
                         backgroundSize: "cover",
@@ -190,7 +462,7 @@ export default function LoginPage() {
                 />
 
                 <div
-                    className="absolute inset-0"
+                    className="login-bg-scrim absolute inset-0"
                     style={{
                         zIndex: 1,
                         background: `linear-gradient(180deg,
@@ -200,7 +472,7 @@ export default function LoginPage() {
                 />
 
                 <div
-                    className="absolute inset-0 flex flex-col items-start justify-end gap-[18px] p-11"
+                    className="login-hero-content absolute inset-0 flex flex-col items-start justify-end gap-[18px] p-11"
                     style={{ zIndex: 2 }}
                 >
                     <span
@@ -270,7 +542,7 @@ export default function LoginPage() {
                 </div>
 
                 <div
-                    className="absolute top-11 right-11 flex flex-col items-end gap-1.5 text-[11px]"
+                    className="login-time-badge absolute top-11 right-11 flex flex-col items-end gap-1.5 text-[11px]"
                     style={{
                         zIndex: 2,
                         fontFamily: "'JetBrains Mono', monospace",
@@ -283,18 +555,48 @@ export default function LoginPage() {
                 </div>
             </aside>
 
-            {/* ══ RIGHT — split-form ══ */}
+            {/* ══ RIGHT / BOTTOM — split-form ══ */}
             <section
-                className="relative grid"
+                ref={sheetRef as React.RefObject<HTMLElement>}
+                data-expanded={expanded ? "true" : "false"}
+                className={`login-section relative grid${dragging ? " login-dragging" : ""}`}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerCancel={onPointerUp}
                 style={{
                     background: "var(--theme-button-bg)",
                     borderLeft: "1px solid var(--theme-border)",
                     gridTemplateRows: "auto 1fr auto",
                     padding: "28px 56px",
+                    ["--btn-clamp" as string]: `${btnClamp}px`,
+                    ...(dragging ? { ["--reveal" as string]: reveal } : {}),
+                    // mobile sheet overrides applied via inline style + JS
+                    ...(isMobileView ? {
+                        // sheet height + home-indicator safe area, so
+                        // the button keeps its clamp gap *above* the
+                        // gesture bar rather than sitting on top of it
+                        height: `calc(${sheetHeight}px + env(safe-area-inset-bottom, 0px))`,
+                        transition: dragging ? "none" : "height 0.38s cubic-bezier(0.32, 0.72, 0, 1)",
+                        touchAction: "none",
+                    } : {}),
                 }}
             >
+                {/* drag handle — mobile only */}
                 <div
-                    className="flex items-center gap-2.5 pb-2"
+                    aria-hidden="true"
+                    style={{
+                        display: "none",
+                        width: 36,
+                        height: 4,
+                        borderRadius: 2,
+                        background: "var(--theme-border)",
+                        margin: "0 auto 16px",
+                    }}
+                    className="login-drag-handle"
+                />
+                <div
+                    className="login-logo-row flex items-center gap-2.5 pb-2"
                     style={{ color: "var(--theme-h1-color)" }}
                 >
                     <Logo size={26} />
@@ -306,25 +608,27 @@ export default function LoginPage() {
                     </span>
                 </div>
 
-                <div className="self-center w-full max-w-[360px] mx-auto">
-                    <h1
-                        className="m-0 mb-1.5 font-semibold"
-                        style={{
-                            fontFamily: "'Space Grotesk', 'Inter', sans-serif",
-                            fontSize: "32px",
-                            letterSpacing: "-0.01em",
-                            color: "var(--theme-h1-color)",
-                        }}
-                    >
-                        Sign in
-                    </h1>
+                <div className="login-form-center self-center w-full max-w-[360px] mx-auto">
+                    <div className="login-reveal-head login-expand-only">
+                        <h1
+                            className="m-0 mb-1.5 font-semibold"
+                            style={{
+                                fontFamily: "'Space Grotesk', 'Inter', sans-serif",
+                                fontSize: "32px",
+                                letterSpacing: "-0.01em",
+                                color: "var(--theme-h1-color)",
+                            }}
+                        >
+                            Sign in
+                        </h1>
 
-                    <p
-                        className="m-0 mb-[26px] text-[14px]"
-                        style={{ color: "var(--theme-subtext-color)" }}
-                    >
-                        Pick up where your team left off. SprocketStats uses your team's Google account.
-                    </p>
+                        <p
+                            className="m-0 text-[14px]"
+                            style={{ color: "var(--theme-subtext-color)" }}
+                        >
+                            Pick up where your team left off. SprocketStats uses your team's Google account.
+                        </p>
+                    </div>
 
                     <button
                         onClick={signInWithGoogle}
@@ -372,42 +676,44 @@ export default function LoginPage() {
                         </span>
                     </button>
 
-                    <p
-                        className="mt-3.5 mb-0 text-center text-[12px] leading-normal"
-                        style={{ color: "var(--theme-subtext-color)" }}
-                    >
-                        By continuing you agree to our{" "}
-                        <a
-                            href="#"
-                            className="no-underline font-medium hover:underline"
-                            style={{ color: "var(--theme-text-contrast)" }}
+                    <div className="login-reveal-foot login-expand-only">
+                        <p
+                            className="mt-3.5 mb-0 text-center text-[12px] leading-normal"
+                            style={{ color: "var(--theme-subtext-color)" }}
                         >
-                            Terms
-                        </a>
-                        {" "}and{" "}
-                        <a
-                            href="#"
-                            className="no-underline font-medium hover:underline"
-                            style={{ color: "var(--theme-text-contrast)" }}
-                        >
-                            Privacy Policy
-                        </a>.
-                    </p>
-                </div>
+                            By continuing you agree to our{" "}
+                            <a
+                                href="#"
+                                className="no-underline font-medium hover:underline"
+                                style={{ color: "var(--theme-text-contrast)" }}
+                            >
+                                Terms
+                            </a>
+                            {" "}and{" "}
+                            <a
+                                href="#"
+                                className="no-underline font-medium hover:underline"
+                                style={{ color: "var(--theme-text-contrast)" }}
+                            >
+                                Privacy Policy
+                            </a>.
+                        </p>
 
-                <footer
-                    className="flex items-center justify-center gap-2.5 text-[13px]"
-                    style={{ color: "var(--theme-subtext-color)" }}
-                >
-                    <span>New to SprocketStats?</span>
-                    <a
-                        href="#"
-                        className="no-underline font-semibold hover:underline"
-                        style={{ color: "var(--theme-text-contrast)" }}
-                    >
-                        Onboard your team →
-                    </a>
-                </footer>
+                        <div
+                            className="login-foot-row flex items-center justify-center gap-2.5 text-[13px] mt-4"
+                            style={{ color: "var(--theme-subtext-color)" }}
+                        >
+                            <span>New to SprocketStats?</span>
+                            <a
+                                href="#"
+                                className="no-underline font-semibold hover:underline"
+                                style={{ color: "var(--theme-text-contrast)" }}
+                            >
+                                Onboard your team →
+                            </a>
+                        </div>
+                    </div>
+                </div>
             </section>
         </div>
     );

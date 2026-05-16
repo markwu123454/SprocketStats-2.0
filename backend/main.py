@@ -51,14 +51,23 @@ for origin in [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.
 
 combined_regex = "|".join(regex_patterns) if regex_patterns else None
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[],
-    allow_origin_regex=combined_regex,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if os.environ.get("ENV") == "development":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=".*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[],
+        allow_origin_regex=combined_regex,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.include_router(general.router)
 app.include_router(auth.router, prefix="/auth")
