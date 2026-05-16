@@ -1,9 +1,11 @@
-name: Deploy to Vercel
+name: Deploy Frontend to Vercel
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'frontend/**'
 
 jobs:
   deploy:

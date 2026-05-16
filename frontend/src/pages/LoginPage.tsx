@@ -200,11 +200,11 @@ export default function LoginPage() {
                 />
 
                 <div
-                    className="absolute inset-0 flex flex-col items-start justify-end gap-[18px] p-[44px]"
+                    className="absolute inset-0 flex flex-col items-start justify-end gap-[18px] p-11"
                     style={{ zIndex: 2 }}
                 >
                     <span
-                        className="inline-block text-[11px] uppercase leading-none px-[10px] py-[4px] rounded-full"
+                        className="inline-block text-[11px] uppercase leading-none px-2.5 py-1 rounded-full"
                         style={{
                             fontFamily: "'JetBrains Mono', ui-monospace, monospace",
                             letterSpacing: "0.18em",
@@ -218,11 +218,41 @@ export default function LoginPage() {
                         {season?.phase ?? "SEASON"}
                     </span>
 
-                    {/* Season wordmark — inlined SVG so fill="currentColor" inherits --theme-h1-color */}
-                    <SeasonWordmark
-                        url={season?.wordmarkUrl ?? ""}
-                        label={season?.label ?? "SprocketStats"}
-                    />
+                    {/* Presented by label + season wordmark */}
+                    <span
+                        className="inline-block text-[10px] uppercase leading-none"
+                        style={{
+                            fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                            letterSpacing: "0.18em",
+                            color: "var(--theme-h1-color)",
+                            opacity: 0.6,
+                        }}
+                    >
+                        Presented by HAAS
+                    </span>
+
+                    {/* Wordmark wrapper — relative so TM sits at bottom-right */}
+                    <div style={{ position: "relative", display: "inline-flex" }}>
+                        <SeasonWordmark
+                            url={season?.wordmarkUrl ?? ""}
+                            label={season?.label ?? "SprocketStats"}
+                        />
+                        <sup
+                            aria-label="trademark"
+                            style={{
+                                position: "absolute",
+                                bottom: 0,
+                                right: "-14px",
+                                fontSize: "10px",
+                                lineHeight: 1,
+                                color: "var(--theme-h1-color)",
+                                fontFamily: "'Inter', sans-serif",
+                                fontWeight: 500,
+                            }}
+                        >
+                            ™
+                        </sup>
+                    </div>
 
                     <p
                         className="m-0 max-w-[32ch] opacity-[0.92]"
@@ -240,7 +270,7 @@ export default function LoginPage() {
                 </div>
 
                 <div
-                    className="absolute top-[44px] right-[44px] flex flex-col items-end gap-[6px] text-[11px]"
+                    className="absolute top-11 right-11 flex flex-col items-end gap-1.5 text-[11px]"
                     style={{
                         zIndex: 2,
                         fontFamily: "'JetBrains Mono', monospace",
@@ -264,7 +294,7 @@ export default function LoginPage() {
                 }}
             >
                 <div
-                    className="flex items-center gap-[10px] pb-[8px]"
+                    className="flex items-center gap-2.5 pb-2"
                     style={{ color: "var(--theme-h1-color)" }}
                 >
                     <Logo size={26} />
@@ -278,7 +308,7 @@ export default function LoginPage() {
 
                 <div className="self-center w-full max-w-[360px] mx-auto">
                     <h1
-                        className="m-0 mb-[6px] font-semibold"
+                        className="m-0 mb-1.5 font-semibold"
                         style={{
                             fontFamily: "'Space Grotesk', 'Inter', sans-serif",
                             fontSize: "32px",
@@ -300,7 +330,7 @@ export default function LoginPage() {
                         onClick={signInWithGoogle}
                         disabled={loading}
                         type="button"
-                        className="w-full grid items-center gap-[12px] px-[18px] cursor-pointer disabled:opacity-50"
+                        className="w-full grid items-center gap-3 px-[18px] cursor-pointer disabled:opacity-50"
                         style={{
                             height: "52px",
                             borderRadius: "12px",
@@ -343,7 +373,7 @@ export default function LoginPage() {
                     </button>
 
                     <p
-                        className="mt-[14px] mb-0 text-center text-[12px] leading-[1.5]"
+                        className="mt-3.5 mb-0 text-center text-[12px] leading-normal"
                         style={{ color: "var(--theme-subtext-color)" }}
                     >
                         By continuing you agree to our{" "}
