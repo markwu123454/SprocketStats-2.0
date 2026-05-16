@@ -9,9 +9,19 @@ description = "SprocketStats"
 requires-python = ">=3.11"
 
 dependencies = [
-    "fastapi[standard]",
-    "uvicorn[standard]",
-    "python-dotenv",
+    "fastapi[standard]==0.136.1",
+    "starlette==1.0.0",
+    "uvicorn[standard]==0.47.0",
+    "gunicorn==26.0.0",
+    "python-dotenv==1.2.2",
+    "asyncpg==0.31.0",
+    "Authlib==1.7.2",
+    "python-jose[cryptography]==3.5.0",
+    "httpx==0.28.1",
+    "certifi==2026.4.22",
+    "itsdangerous==2.2.0",
+    "pydantic==2.13.4",
+    "cryptography==48.0.0",
 ]
 
 [tool.setuptools]
