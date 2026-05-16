@@ -9,7 +9,7 @@ description = "SprocketStats"
 requires-python = ">=3.11"
 
 dependencies = [
-    "fastapi",
+    "fastapi[standard]",
     "uvicorn[standard]",
     "python-dotenv",
 ]
