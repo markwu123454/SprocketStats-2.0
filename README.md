@@ -1,6 +1,5 @@
 # FRC Scouting App (SprocketStats)
 
-[![License: Polyform Strict](https://img.shields.io/badge/License-Polyform%20Strict-red.svg)](LICENSE.md)
 ![Version](https://img.shields.io/github/v/release/markwu123454/SprocketStats?sort=semver)
 ![Python](https://img.shields.io/badge/Python-3.11-blue)
 ![Node.js](https://img.shields.io/badge/Node.js-24.12-brightgreen)
