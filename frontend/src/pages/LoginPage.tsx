@@ -133,31 +133,6 @@ function GoogleG() {
     );
 }
 
-/* ── Sprocket logo mark ──────────────────────────────────────── */
-function Logo({ size = 26 }: { size?: number }) {
-    return (
-        <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden="true">
-            <g fill="currentColor">
-                {Array.from({ length: 8 }).map((_, i) => {
-                    const a = (i * Math.PI * 2) / 8;
-                    const x = 32 + Math.cos(a) * 26;
-                    const y = 32 + Math.sin(a) * 26;
-                    return (
-                        <rect
-                            key={i}
-                            x={x - 4} y={y - 4}
-                            width="8" height="8" rx="1.5"
-                            transform={`rotate(${i * 45} ${x} ${y})`}
-                        />
-                    );
-                })}
-                <circle cx="32" cy="32" r="20" />
-            </g>
-            <circle cx="32" cy="32" r="7" fill="var(--theme-button-bg)" />
-        </svg>
-    );
-}
-
 /* ════════════════════════════════════════════════════════════════
    LoginPage — Layout 02 "Split Hero"
    ════════════════════════════════════════════════════════════════ */
@@ -535,9 +510,7 @@ export default function LoginPage() {
                             color: "var(--theme-h1-color)",
                         }}
                     >
-                        Forty-thousand teams.<br />
-                        One season of measurement.<br />
-                        One workspace.
+                        Lets go Team Sprocket!
                     </p>
                 </div>
 
@@ -596,13 +569,26 @@ export default function LoginPage() {
                     className="login-drag-handle"
                 />
                 <div
-                    className="login-logo-row flex items-center gap-2.5 pb-2"
+                    className="login-logo-row flex items-center gap-2.5"
                     style={{ color: "var(--theme-h1-color)" }}
                 >
-                    <Logo size={26} />
+                    <div
+                        style={{
+                            width: 36,
+                            height: 36,
+                            flexShrink: 0,
+                            backgroundColor: "var(--theme-h1-color)",
+                            mask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
+                            WebkitMask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
+                        }}
+                    />
                     <span
                         className="font-semibold text-[15px]"
-                        style={{ letterSpacing: "0.01em" }}
+                        style={{
+                            letterSpacing: "0.01em",
+                            color: "var(--theme-h1-color)",
+                            lineHeight: 1,
+                        }}
                     >
                         SprocketStats
                     </span>
@@ -626,7 +612,7 @@ export default function LoginPage() {
                             className="m-0 text-[14px]"
                             style={{ color: "var(--theme-subtext-color)" }}
                         >
-                            Pick up where your team left off. SprocketStats uses your team's Google account.
+                            Sign in with your school email.
                         </p>
                     </div>
 
@@ -676,7 +662,7 @@ export default function LoginPage() {
                         </span>
                     </button>
 
-                    <div className="login-reveal-foot login-expand-only">
+                    {/*<div className="login-reveal-foot login-expand-only">
                         <p
                             className="mt-3.5 mb-0 text-center text-[12px] leading-normal"
                             style={{ color: "var(--theme-subtext-color)" }}
@@ -698,21 +684,7 @@ export default function LoginPage() {
                                 Privacy Policy
                             </a>.
                         </p>
-
-                        <div
-                            className="login-foot-row flex items-center justify-center gap-2.5 text-[13px] mt-4"
-                            style={{ color: "var(--theme-subtext-color)" }}
-                        >
-                            <span>New to SprocketStats?</span>
-                            <a
-                                href="#"
-                                className="no-underline font-semibold hover:underline"
-                                style={{ color: "var(--theme-text-contrast)" }}
-                            >
-                                Onboard your team →
-                            </a>
-                        </div>
-                    </div>
+                    </div>*/}
                 </div>
             </section>
         </div>

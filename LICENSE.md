@@ -1,1 +1,1 @@
-Copyright (c) 2026 Mai Wu. All rights reserved.
+Copyright (c) 2025-2026 Mai Wu. All rights reserved.
