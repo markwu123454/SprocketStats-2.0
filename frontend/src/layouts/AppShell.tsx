@@ -2,12 +2,18 @@ import { Outlet, Link, useLocation } from "react-router-dom"
 import { useAuth } from "@/contexts/authContext.tsx"
 import { LayoutDashboard, LogOut, ChevronDown } from "lucide-react"
 import { useState, useRef, useEffect } from "react"
+import {AllCommunityModule, ModuleRegistry} from 'ag-grid-community';
+import {useAppReady} from "@/contexts/appReadyContext.tsx";
+ModuleRegistry.registerModules([AllCommunityModule]);
 
 export default function AppShell() {
     const { user, logout } = useAuth()
     const location = useLocation()
     const [menuOpen, setMenuOpen] = useState(false)
     const menuRef = useRef<HTMLDivElement>(null)
+    const markReady = useAppReady()
+
+    useEffect(() => { markReady() }, [])
 
     useEffect(() => {
         function handleClick(e: MouseEvent) {

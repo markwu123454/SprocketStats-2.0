@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/authContext.tsx";
+import {useAppReady} from "@/contexts/appReadyContext.tsx";
 
 /* ── Theme → season metadata map ────────────────────────────── */
 const THEME_SEASONS: Record<string, { year: number; phase: string; label: string; dateRange: string }> = {
@@ -141,6 +142,7 @@ export default function LoginPage() {
     const navigate = useNavigate();
     const season = useThemeSeasonInfo();
     const [timeInfo] = useState<TimeInfo>(() => getTimeInfo());
+    const markReady = useAppReady()
 
     // ── Bottom sheet drag (mobile only) ──────────────────────────
     // Geometry (mobile): the Google button is the anchor. Its
@@ -163,6 +165,8 @@ export default function LoginPage() {
 
     const isMobile = () => typeof window !== "undefined" && window.innerWidth < 768;
     const snapTo   = (h: number) => { setSheetHeight(h); setDragging(false); };
+
+    useEffect(() => { markReady() }, [])
 
     // Track whether we're in mobile view reactively
     const [isMobileView, setIsMobileView] = useState(() => isMobile());
