@@ -11,7 +11,7 @@
     --theme-bg: rgba(11, 35, 79, 0.6);
     --theme-border: #1a4598;
     --theme-text: #ffffff;
-    --theme-bg-page: url('/seasons/2025/expanded.png');
+    --theme-bg-page: url('/seasons/2025/expanded.avif');
     --theme-h1-color: #ffffff;
     --theme-subtext-color: #d4d4d8;
     --theme-button-bg: rgba(16, 43, 106, 0.95);
@@ -29,7 +29,7 @@
     --theme-bg: rgba(254, 247, 220, 0.6);
     --theme-border: #e6ddae;
     --theme-text: #3b2d00;
-    --theme-bg-page: url('/seasons/2026/expanded.png');
+    --theme-bg-page: url('/seasons/2026/expanded.avif');
     --theme-h1-color: #3b2d00;
     --theme-subtext-color: #5a4800;
     --theme-button-bg: #fff8e5;
@@ -47,7 +47,7 @@
     --theme-bg: rgba(10, 47, 49, 0.6);
     --theme-border: #2d6160;
     --theme-text: #f0f7f4;
-    --theme-bg-page: url('/seasons/2027/expanded.png');
+    --theme-bg-page: url('/seasons/2027/expanded.avif');
     --theme-h1-color: #f5f1e3;
     --theme-subtext-color: #a8c9c2;
     --theme-button-bg: rgba(15, 60, 61, 0.95);
