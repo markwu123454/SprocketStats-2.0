@@ -6,6 +6,9 @@ interface User {
     name?: string
     given_name?: string
     picture?: string
+    display_name?: string
+    role?: string
+    onboarding_complete?: boolean
 }
 
 interface AuthContextValue {
@@ -13,6 +16,7 @@ interface AuthContextValue {
     loading: boolean
     signInWithGoogle: () => void
     logout: () => Promise<void>
+    refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -23,12 +27,15 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null)
     const [loading, setLoading] = useState(true)
 
-    useEffect(() => {
-        fetch(`${API}/auth/me`, {credentials: "include"})
+    const fetchUser = useCallback(async () => {
+        const data = await fetch(`${API}/auth/me`, {credentials: "include"})
             .then((r) => (r.ok ? r.json() : null))
-            .then((data) => setUser(data))
-            .finally(() => setLoading(false))
+        setUser(data)
     }, [])
+
+    useEffect(() => {
+        fetchUser().finally(() => setLoading(false))
+    }, [fetchUser])
 
     const signInWithGoogle = useCallback(() => {
         window.location.href = `${API}/auth/login`
@@ -39,8 +46,12 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
         setUser(null)
     }, [])
 
+    const refreshUser = useCallback(async () => {
+        await fetchUser()
+    }, [fetchUser])
+
     return (
-        <AuthContext.Provider value={{user, loading, signInWithGoogle, logout}}>
+        <AuthContext.Provider value={{user, loading, signInWithGoogle, logout, refreshUser}}>
             {children}
         </AuthContext.Provider>
     )

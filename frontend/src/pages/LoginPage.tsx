@@ -166,7 +166,10 @@ export default function LoginPage() {
     const isMobile = () => typeof window !== "undefined" && window.innerWidth < 768;
     const snapTo   = (h: number) => { setSheetHeight(h); setDragging(false); };
 
-    useEffect(() => { markReady() }, [])
+    useEffect(() => {
+        const t = setTimeout(() => markReady(), 500)
+        return () => clearTimeout(t)
+    }, [])
 
     // Track whether we're in mobile view reactively
     const [isMobileView, setIsMobileView] = useState(() => isMobile());
@@ -351,9 +354,6 @@ export default function LoginPage() {
                         left: 50% !important;
                         transform: translateX(-50%) !important;
                         margin: 0 !important;
-                    }
-                    .login-logo-row {
-                        display: none !important;
                     }
                     .login-time-badge {
                         top: 20px !important;
@@ -572,34 +572,32 @@ export default function LoginPage() {
                     }}
                     className="login-drag-handle"
                 />
-                <div
-                    className="login-logo-row flex items-center gap-2.5"
-                    style={{ color: "var(--theme-h1-color)" }}
-                >
-                    <div
-                        style={{
-                            width: 36,
-                            height: 36,
-                            flexShrink: 0,
-                            backgroundColor: "var(--theme-h1-color)",
-                            mask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
-                            WebkitMask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
-                        }}
-                    />
-                    <span
-                        className="font-semibold text-[15px]"
-                        style={{
-                            letterSpacing: "0.01em",
-                            color: "var(--theme-h1-color)",
-                            lineHeight: 1,
-                        }}
-                    >
-                        SprocketStats
-                    </span>
-                </div>
-
                 <div className="login-form-center self-center w-full max-w-[360px] mx-auto">
                     <div className="login-reveal-head login-expand-only">
+                        {/* Brand lockup — sits directly above the
+                            heading so it reveals/hides together with
+                            the "Sign in" prompt on mobile. */}
+                        <div className="flex items-center gap-2.5 mb-4 theme-h1-color">
+                            <div
+                                style={{
+                                    width: 32,
+                                    height: 32,
+                                    flexShrink: 0,
+                                    backgroundColor: "var(--theme-h1-color)",
+                                    mask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
+                                    WebkitMask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
+                                }}
+                            />
+                            <span
+                                className="font-semibold text-[15px] theme-h1-color"
+                                style={{
+                                    letterSpacing: "0.01em",
+                                    lineHeight: 1,
+                                }}
+                            >
+                                SprocketStats
+                            </span>
+                        </div>
                         <h1
                             className="m-0 mb-1.5 font-semibold"
                             style={{

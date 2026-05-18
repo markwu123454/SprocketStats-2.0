@@ -5,6 +5,7 @@ from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from jose import ExpiredSignatureError, JWTError, jwt
+from pydantic import BaseModel, field_validator
 
 import db
 
@@ -14,6 +15,17 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL")
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+
+VALID_ROLES = {
+    "cad_member", "cad_lead",
+    "manufacturing_member", "manufacturing_lead",
+    "programming_member", "programming_lead",
+    "scouting_member", "scouting_lead",
+    "publicity_member", "publicity_lead",
+    "operations_member", "operations_lead",
+    "outreach_member", "outreach_lead",
+    "captain", "mentor", "alumni",
+}
 
 oauth = OAuth()
 oauth.register(
@@ -34,11 +46,26 @@ def _issue_jwt(user: dict) -> str:
             "name": user.get("name"),
             "given_name": user.get("given_name"),
             "picture": user.get("picture"),
+            "display_name": user.get("display_name"),
+            "role": user.get("role"),
+            "onboarding_complete": user.get("onboarding_complete", False),
             "iat": now,
             "exp": now + timedelta(minutes=JWT_EXPIRE_MINUTES),
         },
         JWT_SECRET,
         algorithm=JWT_ALGORITHM,
+    )
+
+
+def _set_auth_cookie(response, token: str):
+    response.set_cookie(
+        key="auth_token",
+        value=token,
+        httponly=True,
+        secure=os.environ.get("ENV") == "production",
+        samesite="lax",
+        max_age=JWT_EXPIRE_MINUTES * 60,
+        path="/",
     )
 
 
@@ -75,16 +102,9 @@ async def callback(request: Request):
     user_dict["given_name"] = user_info.get("given_name")
     session_jwt = _issue_jwt(user_dict)
 
-    response = RedirectResponse(url=f"{FRONTEND_URL}/dashboard")
-    response.set_cookie(
-        key="auth_token",
-        value=session_jwt,
-        httponly=True,
-        secure=os.environ.get("ENV") == "production",
-        samesite="lax",
-        max_age=JWT_EXPIRE_MINUTES * 60,
-        path="/",
-    )
+    redirect_path = "/onboarding" if not user_dict.get("onboarding_complete") else "/dashboard"
+    response = RedirectResponse(url=f"{FRONTEND_URL}{redirect_path}")
+    _set_auth_cookie(response, session_jwt)
     return response
 
 
@@ -103,4 +123,43 @@ async def me(user: dict = Depends(get_current_user)):
         "name": user.get("name"),
         "given_name": user.get("given_name"),
         "picture": user.get("picture"),
+        "display_name": user.get("display_name"),
+        "role": user.get("role"),
+        "onboarding_complete": user.get("onboarding_complete", False),
     }
+
+
+class OnboardingRequest(BaseModel):
+    display_name: str
+    role: str
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Name cannot be empty")
+        if len(v) > 64:
+            raise ValueError("Name must be 64 characters or fewer")
+        return v
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        if v not in VALID_ROLES:
+            raise ValueError(f"Invalid role: {v}")
+        return v
+
+
+@router.post("/onboarding")
+async def complete_onboarding(
+    body: OnboardingRequest,
+    user: dict = Depends(get_current_user),
+):
+    updated = await db.update_user_onboarding(user["sub"], body.display_name, body.role)
+    updated_dict = dict(updated)
+    session_jwt = _issue_jwt(updated_dict)
+
+    response = JSONResponse({"ok": True})
+    _set_auth_cookie(response, session_jwt)
+    return response

@@ -64,13 +64,16 @@ async def init_db():
         async with conn.transaction():
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS users (
-                    id          TEXT        PRIMARY KEY,
-                    email       TEXT        NOT NULL UNIQUE,
-                    name        TEXT,
-                    given_name  TEXT,
-                    picture     TEXT,
-                    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-                    last_login  TIMESTAMPTZ NOT NULL DEFAULT now()
+                    id                  TEXT        PRIMARY KEY,
+                    email               TEXT        NOT NULL UNIQUE,
+                    name                TEXT,
+                    given_name          TEXT,
+                    picture             TEXT,
+                    display_name        TEXT,
+                    role                TEXT,
+                    onboarding_complete BOOLEAN     NOT NULL DEFAULT false,
+                    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    last_login          TIMESTAMPTZ NOT NULL DEFAULT now()
                 )
             """)
     except Exception as e:
@@ -85,6 +88,11 @@ async def run_migrations():
     pool, conn = await get_db_connection(DB_NAME)
     try:
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS given_name TEXT")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT")
+        await conn.execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN NOT NULL DEFAULT false"
+        )
     except Exception as e:
         logger.warning("Migration warning: %s", e)
     finally:
@@ -128,5 +136,26 @@ async def get_user(user_id: str) -> asyncpg.Record | None:
     except Exception as e:
         logger.error("get_user failed: %s", e)
         raise HTTPException(status_code=500, detail="Failed to fetch user")
+    finally:
+        await release_db_connection(pool, conn)
+
+
+async def update_user_onboarding(user_id: str, display_name: str, role: str) -> asyncpg.Record:
+    pool, conn = await get_db_connection(DB_NAME)
+    try:
+        return await conn.fetchrow(
+            """
+            UPDATE users
+            SET display_name = $2, role = $3, onboarding_complete = true
+            WHERE id = $1
+            RETURNING *
+            """,
+            user_id,
+            display_name,
+            role,
+        )
+    except Exception as e:
+        logger.error("update_user_onboarding failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to update user onboarding")
     finally:
         await release_db_connection(pool, conn)

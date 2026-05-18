@@ -18,8 +18,8 @@ export default defineConfig({
             registerType: "autoUpdate",
 
             manifest: {
-                name: "Sprocketstats",
-                short_name: "Spstats",
+                name: "SprocketStats",
+                short_name: "SprocketStats",
                 start_url: "/",
                 display: "standalone",
                 background_color: "#ffffff",

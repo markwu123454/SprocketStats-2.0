@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -31,7 +30,6 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
     s.connect(("8.8.8.8", 80))
     local_ip = s.getsockname()[0]
 
-load_dotenv()
 
 # SessionMiddleware must come before CORSMiddleware
 app.add_middleware(

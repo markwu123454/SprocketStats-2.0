@@ -7,11 +7,17 @@ export default function AuthWrapper({children}: { children: React.ReactNode }) {
     const navigate = useNavigate()
 
     useEffect(() => {
-        if (!loading && !user) navigate("/", {replace: true})
+        if (!loading) {
+            if (!user) {
+                navigate("/", {replace: true})
+            } else if (!user.onboarding_complete) {
+                navigate("/onboarding", {replace: true})
+            }
+        }
     }, [user, loading, navigate])
 
     if (loading) return null
-    if (!user) return null
+    if (!user || !user.onboarding_complete) return null
 
     return <>{children}</>
 }

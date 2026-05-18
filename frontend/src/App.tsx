@@ -7,10 +7,16 @@ import {AppReadyProvider} from "@/contexts/appReadyContext"
 
 import AuthWrapper from "@/components/wrappers/AuthWrapper.tsx"
 
-const LoginPage = lazy(() => import("@/pages/LoginPage.tsx"))
-const DashboardPage = lazy(() => import("@/pages/DashboardPage.tsx"))
-const AppShell = lazy(() => import("@/layouts/AppShell.tsx"))
+const LoginPage      = lazy(() => import("@/pages/LoginPage.tsx"))
+const OnboardingPage = lazy(() => import("@/pages/OnboardingPage.tsx"))
+const AppShell       = lazy(() => import("@/layouts/AppShell.tsx"))
+const DashboardPage  = lazy(() => import("@/pages/DashboardPage.tsx"))
+const AccountPage    = lazy(() => import("@/pages/AccountPage.tsx"))
+const ComingSoonPage = lazy(() => import("@/pages/ComingSoonPage.tsx"))
 
+function Protected({children}: {children: React.ReactNode}) {
+    return <AuthWrapper>{children}</AuthWrapper>
+}
 
 export default function App() {
     return (
@@ -22,12 +28,23 @@ export default function App() {
                             <Suspense fallback={null}>
                                 <Routes>
                                     <Route path="/" element={<LoginPage/>}/>
+                                    <Route path="/onboarding" element={<OnboardingPage/>}/>
 
                                     <Route element={<AppShell/>}>
                                         <Route path="/dashboard" element={
-                                            <AuthWrapper>
-                                                <DashboardPage/>
-                                            </AuthWrapper>
+                                            <Protected><DashboardPage/></Protected>
+                                        }/>
+                                        <Route path="/attendance" element={
+                                            <Protected><ComingSoonPage title="Attendance"/></Protected>
+                                        }/>
+                                        <Route path="/competition" element={
+                                            <Protected><ComingSoonPage title="Competition"/></Protected>
+                                        }/>
+                                        <Route path="/scouting" element={
+                                            <Protected><ComingSoonPage title="Scouting"/></Protected>
+                                        }/>
+                                        <Route path="/account" element={
+                                            <Protected><AccountPage/></Protected>
                                         }/>
                                     </Route>
                                 </Routes>
