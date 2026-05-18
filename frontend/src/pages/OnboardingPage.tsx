@@ -138,6 +138,127 @@ const ROLE_OPTIONS: RoleOption[] = [
     ...STANDALONE_ROLES.map(r => ({ value: r.value, label: r.label })),
 ]
 
+/* ── Grade / team-year options ───────────────────────────────── */
+const GRADE_OPTIONS = [
+    { value: "freshman",  label: "Freshman"  },
+    { value: "sophomore", label: "Sophomore" },
+    { value: "junior",    label: "Junior"    },
+    { value: "senior",    label: "Senior"    },
+]
+
+const TEAM_YEAR_OPTIONS = [
+    { value: "year_1", label: "Year 1" },
+    { value: "year_2", label: "Year 2" },
+    { value: "year_3", label: "Year 3" },
+    { value: "year_4", label: "Year 4" },
+]
+
+/* ── Generic simple dropdown ─────────────────────────────────── */
+interface SimpleOption { value: string; label: string }
+
+function SimpleDropdown({
+                            value,
+                            onChange,
+                            placeholder,
+                            options,
+                        }: {
+    value: string | null
+    onChange: (v: string) => void
+    placeholder: string
+    options: SimpleOption[]
+}) {
+    const [open, setOpen] = useState(false)
+    const [dropUp, setDropUp] = useState(false)
+    const rootRef = useRef<HTMLDivElement>(null)
+    const btnRef = useRef<HTMLButtonElement>(null)
+
+    const MENU_MAX = 180
+
+    useEffect(() => {
+        if (!open) return
+        const onDoc = (e: MouseEvent) => {
+            if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
+        }
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false) }
+        document.addEventListener("mousedown", onDoc)
+        document.addEventListener("keydown", onKey)
+        return () => {
+            document.removeEventListener("mousedown", onDoc)
+            document.removeEventListener("keydown", onKey)
+        }
+    }, [open])
+
+    function handleToggle() {
+        setOpen(prev => {
+            const next = !prev
+            if (next && btnRef.current) {
+                const rect = btnRef.current.getBoundingClientRect()
+                const below = window.innerHeight - rect.bottom
+                const above = rect.top
+                setDropUp(below < MENU_MAX && above > below)
+            }
+            return next
+        })
+    }
+
+    const selected = options.find(o => o.value === value)
+
+    return (
+        <div ref={rootRef} style={{ position: "relative" }}>
+            <button
+                ref={btnRef}
+                type="button"
+                onClick={handleToggle}
+                aria-haspopup="listbox"
+                aria-expanded={open}
+                className={[
+                    "w-full flex items-center justify-between rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-border",
+                    selected ? "theme-text" : "theme-subtext-color",
+                ].join(" ")}
+            >
+                <span>{selected ? selected.label : placeholder}</span>
+                <ChevronDown
+                    size={16}
+                    className="theme-subtext-color shrink-0"
+                    style={{ transition: "transform .18s ease", transform: open ? "rotate(180deg)" : "none" }}
+                />
+            </button>
+
+            {open && (
+                <div
+                    role="listbox"
+                    className="absolute left-0 right-0 z-50 rounded-lg border overflow-y-auto theme-bg theme-border theme-scrollbar"
+                    style={{
+                        maxHeight: MENU_MAX,
+                        boxShadow: "0 12px 32px -10px rgba(0,0,0,.45)",
+                        ...(dropUp ? { bottom: "calc(100% + 8px)" } : { top: "calc(100% + 8px)" }),
+                    }}
+                >
+                    {options.map(opt => {
+                        const active = value === opt.value
+                        return (
+                            <button
+                                key={opt.value}
+                                type="button"
+                                role="option"
+                                aria-selected={active}
+                                onClick={() => { onChange(opt.value); setOpen(false) }}
+                                className={[
+                                    "w-full flex items-center justify-between px-3 py-2 text-sm text-left transition-colors theme-text",
+                                    active ? "theme-button-hover" : "theme-bg hover:theme-button-hover",
+                                ].join(" ")}
+                            >
+                                <span>{opt.label}</span>
+                                {active && <Check size={15} className="theme-text-contrast shrink-0" />}
+                            </button>
+                        )
+                    })}
+                </div>
+            )}
+        </div>
+    )
+}
+
 /* ── Role dropdown component ─────────────────────────────────── */
 function RoleDropdown({
                           value,
@@ -259,16 +380,22 @@ function RoleDropdown({
 /* ════════════════════════════════════════════════════════════════
    OnboardingPage — split-hero layout matching LoginPage
    ════════════════════════════════════════════════════════════════ */
+const ROLES_WITHOUT_SCHOOL_INFO = new Set(["alumni", "mentor"])
+
 export default function OnboardingPage() {
-    const {user, loading, refreshUser} = useAuth()
+    const {user, loading, refreshUser, logout} = useAuth()
     const navigate = useNavigate()
     const markReady = useAppReady()
     const season = useThemeSeasonInfo()
 
     const [displayName, setDisplayName] = useState("")
     const [selectedRole, setSelectedRole] = useState<string | null>(null)
+    const [selectedGrade, setSelectedGrade] = useState<string | null>(null)
+    const [selectedTeamYear, setSelectedTeamYear] = useState<string | null>(null)
     const [submitting, setSubmitting] = useState(false)
     const [error, setError] = useState<string | null>(null)
+
+    const needsSchoolInfo = selectedRole !== null && !ROLES_WITHOUT_SCHOOL_INFO.has(selectedRole)
 
     useEffect(() => {
         markReady()
@@ -311,13 +438,21 @@ export default function OnboardingPage() {
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault()
+        const name = displayName.trim()
+        if (!name) {
+            setError("Please enter your name.")
+            return
+        }
         if (!selectedRole) {
             setError("Please select your role.")
             return
         }
-        const name = displayName.trim()
-        if (!name) {
-            setError("Please enter your name.")
+        if (needsSchoolInfo && !selectedGrade) {
+            setError("Please select your grade.")
+            return
+        }
+        if (needsSchoolInfo && !selectedTeamYear) {
+            setError("Please select your year on Team Sprocket.")
             return
         }
         setSubmitting(true)
@@ -327,7 +462,12 @@ export default function OnboardingPage() {
                 method: "POST",
                 credentials: "include",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({display_name: name, role: selectedRole}),
+                body: JSON.stringify({
+                    display_name: name,
+                    role: selectedRole,
+                    grade: needsSchoolInfo ? selectedGrade : null,
+                    team_year: needsSchoolInfo ? selectedTeamYear : null,
+                }),
             })
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}))
@@ -584,10 +724,44 @@ export default function OnboardingPage() {
                                 value={selectedRole}
                                 onChange={v => {
                                     setSelectedRole(v)
+                                    if (ROLES_WITHOUT_SCHOOL_INFO.has(v)) {
+                                        setSelectedGrade(null)
+                                        setSelectedTeamYear(null)
+                                    }
                                     setError(null)
                                 }}
                             />
                         </div>
+
+                        {/* Grade dropdown — hidden for alumni / mentor */}
+                        {needsSchoolInfo && (
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-semibold theme-h1-color">
+                                    What grade are you in?
+                                </label>
+                                <SimpleDropdown
+                                    value={selectedGrade}
+                                    onChange={v => { setSelectedGrade(v); setError(null) }}
+                                    placeholder="Select your grade…"
+                                    options={GRADE_OPTIONS}
+                                />
+                            </div>
+                        )}
+
+                        {/* Team year dropdown — hidden for alumni / mentor */}
+                        {needsSchoolInfo && (
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-semibold theme-h1-color">
+                                    What year are you on Team Sprocket?
+                                </label>
+                                <SimpleDropdown
+                                    value={selectedTeamYear}
+                                    onChange={v => { setSelectedTeamYear(v); setError(null) }}
+                                    placeholder="Select your year…"
+                                    options={TEAM_YEAR_OPTIONS}
+                                />
+                            </div>
+                        )}
 
                         {error && (
                             <p className="text-sm text-red-500 text-center -mt-1">{error}</p>
@@ -595,7 +769,12 @@ export default function OnboardingPage() {
 
                         <button
                             type="submit"
-                            disabled={submitting || !selectedRole || !displayName.trim()}
+                            disabled={
+                                submitting ||
+                                !selectedRole ||
+                                !displayName.trim() ||
+                                (needsSchoolInfo && (!selectedGrade || !selectedTeamYear))
+                            }
                             className="w-full flex items-center justify-center gap-2 mt-1 rounded-xl border font-semibold text-sm transition-opacity disabled:opacity-40 theme-bg theme-border theme-text-contrast"
                             style={{ height: "52px" }}
                         >
@@ -603,6 +782,14 @@ export default function OnboardingPage() {
                             {!submitting && <ChevronRight size={16}/>}
                         </button>
                     </form>
+
+                    <button
+                        type="button"
+                        onClick={async () => { await logout(); navigate("/", {replace: true}) }}
+                        className="w-full mt-4 text-sm theme-subtext-color hover:theme-text transition-colors text-center"
+                    >
+                        Sign out and go back
+                    </button>
                 </div>
             </section>
         </div>

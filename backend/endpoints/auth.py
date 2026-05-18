@@ -5,7 +5,7 @@ from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from jose import ExpiredSignatureError, JWTError, jwt
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 import db
 
@@ -26,6 +26,10 @@ VALID_ROLES = {
     "outreach_member", "outreach_lead",
     "captain", "mentor", "alumni",
 }
+
+VALID_GRADES = {"freshman", "sophomore", "junior", "senior"}
+VALID_TEAM_YEARS = {"year_1", "year_2", "year_3", "year_4"}
+ROLES_WITHOUT_SCHOOL_INFO = {"alumni", "mentor"}
 
 oauth = OAuth()
 oauth.register(
@@ -48,6 +52,8 @@ def _issue_jwt(user: dict) -> str:
             "picture": user.get("picture"),
             "display_name": user.get("display_name"),
             "role": user.get("role"),
+            "grade": user.get("grade"),
+            "team_year": user.get("team_year"),
             "onboarding_complete": user.get("onboarding_complete", False),
             "iat": now,
             "exp": now + timedelta(minutes=JWT_EXPIRE_MINUTES),
@@ -125,6 +131,8 @@ async def me(user: dict = Depends(get_current_user)):
         "picture": user.get("picture"),
         "display_name": user.get("display_name"),
         "role": user.get("role"),
+        "grade": user.get("grade"),
+        "team_year": user.get("team_year"),
         "onboarding_complete": user.get("onboarding_complete", False),
     }
 
@@ -132,6 +140,8 @@ async def me(user: dict = Depends(get_current_user)):
 class OnboardingRequest(BaseModel):
     display_name: str
     role: str
+    grade: str | None = None
+    team_year: str | None = None
 
     @field_validator("display_name")
     @classmethod
@@ -150,13 +160,36 @@ class OnboardingRequest(BaseModel):
             raise ValueError(f"Invalid role: {v}")
         return v
 
+    @field_validator("grade")
+    @classmethod
+    def validate_grade(cls, v: str | None) -> str | None:
+        if v is not None and v not in VALID_GRADES:
+            raise ValueError(f"Invalid grade: {v}")
+        return v
+
+    @field_validator("team_year")
+    @classmethod
+    def validate_team_year(cls, v: str | None) -> str | None:
+        if v is not None and v not in VALID_TEAM_YEARS:
+            raise ValueError(f"Invalid team year: {v}")
+        return v
+
+    @model_validator(mode="after")
+    def validate_school_info_required(self) -> "OnboardingRequest":
+        if self.role not in ROLES_WITHOUT_SCHOOL_INFO:
+            if not self.grade:
+                raise ValueError("Grade is required for this role")
+            if not self.team_year:
+                raise ValueError("Team year is required for this role")
+        return self
+
 
 @router.post("/onboarding")
 async def complete_onboarding(
     body: OnboardingRequest,
     user: dict = Depends(get_current_user),
 ):
-    updated = await db.update_user_onboarding(user["sub"], body.display_name, body.role)
+    updated = await db.update_user_onboarding(user["sub"], body.display_name, body.role, body.grade, body.team_year)
     updated_dict = dict(updated)
     session_jwt = _issue_jwt(updated_dict)
 

@@ -71,6 +71,8 @@ async def init_db():
                     picture             TEXT,
                     display_name        TEXT,
                     role                TEXT,
+                    grade               TEXT,
+                    team_year           TEXT,
                     onboarding_complete BOOLEAN     NOT NULL DEFAULT false,
                     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
                     last_login          TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -90,6 +92,8 @@ async def run_migrations():
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS given_name TEXT")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS grade TEXT")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS team_year TEXT")
         await conn.execute(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN NOT NULL DEFAULT false"
         )
@@ -140,19 +144,23 @@ async def get_user(user_id: str) -> asyncpg.Record | None:
         await release_db_connection(pool, conn)
 
 
-async def update_user_onboarding(user_id: str, display_name: str, role: str) -> asyncpg.Record:
+async def update_user_onboarding(
+    user_id: str, display_name: str, role: str, grade: str, team_year: str
+) -> asyncpg.Record:
     pool, conn = await get_db_connection(DB_NAME)
     try:
         return await conn.fetchrow(
             """
             UPDATE users
-            SET display_name = $2, role = $3, onboarding_complete = true
+            SET display_name = $2, role = $3, grade = $4, team_year = $5, onboarding_complete = true
             WHERE id = $1
             RETURNING *
             """,
             user_id,
             display_name,
             role,
+            grade,
+            team_year,
         )
     except Exception as e:
         logger.error("update_user_onboarding failed: %s", e)

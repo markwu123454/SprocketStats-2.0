@@ -8,6 +8,8 @@ interface User {
     picture?: string
     display_name?: string
     role?: string
+    grade?: string
+    team_year?: string
     onboarding_complete?: boolean
 }
 
