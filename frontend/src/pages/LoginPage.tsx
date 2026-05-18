@@ -282,6 +282,15 @@ export default function LoginPage() {
                         margin-top: 0 !important;
                         padding: 28px 56px !important;
                     }
+                    /* Desktop: standalone logo top-left (row 1),
+                       form centered in the 1fr track. The in-form
+                       logo copy is hidden here (mobile-only). */
+                    .login-logo-row {
+                        display: flex !important;
+                    }
+                    .login-inform-logo {
+                        display: none !important;
+                    }
                     /* Desktop keeps the original stacked form: heading
                        block, button, then terms/footer — all in normal
                        flow, vertically centred. */
@@ -354,6 +363,15 @@ export default function LoginPage() {
                         left: 50% !important;
                         transform: translateX(-50%) !important;
                         margin: 0 !important;
+                    }
+                    /* Mobile: standalone logo hidden; the in-form copy
+                       (inside .login-reveal-head) is used so it reveals
+                       and hides with the sign-in prompt. */
+                    .login-logo-row {
+                        display: none !important;
+                    }
+                    .login-inform-logo {
+                        display: flex !important;
                     }
                     .login-time-badge {
                         top: 20px !important;
@@ -572,12 +590,33 @@ export default function LoginPage() {
                     }}
                     className="login-drag-handle"
                 />
+                {/* Standalone brand lockup — desktop only, pinned
+                    top-left of the panel (grid row 1). Hidden on
+                    mobile, where the in-form copy is used instead. */}
+                <div className="login-logo-row flex items-center gap-2.5 theme-h1-color">
+                    <div
+                        style={{
+                            width: 36,
+                            height: 36,
+                            flexShrink: 0,
+                            backgroundColor: "var(--theme-h1-color)",
+                            mask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
+                            WebkitMask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
+                        }}
+                    />
+                    <span
+                        className="font-semibold text-[15px] theme-h1-color"
+                        style={{ letterSpacing: "0.01em", lineHeight: 1 }}
+                    >
+                        SprocketStats
+                    </span>
+                </div>
                 <div className="login-form-center self-center w-full max-w-[360px] mx-auto">
                     <div className="login-reveal-head login-expand-only">
-                        {/* Brand lockup — sits directly above the
-                            heading so it reveals/hides together with
-                            the "Sign in" prompt on mobile. */}
-                        <div className="flex items-center gap-2.5 mb-4 theme-h1-color">
+                        {/* Brand lockup — mobile only; sits directly
+                            above the heading so it reveals/hides with
+                            the "Sign in" prompt as the sheet expands. */}
+                        <div className="login-inform-logo flex items-center gap-2.5 mb-4 theme-h1-color">
                             <div
                                 style={{
                                     width: 32,
