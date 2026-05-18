@@ -14,6 +14,7 @@ const DashboardPage  = lazy(() => import("@/pages/DashboardPage.tsx"))
 const AttendancePage    = lazy(() => import("@/pages/AttendancePage"))
 const CompetitionPage    = lazy(() => import("@/pages/CompetitionPage"))
 const ScoutingPage    = lazy(() => import("@/pages/ScoutingPage"))
+const ControlPanelPage    = lazy(() => import("@/pages/ControlPanelPage"))
 const SettingPage    = lazy(() => import("@/pages/SettingPage"))
 
 function Protected({children}: {children: React.ReactNode}) {
@@ -58,6 +59,9 @@ export default function App() {
                                         }/>
                                         <Route path="/scouting" element={
                                             <Protected><ScoutingPage/></Protected>
+                                        }/>
+                                        <Route path="/control" element={
+                                            <Protected><ControlPanelPage/></Protected>
                                         }/>
                                         <Route path="/settings" element={
                                             <Protected><SettingPage/></Protected>

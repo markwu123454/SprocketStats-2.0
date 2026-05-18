@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation } from "react-router-dom"
 import { useAuth } from "@/contexts/authContext.tsx"
 import {
     LayoutDashboard, CalendarCheck, Trophy, ClipboardList, Settings,
-    LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen,
+    LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen, SlidersHorizontal,
 } from "lucide-react"
 import { formatRole } from "@/pages/OnboardingPage.tsx"
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community"
@@ -18,13 +18,32 @@ function getNavTextPref(): boolean {
     return stored === null ? true : stored === "true"
 }
 
-const NAV_TABS = [
+// Control Panel access: any subgroup lead (role ends in "_lead"),
+// plus the standalone "captain" and "mentor" roles.
+// Roles like "alumni" and "<subgroup>_member" do NOT get access.
+const STANDALONE_PRIVILEGED_ROLES = ["captain", "mentor"]
+
+function hasControlPanelAccess(role?: string | null): boolean {
+    if (!role) return false
+    const r = role.toLowerCase()
+    return r.endsWith("_lead") || STANDALONE_PRIVILEGED_ROLES.includes(r)
+}
+
+// Core tabs everyone sees (4 tabs). Settings lives in the top-right
+// profile menu, not in the nav, so it's in a consistent place for all users.
+const CORE_TABS = [
     { to: "/dashboard",   label: "Dashboard",   icon: LayoutDashboard },
     { to: "/attendance",  label: "Attendance",  icon: CalendarCheck },
     { to: "/competition", label: "Competition", icon: Trophy },
     { to: "/scouting",    label: "Scouting",    icon: ClipboardList },
-    { to: "/settings",    label: "Settings",    icon: Settings },
 ]
+
+// Fifth tab, shown only to privileged roles (subgroup leads, captain, mentor).
+const CONTROL_PANEL_TAB = {
+    to: "/control",
+    label: "Control Panel",
+    icon: SlidersHorizontal,
+}
 
 export default function AppShell() {
     const { user, logout } = useAuth()
@@ -33,6 +52,9 @@ export default function AppShell() {
 
     const [menuOpen, setMenuOpen] = useState(false)
     const menuRef = useRef<HTMLDivElement>(null)
+
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+    const mobileMenuRef = useRef<HTMLDivElement>(null)
 
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
         localStorage.getItem("sidebar-collapsed") === "true"
@@ -55,10 +77,18 @@ export default function AppShell() {
             if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
                 setMenuOpen(false)
             }
+            if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) {
+                setMobileMenuOpen(false)
+            }
         }
         document.addEventListener("mousedown", onClickOutside)
         return () => document.removeEventListener("mousedown", onClickOutside)
     }, [])
+
+    // Close the mobile profile dropdown whenever the route changes.
+    useEffect(() => {
+        setMobileMenuOpen(false)
+    }, [location.pathname])
 
     function toggleSidebar() {
         setSidebarCollapsed(prev => {
@@ -69,6 +99,13 @@ export default function AppShell() {
     }
 
     const isActive = (to: string) => location.pathname === to
+
+    const canUseControlPanel = hasControlPanelAccess(user?.role)
+    // Both desktop sidebar and mobile bottom bar use the same list:
+    // 4 core tabs for everyone, plus Control Panel for privileged roles.
+    const navTabs = canUseControlPanel
+        ? [...CORE_TABS, CONTROL_PANEL_TAB]
+        : CORE_TABS
 
     return (
         <div className="flex flex-col min-h-0 theme-bg-page bg-cover" style={{ height: "var(--real-vh, 100dvh)" }}>
@@ -137,15 +174,58 @@ export default function AppShell() {
                         </div>
                     )}
 
+                    {/* Right: mobile profile dropdown */}
                     {user && (
-                        <Link to="/settings" className="md:hidden shrink-0">
-                            <img
-                                src={user.picture}
-                                alt={user.name}
-                                className="w-8 h-8 rounded-full"
-                                referrerPolicy="no-referrer"
-                            />
-                        </Link>
+                        <div className="relative md:hidden shrink-0" ref={mobileMenuRef}>
+                            <button
+                                onClick={() => setMobileMenuOpen(v => !v)}
+                                aria-label="Open profile menu"
+                                aria-expanded={mobileMenuOpen}
+                                className="block rounded-full hover:opacity-80 transition-opacity"
+                            >
+                                <img
+                                    src={user.picture}
+                                    alt={user.name}
+                                    className="w-8 h-8 rounded-full"
+                                    referrerPolicy="no-referrer"
+                                />
+                            </button>
+
+                            {mobileMenuOpen && (
+                                <div className="absolute right-0 mt-2 w-56 rounded-xl border shadow-lg z-50 py-1 theme-bg theme-border">
+                                    <div className="px-3 py-2.5 border-b theme-border flex items-center gap-2.5">
+                                        <img
+                                            src={user.picture}
+                                            alt={user.name}
+                                            className="w-9 h-9 rounded-full shrink-0"
+                                            referrerPolicy="no-referrer"
+                                        />
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-semibold theme-text truncate">{user.display_name ?? user.name}</p>
+                                            <p className="text-xs theme-subtext-color truncate">{user.email}</p>
+                                            {user.role && (
+                                                <p className="text-xs theme-text-contrast opacity-80 truncate mt-0.5">{formatRole(user.role)}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <Link
+                                        to="/settings"
+                                        onClick={() => setMobileMenuOpen(false)}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
+                                    >
+                                        <Settings size={14} />
+                                        Settings
+                                    </Link>
+                                    <button
+                                        onClick={() => { setMobileMenuOpen(false); void logout() }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
+                                    >
+                                        <LogOut size={14} />
+                                        Sign out
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
             </header>
@@ -162,7 +242,7 @@ export default function AppShell() {
                     }}
                 >
                     <nav className="flex flex-col gap-0.5 p-2 pt-3">
-                        {NAV_TABS.map(({ to, label, icon: Icon }) => {
+                        {navTabs.map(({ to, label, icon: Icon }) => {
                             const active = isActive(to)
                             return (
                                 <Link
@@ -209,7 +289,7 @@ export default function AppShell() {
                 style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
             >
                 <div className={showNavText ? "flex h-24" : "flex h-20"}>
-                    {NAV_TABS.map(({ to, label, icon: Icon }) => {
+                    {navTabs.map(({ to, label, icon: Icon }) => {
                         const active = isActive(to)
                         return (
                             <Link
