@@ -261,7 +261,7 @@ export default function LoginPage() {
             className="login-root grid"
             style={{
                 gridTemplateColumns: "1.05fr 0.95fr",
-                height: "100vh",
+                height: "var(--real-vh, 100dvh)",
             }}
         >
             <style>{`
@@ -315,8 +315,8 @@ export default function LoginPage() {
                         left: 0 !important;
                         right: 0 !important;
                         bottom: 0 !important;
-                        height: 100dvh !important;
-                        max-height: 100dvh !important;
+                        height: var(--real-vh, 100dvh) !important;
+                        max-height: var(--real-vh, 100dvh) !important;
                         overflow: hidden !important;
                         overscroll-behavior: none !important;
                     }
@@ -333,7 +333,7 @@ export default function LoginPage() {
                         left: 0 !important;
                         right: 0 !important;
                         bottom: 0 !important;
-                        height: 100dvh !important;
+                        height: var(--real-vh, 100dvh) !important;
                     }
                     /* Sheet becomes a bottom-anchored flex column.
                        No flexible grid track → content height is

@@ -1,4 +1,4 @@
-import {lazy, Suspense} from "react"
+import {lazy, Suspense, useLayoutEffect} from "react"
 import {BrowserRouter, Routes, Route} from "react-router-dom"
 import "./index.css"
 import ThemeProvider from "@/contexts/themeProvider.tsx"
@@ -21,12 +21,26 @@ function Protected({children}: {children: React.ReactNode}) {
 }
 
 export default function App() {
+    useLayoutEffect(() => {
+        const setVh = () => {
+            const h = window.visualViewport?.height ?? window.innerHeight
+            document.documentElement.style.setProperty("--real-vh", `${h}px`)
+        }
+        setVh()
+        window.visualViewport?.addEventListener("resize", setVh)
+        window.addEventListener("resize", setVh)
+        return () => {
+            window.visualViewport?.removeEventListener("resize", setVh)
+            window.removeEventListener("resize", setVh)
+        }
+    }, [])
+
     return (
         <ThemeProvider>
             <AuthProvider>
                 <AppReadyProvider>
                     <BrowserRouter>
-                        <div className="h-dvh flex flex-col min-h-0">
+                        <div className="flex flex-col min-h-0" style={{ height: "var(--real-vh, 100dvh)" }}>
                             <Suspense fallback={null}>
                                 <Routes>
                                     <Route path="/" element={<LoginPage/>}/>
