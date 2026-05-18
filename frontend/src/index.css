@@ -3,10 +3,6 @@
 
 @plugin 'tailwind-scrollbar';
 
-#root {
-    height: 100dvh;
-}
-
 @custom-variant theme-2025 (&:is(.theme-2025 *));
 @custom-variant theme-2026 (&:is(.theme-2026 *));
 @custom-variant theme-2027 (&:is(.theme-2027 *));
