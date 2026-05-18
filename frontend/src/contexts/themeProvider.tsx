@@ -30,9 +30,19 @@ export default function ThemeProvider({ children }: { children: ReactNode }) {
         setThemeState(t)
         localStorage.setItem(THEME_KEY, t)
 
-        // Update DOM
+        const bgMap: Record<Theme, string> = {
+            "theme-2025": "#0b234f",
+            "theme-2026": "#fef7dc",
+            "theme-2027": "#0a2f31",
+        }
+        const bg = bgMap[t]
+
         document.documentElement.classList.remove("theme-2025", "theme-2026", "theme-2027")
         document.documentElement.classList.add(t)
+        document.body.style.backgroundColor = bg
+
+        const meta = document.querySelector('meta[name="theme-color"]')
+        if (meta) meta.setAttribute("content", bg)
     }
 
     return (
