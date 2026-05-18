@@ -208,7 +208,7 @@ export default function AppShell() {
                 className="md:hidden shrink-0 border-t z-30 theme-bg theme-border"
                 style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
             >
-                <div className={showNavText ? "flex h-20" : "flex h-16"}>
+                <div className={showNavText ? "flex h-24" : "flex h-20"}>
                     {NAV_TABS.map(({ to, label, icon: Icon }) => {
                         const active = isActive(to)
                         return (
