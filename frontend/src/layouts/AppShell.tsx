@@ -208,14 +208,14 @@ export default function AppShell() {
                 className="md:hidden shrink-0 border-t z-30 theme-bg theme-border"
                 style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
             >
-                <div className={showNavText ? "flex h-14" : "flex h-12"}>
+                <div className={showNavText ? "flex h-20" : "flex h-16"}>
                     {NAV_TABS.map(({ to, label, icon: Icon }) => {
                         const active = isActive(to)
                         return (
                             <Link
                                 key={to}
                                 to={to}
-                                className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-opacity ${active ? "theme-text-contrast" : "theme-text"}`}
+                                className={`flex-1 flex flex-col items-center justify-start pt-4 gap-0.5 transition-opacity ${active ? "theme-text-contrast" : "theme-text"}`}
                                 style={{ opacity: active ? 1 : 0.45 }}
                             >
                                 <Icon size={21} strokeWidth={active ? 2.2 : 1.8} />

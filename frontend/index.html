@@ -8,7 +8,7 @@
     <link rel="manifest" href="/manifest.webmanifest"/>
     <meta name="apple-mobile-web-app-capable" content="yes"/>
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-    <meta name="theme-color" content="#0f3c3d"/>
+    <meta name="theme-color" content="#ffffff"/>
 
     <title>SprocketStats</title>
 
@@ -116,18 +116,24 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
 <script>
-    // Apply theme class before paint to avoid flash
     (function () {
         const raw = localStorage.getItem('app-theme');
         const valid = ['theme-2025', 'theme-2026', 'theme-2027'];
         const theme = valid.includes(raw) ? raw : 'theme-2027';
-        document.documentElement.classList.add(theme);
+
         const bgMap = {
             'theme-2025': '#102b6a',
             'theme-2026': '#fff8e5',
             'theme-2027': '#0f3c3d',
         };
-        document.body.style.backgroundColor = bgMap[theme];
+
+        const bg = bgMap[theme];
+
+        document.documentElement.classList.add(theme);
+        document.body.style.backgroundColor = bg;
+
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', bg);
     })();
 </script>
 
