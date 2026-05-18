@@ -71,7 +71,7 @@ export default function AppShell() {
     const isActive = (to: string) => location.pathname === to
 
     return (
-        <div className="h-screen flex flex-col min-h-0 theme-bg-page bg-cover">
+        <div className="h-dvh flex flex-col min-h-0 theme-bg-page bg-cover">
 
             {/* ── Top header ──────────────────────────────────────── */}
             <header className="shrink-0 border-b z-30 theme-bg theme-border">

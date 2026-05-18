@@ -26,7 +26,7 @@ export default function App() {
             <AuthProvider>
                 <AppReadyProvider>
                     <BrowserRouter>
-                        <div className="h-screen flex flex-col min-h-0">
+                        <div className="h-dvh flex flex-col min-h-0">
                             <Suspense fallback={null}>
                                 <Routes>
                                     <Route path="/" element={<LoginPage/>}/>
