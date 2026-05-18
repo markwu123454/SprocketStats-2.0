@@ -11,8 +11,10 @@ const LoginPage      = lazy(() => import("@/pages/LoginPage.tsx"))
 const OnboardingPage = lazy(() => import("@/pages/OnboardingPage.tsx"))
 const AppShell       = lazy(() => import("@/layouts/AppShell.tsx"))
 const DashboardPage  = lazy(() => import("@/pages/DashboardPage.tsx"))
-const AccountPage    = lazy(() => import("@/pages/AccountPage.tsx"))
-const ComingSoonPage = lazy(() => import("@/pages/ComingSoonPage.tsx"))
+const AttendancePage    = lazy(() => import("@/pages/AttendancePage"))
+const CompetitionPage    = lazy(() => import("@/pages/CompetitionPage"))
+const ScoutingPage    = lazy(() => import("@/pages/ScoutingPage"))
+const SettingPage    = lazy(() => import("@/pages/SettingPage"))
 
 function Protected({children}: {children: React.ReactNode}) {
     return <AuthWrapper>{children}</AuthWrapper>
@@ -35,16 +37,16 @@ export default function App() {
                                             <Protected><DashboardPage/></Protected>
                                         }/>
                                         <Route path="/attendance" element={
-                                            <Protected><ComingSoonPage title="Attendance"/></Protected>
+                                            <Protected><AttendancePage/></Protected>
                                         }/>
                                         <Route path="/competition" element={
-                                            <Protected><ComingSoonPage title="Competition"/></Protected>
+                                            <Protected><CompetitionPage/></Protected>
                                         }/>
                                         <Route path="/scouting" element={
-                                            <Protected><ComingSoonPage title="Scouting"/></Protected>
+                                            <Protected><ScoutingPage/></Protected>
                                         }/>
-                                        <Route path="/account" element={
-                                            <Protected><AccountPage/></Protected>
+                                        <Route path="/settings" element={
+                                            <Protected><SettingPage/></Protected>
                                         }/>
                                     </Route>
                                 </Routes>

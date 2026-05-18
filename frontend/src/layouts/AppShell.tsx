@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react"
 import { Outlet, Link, useLocation } from "react-router-dom"
 import { useAuth } from "@/contexts/authContext.tsx"
 import {
-    LayoutDashboard, CalendarCheck, Trophy, ClipboardList, CircleUser,
+    LayoutDashboard, CalendarCheck, Trophy, ClipboardList, Settings,
     LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react"
 import { formatRole } from "@/pages/OnboardingPage.tsx"
@@ -11,12 +11,19 @@ import { useAppReady } from "@/contexts/appReadyContext.tsx"
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
+const NAV_TEXT_KEY = "nav-show-text"
+
+function getNavTextPref(): boolean {
+    const stored = localStorage.getItem(NAV_TEXT_KEY)
+    return stored === null ? true : stored === "true"
+}
+
 const NAV_TABS = [
     { to: "/dashboard",   label: "Dashboard",   icon: LayoutDashboard },
     { to: "/attendance",  label: "Attendance",  icon: CalendarCheck },
     { to: "/competition", label: "Competition", icon: Trophy },
     { to: "/scouting",    label: "Scouting",    icon: ClipboardList },
-    { to: "/account",     label: "Account",     icon: CircleUser },
+    { to: "/settings",    label: "Settings",    icon: Settings },
 ]
 
 export default function AppShell() {
@@ -30,6 +37,16 @@ export default function AppShell() {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
         localStorage.getItem("sidebar-collapsed") === "true"
     )
+
+    const [showNavText, setShowNavText] = useState<boolean>(getNavTextPref)
+
+    useEffect(() => {
+        function onNavPrefsChange(e: Event) {
+            setShowNavText((e as CustomEvent<{ showNavText: boolean }>).detail.showNavText)
+        }
+        window.addEventListener("nav-prefs-change", onNavPrefsChange)
+        return () => window.removeEventListener("nav-prefs-change", onNavPrefsChange)
+    }, [])
 
     useEffect(() => { markReady() }, [])
 
@@ -57,10 +74,7 @@ export default function AppShell() {
         <div className="h-screen flex flex-col min-h-0 theme-bg-page bg-cover">
 
             {/* ── Top header ──────────────────────────────────────── */}
-            <header
-                className="shrink-0 border-b z-30"
-                style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
-            >
+            <header className="shrink-0 border-b z-30 theme-bg theme-border">
                 <div className="px-3 h-14 flex items-center justify-between gap-3">
 
                     {/* Left: sidebar toggle (desktop) + logo */}
@@ -76,15 +90,8 @@ export default function AppShell() {
                         <Link to="/dashboard" className="flex items-center gap-2 select-none pl-1 md:pl-0">
                             <div className="relative w-8 h-8 shrink-0">
                                 <img
-                                    className="absolute inset-0 w-full h-full object-contain"
-                                    style={{ animation: "spin 14s linear infinite" }}
-                                    src="/static/sprocket_logo_ring.png"
-                                    alt=""
-                                />
-                                <img
-                                    className="absolute inset-0 w-full h-full object-contain"
-                                    style={{ animation: "spin-rev 10s linear infinite" }}
-                                    src="/static/sprocket_logo_gear.png"
+                                    className="absolute inset-0 w-full h-full scale-125"
+                                    src="/sprocket_logo_gear.svg"
                                     alt=""
                                 />
                             </div>
@@ -110,11 +117,8 @@ export default function AppShell() {
                             </button>
 
                             {menuOpen && (
-                                <div
-                                    className="absolute right-0 mt-1 w-52 rounded-xl border shadow-lg z-50 py-1"
-                                    style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
-                                >
-                                    <div className="px-3 py-2.5 border-b" style={{ borderColor: "var(--theme-border)" }}>
+                                <div className="absolute right-0 mt-1 w-52 rounded-xl border shadow-lg z-50 py-1 theme-bg theme-border">
+                                    <div className="px-3 py-2.5 border-b theme-border">
                                         <p className="text-sm font-semibold theme-text truncate">{user.display_name ?? user.name}</p>
                                         <p className="text-xs theme-subtext-color truncate">{user.email}</p>
                                         {user.role && (
@@ -133,9 +137,8 @@ export default function AppShell() {
                         </div>
                     )}
 
-                    {/* Right: mobile avatar shortcut → /account */}
                     {user && (
-                        <Link to="/account" className="md:hidden shrink-0">
+                        <Link to="/settings" className="md:hidden shrink-0">
                             <img
                                 src={user.picture}
                                 alt={user.name}
@@ -152,10 +155,8 @@ export default function AppShell() {
 
                 {/* ── Desktop left sidebar ── */}
                 <aside
-                    className="hidden md:flex flex-col shrink-0 border-r overflow-hidden"
+                    className="hidden md:flex flex-col shrink-0 border-r overflow-hidden theme-bg theme-border"
                     style={{
-                        background: "var(--theme-bg)",
-                        borderColor: "var(--theme-border)",
                         width: sidebarCollapsed ? "56px" : "196px",
                         transition: "width 0.22s cubic-bezier(0.4, 0, 0.2, 1)",
                     }}
@@ -204,33 +205,28 @@ export default function AppShell() {
 
             {/* ── Mobile bottom tab bar ───────────────────────────── */}
             <nav
-                className="md:hidden shrink-0 border-t z-30"
-                style={{
-                    background: "var(--theme-bg)",
-                    borderColor: "var(--theme-border)",
-                    paddingBottom: "env(safe-area-inset-bottom, 0px)",
-                }}
+                className="md:hidden shrink-0 border-t z-30 theme-bg theme-border"
+                style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
             >
-                <div className="flex h-14">
+                <div className={showNavText ? "flex h-14" : "flex h-12"}>
                     {NAV_TABS.map(({ to, label, icon: Icon }) => {
                         const active = isActive(to)
                         return (
                             <Link
                                 key={to}
                                 to={to}
-                                className="flex-1 flex flex-col items-center justify-center gap-0.5 transition-opacity"
-                                style={{
-                                    color: active ? "var(--theme-button-bg)" : "var(--theme-text)",
-                                    opacity: active ? 1 : 0.45,
-                                }}
+                                className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-opacity ${active ? "theme-text-contrast" : "theme-text"}`}
+                                style={{ opacity: active ? 1 : 0.45 }}
                             >
                                 <Icon size={21} strokeWidth={active ? 2.2 : 1.8} />
-                                <span
-                                    className="font-medium"
-                                    style={{ fontSize: "10px", letterSpacing: "0.01em" }}
-                                >
-                                    {label}
-                                </span>
+                                {showNavText && (
+                                    <span
+                                        className="font-medium"
+                                        style={{ fontSize: "10px", letterSpacing: "0.01em" }}
+                                    >
+                                        {label}
+                                    </span>
+                                )}
                             </Link>
                         )
                     })}
