@@ -1,13 +1,13 @@
 import asyncpg
 import logging
 from fastapi import HTTPException
-from .connection import DB_NAME, get_db_connection, release_db_connection
+from .connection import DB_NAME_LABEL_STUDIO, get_db_connection, release_db_connection
 
 logger = logging.getLogger(__name__)
 
 
 async def get_labeling_summary() -> list[asyncpg.Record]:
-    pool, conn = await get_db_connection(DB_NAME)
+    pool, conn = await get_db_connection(DB_NAME_LABEL_STUDIO)
     try:
         return await conn.fetch(
             """
@@ -36,19 +36,21 @@ async def get_labeling_summary() -> list[asyncpg.Record]:
 
 
 async def get_annotator_contributions() -> list[asyncpg.Record]:
-    pool, conn = await get_db_connection(DB_NAME)
+    pool, conn = await get_db_connection(DB_NAME_LABEL_STUDIO)
     try:
         return await conn.fetch(
             """
             SELECT
-                p.id                                                AS project_id,
-                p.title                                             AS project,
-                u.id                                               AS user_id,
-                u.first_name || ' ' || u.last_name                 AS annotator,
+                p.id                                                             AS project_id,
+                p.title                                                          AS project,
+                u.id                                                             AS user_id,
+                u.first_name || ' ' || u.last_name                              AS annotator,
                 u.email,
-                COUNT(tc.id)                                        AS annotations_done,
-                COUNT(tc.id) FILTER (WHERE tc.was_cancelled = true) AS skipped,
-                ROUND(AVG(tc.lead_time)::numeric, 1)               AS avg_time_secs
+                COUNT(tc.id) FILTER (WHERE tc.was_cancelled = false)            AS annotations_done,
+                COUNT(tc.id) FILTER (WHERE tc.was_cancelled = true)             AS skipped,
+                ROUND(
+                    AVG(tc.lead_time) FILTER (WHERE tc.was_cancelled = false)::numeric, 1
+                )                                                                AS avg_time_secs
             FROM task_completion tc
             JOIN project p ON p.id = tc.project_id
             JOIN htx_user u ON u.id = tc.completed_by_id
@@ -62,5 +64,6 @@ async def get_annotator_contributions() -> list[asyncpg.Record]:
         raise HTTPException(status_code=500, detail="Failed to fetch annotator contributions")
     finally:
         await release_db_connection(pool, conn)
+
 
 __all__ = ["get_labeling_summary", "get_annotator_contributions"]
