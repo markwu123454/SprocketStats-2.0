@@ -1,4 +1,4 @@
-import {lazy, Suspense, useLayoutEffect} from "react"
+import {lazy, type ReactNode, Suspense, useLayoutEffect} from "react"
 import {BrowserRouter, Routes, Route} from "react-router-dom"
 import "./index.css"
 import ThemeProvider from "@/contexts/themeProvider.tsx"
@@ -7,8 +7,8 @@ import {AppReadyProvider} from "@/contexts/appReadyContext"
 
 import AuthWrapper from "@/components/wrappers/AuthWrapper.tsx"
 
-const LoginPage      = lazy(() => import("@/pages/LoginPage.tsx"))
-const OnboardingPage = lazy(() => import("@/pages/OnboardingPage.tsx"))
+const LoginPageRouter      = lazy(() => import("@/pages/LoginPageRouter"))
+const OnboardingPageRouter = lazy(() => import("@/pages/OnboardingPageRouter.tsx"))
 const AppShell       = lazy(() => import("@/layouts/AppShell.tsx"))
 const DashboardPage  = lazy(() => import("@/pages/DashboardPage.tsx"))
 const AttendancePage    = lazy(() => import("@/pages/AttendancePage"))
@@ -17,7 +17,7 @@ const ScoutingPage    = lazy(() => import("@/pages/ScoutingPage"))
 const ControlPanelPage    = lazy(() => import("@/pages/ControlPanelPage"))
 const SettingPage    = lazy(() => import("@/pages/SettingPage"))
 
-function Protected({children}: {children: React.ReactNode}) {
+function Protected({children}: {children: ReactNode}) {
     return <AuthWrapper>{children}</AuthWrapper>
 }
 
@@ -44,8 +44,8 @@ export default function App() {
                         <div className="flex flex-col min-h-0" style={{ height: "var(--real-vh, 100dvh)" }}>
                             <Suspense fallback={null}>
                                 <Routes>
-                                    <Route path="/" element={<LoginPage/>}/>
-                                    <Route path="/onboarding" element={<OnboardingPage/>}/>
+                                    <Route path="/" element={<LoginPageRouter/>}/>
+                                    <Route path="/onboarding" element={<OnboardingPageRouter/>}/>
 
                                     <Route element={<AppShell/>}>
                                         <Route path="/dashboard" element={

@@ -5,7 +5,7 @@ import {
     LayoutDashboard, CalendarCheck, Trophy, ClipboardList, Settings,
     LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen, SlidersHorizontal,
 } from "lucide-react"
-import { formatRole } from "@/pages/OnboardingPage.tsx"
+import { formatRole, hasControlPanelAccess } from "@/lib/Roles"
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community"
 import { useAppReady } from "@/contexts/appReadyContext.tsx"
 
@@ -18,27 +18,13 @@ function getNavTextPref(): boolean {
     return stored === null ? true : stored === "true"
 }
 
-// Control Panel access: any subgroup lead (role ends in "_lead"),
-// plus the standalone "captain" and "mentor" roles.
-// Roles like "alumni" and "<subgroup>_member" do NOT get access.
-const STANDALONE_PRIVILEGED_ROLES = ["captain", "mentor"]
-
-function hasControlPanelAccess(role?: string | null): boolean {
-    if (!role) return false
-    const r = role.toLowerCase()
-    return r.endsWith("_lead") || STANDALONE_PRIVILEGED_ROLES.includes(r)
-}
-
-// Core tabs everyone sees (4 tabs). Settings lives in the top-right
-// profile menu, not in the nav, so it's in a consistent place for all users.
 const CORE_TABS = [
     { to: "/dashboard",   label: "Dashboard",   icon: LayoutDashboard },
-    { to: "/attendance",  label: "Attendance",  icon: CalendarCheck },
-    { to: "/competition", label: "Competition", icon: Trophy },
-    { to: "/scouting",    label: "Scouting",    icon: ClipboardList },
+    { to: "/attendance",  label: "Attendance",  icon: CalendarCheck   },
+    { to: "/competition", label: "Competition", icon: Trophy          },
+    { to: "/scouting",    label: "Scouting",    icon: ClipboardList   },
 ]
 
-// Fifth tab, shown only to privileged roles (subgroup leads, captain, mentor).
 const CONTROL_PANEL_TAB = {
     to: "/control",
     label: "Control Panel",
@@ -50,10 +36,9 @@ export default function AppShell() {
     const location = useLocation()
     const markReady = useAppReady()
 
-    const [menuOpen, setMenuOpen] = useState(false)
-    const menuRef = useRef<HTMLDivElement>(null)
-
+    const [menuOpen,       setMenuOpen]       = useState(false)
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+    const menuRef       = useRef<HTMLDivElement>(null)
     const mobileMenuRef = useRef<HTMLDivElement>(null)
 
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
@@ -74,21 +59,14 @@ export default function AppShell() {
 
     useEffect(() => {
         function onClickOutside(e: MouseEvent) {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-                setMenuOpen(false)
-            }
-            if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) {
-                setMobileMenuOpen(false)
-            }
+            if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+            if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) setMobileMenuOpen(false)
         }
         document.addEventListener("mousedown", onClickOutside)
         return () => document.removeEventListener("mousedown", onClickOutside)
     }, [])
 
-    // Close the mobile profile dropdown whenever the route changes.
-    useEffect(() => {
-        setMobileMenuOpen(false)
-    }, [location.pathname])
+    useEffect(() => { setMobileMenuOpen(false) }, [location.pathname])
 
     function toggleSidebar() {
         setSidebarCollapsed(prev => {
@@ -100,10 +78,7 @@ export default function AppShell() {
 
     const isActive = (to: string) => location.pathname === to
 
-    const canUseControlPanel = hasControlPanelAccess(user?.role)
-    // Both desktop sidebar and mobile bottom bar use the same list:
-    // 4 core tabs for everyone, plus Control Panel for privileged roles.
-    const navTabs = canUseControlPanel
+    const navTabs = hasControlPanelAccess(user?.role)
         ? [...CORE_TABS, CONTROL_PANEL_TAB]
         : CORE_TABS
 
@@ -114,7 +89,6 @@ export default function AppShell() {
             <header className="shrink-0 border-b z-30 theme-bg theme-border">
                 <div className="px-3 h-14 flex items-center justify-between gap-3">
 
-                    {/* Left: sidebar toggle (desktop) + logo */}
                     <div className="flex items-center gap-1">
                         <button
                             onClick={toggleSidebar}
@@ -136,7 +110,7 @@ export default function AppShell() {
                         </Link>
                     </div>
 
-                    {/* Right: desktop user menu */}
+                    {/* Desktop user menu */}
                     {user && (
                         <div className="relative hidden md:block" ref={menuRef}>
                             <button
@@ -162,6 +136,14 @@ export default function AppShell() {
                                             <p className="text-xs theme-text-contrast opacity-80 truncate mt-0.5">{formatRole(user.role)}</p>
                                         )}
                                     </div>
+                                    <Link
+                                        to="/settings"
+                                        onClick={() => setMenuOpen(false)}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
+                                    >
+                                        <Settings size={14} />
+                                        Settings
+                                    </Link>
                                     <button
                                         onClick={() => { setMenuOpen(false); void logout() }}
                                         className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
@@ -174,7 +156,7 @@ export default function AppShell() {
                         </div>
                     )}
 
-                    {/* Right: mobile profile dropdown */}
+                    {/* Mobile profile dropdown */}
                     {user && (
                         <div className="relative md:hidden shrink-0" ref={mobileMenuRef}>
                             <button
@@ -230,10 +212,10 @@ export default function AppShell() {
                 </div>
             </header>
 
-            {/* ── Body row: sidebar + content ─────────────────────── */}
+            {/* ── Body: sidebar + content ──────────────────────────── */}
             <div className="flex-1 flex min-h-0">
 
-                {/* ── Desktop left sidebar ── */}
+                {/* Desktop sidebar */}
                 <aside
                     className="hidden md:flex flex-col shrink-0 border-r overflow-hidden theme-bg theme-border"
                     style={{
@@ -251,13 +233,9 @@ export default function AppShell() {
                                     title={sidebarCollapsed ? label : undefined}
                                     className={[
                                         "flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm font-medium transition-all",
-                                        active
-                                            ? "theme-text-contrast"
-                                            : "theme-text opacity-55 hover:opacity-90",
+                                        active ? "theme-text-contrast" : "theme-text opacity-55 hover:opacity-90",
                                     ].join(" ")}
-                                    style={active ? {
-                                        background: "color-mix(in oklch, var(--theme-button-bg) 18%, transparent)",
-                                    } : {}}
+                                    style={active ? { background: "color-mix(in oklch, var(--theme-button-bg) 18%, transparent)" } : {}}
                                 >
                                     <Icon size={18} className="shrink-0" />
                                     <span
@@ -277,7 +255,6 @@ export default function AppShell() {
                     </nav>
                 </aside>
 
-                {/* ── Page content ── */}
                 <main className="flex-1 min-h-0 overflow-auto theme-scrollbar">
                     <Outlet />
                 </main>
@@ -300,10 +277,7 @@ export default function AppShell() {
                             >
                                 <Icon size={21} strokeWidth={active ? 2.2 : 1.8} />
                                 {showNavText && (
-                                    <span
-                                        className="font-medium"
-                                        style={{ fontSize: "10px", letterSpacing: "0.01em" }}
-                                    >
+                                    <span className="font-medium" style={{ fontSize: "10px", letterSpacing: "0.01em" }}>
                                         {label}
                                     </span>
                                 )}
