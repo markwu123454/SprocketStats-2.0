@@ -23,8 +23,7 @@ export function SeasonWordmark({ url, label }: { url: string; label: string }) {
         <div
             role="img"
             aria-label={label}
-            className="theme-h1-color"
-            style={{ width: "min(480px, 100%)", height: "94px", display: "flex", alignItems: "center" }}
+            className="flex items-center theme-h1-color w-[min(480px,100%)] h-[94px]"
             dangerouslySetInnerHTML={{
                 __html: svg.replace(/<svg /, '<svg style="height:100%;width:auto;max-width:100%;display:block;" '),
             }}
@@ -78,7 +77,7 @@ export function SimpleDropdown({
     const selected = options.find(o => o.value === value)
 
     return (
-        <div ref={rootRef} style={{ position: "relative" }}>
+        <div ref={rootRef} className="relative">
             <button
                 ref={btnRef}
                 type="button"
@@ -168,7 +167,7 @@ export function RoleDropdown({ value, onChange }: { value: string | null; onChan
     }
 
     return (
-        <div ref={rootRef} style={{ position: "relative" }}>
+        <div ref={rootRef} className="relative">
             <button
                 ref={btnRef}
                 type="button"
@@ -236,14 +235,7 @@ export function OnboardingForm({
     return (
         <>
             <div className="mb-6">
-                <h1
-                    className="m-0 mb-1.5 font-semibold theme-h1-color"
-                    style={{
-                        fontFamily: "'Space Grotesk', 'Inter', sans-serif",
-                        fontSize: "32px",
-                        letterSpacing: "-0.01em",
-                    }}
-                >
+                <h1 className="m-0 mb-1.5 font-semibold font-sans theme-h1-color text-[32px] tracking-[-0.01em]">
                     Welcome aboard
                 </h1>
                 <p className="m-0 text-[14px] theme-subtext-color">
@@ -323,8 +315,7 @@ export function OnboardingForm({
                         !displayName.trim() ||
                         (needsSchoolInfo && (!selectedGrade || !selectedTeamYear))
                     }
-                    className="w-full flex items-center justify-center gap-2 mt-1 rounded-xl border font-semibold text-sm transition-opacity disabled:opacity-40 theme-bg theme-border theme-text-contrast"
-                    style={{ height: "52px" }}
+                    className="w-full flex items-center justify-center gap-2 mt-1 h-[52px] rounded-xl border font-semibold text-sm transition-opacity disabled:opacity-40 theme-bg theme-border theme-text-contrast"
                 >
                     {submitting ? "Saving…" : "Get Started"}
                     {!submitting && <ChevronRight size={16} />}
@@ -374,80 +365,54 @@ export default function OnboardingPageDesktop(props: OnboardingPageProps) {
             style={{
                 display: "grid",
                 gridTemplateColumns: "1.05fr 0.95fr",
-                gridTemplateRows: "1fr",
                 height: "100vh",
             }}
         >
             {/* ══ LEFT — hero ══ */}
             <aside className="relative overflow-hidden theme-h1-color">
+                <div className="absolute inset-0 theme-bg-page bg-center z-0" />
                 <div
-                    className="absolute inset-0 theme-bg-page"
-                    style={{ backgroundPosition: "center", zIndex: 0 }}
-                />
-                <div
-                    className="absolute inset-0"
+                    className="absolute inset-0 z-1"
                     style={{
-                        zIndex: 1,
                         background: `linear-gradient(180deg,
                             color-mix(in oklch, var(--theme-button-bg) 30%, transparent) 0%,
                             color-mix(in oklch, var(--theme-button-bg) 70%, transparent) 100%)`,
                     }}
                 />
-                <div
-                    className="absolute inset-0 flex flex-col items-start justify-end gap-[18px] p-11"
-                    style={{ zIndex: 2 }}
-                >
-                    <span
-                        className="inline-block text-[11px] uppercase leading-none px-2.5 py-1 rounded-full border theme-text-contrast theme-border theme-bg"
-                        style={{
-                            fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                            letterSpacing: "0.18em",
-                            backdropFilter: "blur(8px)",
-                            WebkitBackdropFilter: "blur(8px)",
-                        }}
-                    >
+                <div className="absolute inset-0 flex flex-col items-start justify-end gap-[18px] p-11 z-2">
+                    <span className="inline-block text-[11px] uppercase leading-none px-2.5 py-1 rounded-full font-mono tracking-[0.18em] theme-text-contrast border theme-border theme-bg backdrop-blur-sm">
                         {season?.phase ?? "SEASON"}
                     </span>
-                    <span
-                        className="inline-block text-[10px] uppercase leading-none opacity-60 theme-h1-color"
-                        style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", letterSpacing: "0.18em" }}
-                    >
+                    <span className="inline-block text-[10px] uppercase leading-none opacity-60 theme-h1-color font-mono tracking-[0.18em]">
                         Presented by HAAS
                     </span>
-                    <div style={{ position: "relative", display: "inline-flex" }}>
+                    <div className="relative inline-flex">
                         <SeasonWordmark url={season?.wordmarkUrl ?? ""} label={season?.label ?? "SprocketStats"} />
                         <sup
                             aria-label="trademark"
-                            className="theme-h1-color"
-                            style={{ position: "absolute", bottom: 0, right: "-14px", fontSize: "10px", lineHeight: 1, fontFamily: "'Inter', sans-serif", fontWeight: 500 }}
+                            className="absolute bottom-0 -right-3.5 text-[10px] leading-none theme-h1-color font-sans font-medium"
                         >
                             ™
                         </sup>
                     </div>
-                    <p
-                        className="m-0 max-w-[32ch] opacity-[0.92] theme-h1-color"
-                        style={{ fontFamily: "'Space Grotesk', 'Inter', sans-serif", fontSize: "16px", lineHeight: 1.5 }}
-                    >
+                    <p className="m-0 max-w-[32ch] opacity-[0.92] theme-h1-color font-sans text-base leading-normal">
                         Let's get your profile set up.
                     </p>
                 </div>
             </aside>
 
             {/* ══ RIGHT — form ══ */}
-            <section
-                className="relative border-l theme-button-bg theme-border"
-                style={{ display: "grid", gridTemplateRows: "auto 1fr", padding: "28px 56px", overflowY: "auto" }}
-            >
+            <section className="relative grid border-l theme-button-bg theme-border grid-rows-[auto_1fr] px-14 py-7 overflow-y-auto">
                 <div className="flex items-center gap-2.5 theme-h1-color">
                     <div
+                        className="size-9 shrink-0"
                         style={{
-                            width: 36, height: 36, flexShrink: 0,
                             backgroundColor: "var(--theme-h1-color)",
                             mask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
                             WebkitMask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
                         }}
                     />
-                    <span className="font-semibold text-[15px] theme-h1-color" style={{ letterSpacing: "0.01em", lineHeight: 1 }}>
+                    <span className="font-semibold text-[15px] tracking-[0.01em] leading-none theme-h1-color">
                         SprocketStats
                     </span>
                 </div>

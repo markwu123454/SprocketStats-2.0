@@ -31,63 +31,30 @@ export default function OnboardingPageMobile(props: OnboardingPageProps) {
     }, [])
 
     return (
-        <div
-            style={{
-                display: "flex",
-                flexDirection: "column",
-                position: "fixed",
-                top: 0, left: 0, right: 0, bottom: 0,
-                height: "100dvh",
-                maxHeight: "100dvh",
-                overflow: "hidden",
-                overscrollBehavior: "none",
-            }}
-        >
+        <div className="fixed inset-0 flex flex-col h-dvh max-h-dvh overflow-hidden overscroll-none">
             {/* ══ TOP 25% — condensed hero ══ */}
-            <aside
-                className="relative overflow-hidden theme-h1-color"
-                style={{ flex: "0 0 25%", minHeight: 0 }}
-            >
+            <aside className="relative overflow-hidden theme-h1-color flex-[0_0_25%] min-h-0">
+                <div className="absolute inset-0 theme-bg-page bg-center z-0" />
                 <div
-                    className="absolute inset-0 theme-bg-page"
-                    style={{ backgroundPosition: "center", zIndex: 0 }}
-                />
-                <div
-                    className="absolute inset-0"
+                    className="absolute inset-0 z-1"
                     style={{
-                        zIndex: 1,
                         background: `linear-gradient(180deg,
                             color-mix(in oklch, var(--theme-button-bg) 30%, transparent) 0%,
                             color-mix(in oklch, var(--theme-button-bg) 70%, transparent) 100%)`,
                     }}
                 />
-                <div
-                    className="absolute inset-0 flex flex-col items-start justify-end"
-                    style={{ zIndex: 2, padding: "14px 18px", gap: 6 }}
-                >
-                    <span
-                        className="inline-block text-[11px] uppercase leading-none px-2.5 py-1 rounded-full border theme-text-contrast theme-border theme-bg"
-                        style={{
-                            fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                            letterSpacing: "0.18em",
-                            backdropFilter: "blur(8px)",
-                            WebkitBackdropFilter: "blur(8px)",
-                        }}
-                    >
+                <div className="absolute inset-0 flex flex-col items-start justify-end z-2 px-[18px] py-[14px] gap-1.5">
+                    <span className="inline-block text-[11px] uppercase leading-none px-2.5 py-1 rounded-full border theme-text-contrast theme-border theme-bg font-mono tracking-[0.18em] backdrop-blur-sm">
                         {season?.phase ?? "SEASON"}
                     </span>
-                    <span
-                        className="inline-block text-[10px] uppercase leading-none opacity-60 theme-h1-color"
-                        style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", letterSpacing: "0.18em" }}
-                    >
+                    <span className="inline-block text-[10px] uppercase leading-none opacity-60 theme-h1-color font-mono tracking-[0.18em]">
                         Presented by HAAS
                     </span>
-                    <div style={{ position: "relative", display: "inline-flex", transform: "scale(0.5)", transformOrigin: "left bottom" }}>
+                    <div className="relative inline-flex scale-50 origin-bottom-left">
                         <SeasonWordmark url={season?.wordmarkUrl ?? ""} label={season?.label ?? "SprocketStats"} />
                         <sup
                             aria-label="trademark"
-                            className="theme-h1-color"
-                            style={{ position: "absolute", bottom: 0, right: "-14px", fontSize: "10px", lineHeight: 1, fontFamily: "'Inter', sans-serif", fontWeight: 500 }}
+                            className="absolute bottom-0 -right-3.5 text-[10px] leading-none theme-h1-color font-sans font-medium"
                         >
                             ™
                         </sup>
@@ -97,27 +64,19 @@ export default function OnboardingPageMobile(props: OnboardingPageProps) {
 
             {/* ══ BOTTOM 75% — scrollable form ══ */}
             <section
-                className="relative theme-button-bg"
-                style={{
-                    flex: "0 0 75%",
-                    display: "flex",
-                    flexDirection: "column",
-                    borderTop: "1px solid var(--theme-border)",
-                    padding: `24px 22px calc(22px + env(safe-area-inset-bottom, 0px))`,
-                    zIndex: 10,
-                    overflowY: "auto",
-                }}
+                className="relative theme-button-bg flex flex-col flex-[0_0_75%] border-t theme-border z-10 overflow-y-auto"
+                style={{ padding: `24px 22px calc(22px + env(safe-area-inset-bottom, 0px))` }}
             >
                 <div className="flex items-center gap-2.5 mb-5 theme-h1-color">
                     <div
+                        className="size-7 shrink-0"
                         style={{
-                            width: 28, height: 28, flexShrink: 0,
                             backgroundColor: "var(--theme-h1-color)",
                             mask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
                             WebkitMask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
                         }}
                     />
-                    <span className="font-semibold text-[14px] theme-h1-color" style={{ letterSpacing: "0.01em", lineHeight: 1 }}>
+                    <span className="font-semibold text-[14px] tracking-[0.01em] leading-none theme-h1-color">
                         SprocketStats
                     </span>
                 </div>

@@ -101,14 +101,11 @@ export default function AppShell() {
                         <Link to="/dashboard" className="flex items-center gap-2 select-none pl-1 md:pl-0">
                             <div className="relative w-8 h-8 shrink-0">
                                 <div
+                                    className="size-8 shrink-0 scale-125"
                                     style={{
-                                        width: 32,
-                                        height: 32,
-                                        flexShrink: 0,
                                         backgroundColor: "var(--theme-h1-color)",
                                         mask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
                                         WebkitMask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
-                                        transform: "scale(1.25)",
                                     }}
                                 />
                             </div>
@@ -245,11 +242,10 @@ export default function AppShell() {
                                 >
                                     <Icon size={18} className="shrink-0" />
                                     <span
-                                        className="truncate whitespace-nowrap"
+                                        className="truncate whitespace-nowrap overflow-hidden"
                                         style={{
                                             opacity: sidebarCollapsed ? 0 : 1,
                                             width: sidebarCollapsed ? 0 : "auto",
-                                            overflow: "hidden",
                                             transition: "opacity 0.15s ease",
                                         }}
                                     >
@@ -283,7 +279,7 @@ export default function AppShell() {
                             >
                                 <Icon size={21} strokeWidth={active ? 2.2 : 1.8} />
                                 {showNavText && (
-                                    <span className="font-medium" style={{ fontSize: "10px", letterSpacing: "0.01em" }}>
+                                    <span className="font-medium text-[10px] tracking-[0.01em]">
                                         {label}
                                     </span>
                                 )}

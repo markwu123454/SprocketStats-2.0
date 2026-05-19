@@ -21,13 +21,7 @@ function SeasonWordmark({ url, label }: { url: string; label: string }) {
         <div
             role="img"
             aria-label={label}
-            style={{
-                width: "min(480px, 100%)",
-                height: "94px",
-                color: "var(--theme-h1-color)",
-                display: "flex",
-                alignItems: "center",
-            }}
+            className="flex items-center theme-h1-color w-[min(480px,100%)] h-[94px]"
             dangerouslySetInnerHTML={{
                 __html: svg.replace(
                     /<svg /,
@@ -218,103 +212,53 @@ export default function LoginPageMobile({ season, timeInfo, loading, signInWithG
 
             <div className="lpm-root">
                 {/* ══ TOP — hero ══ */}
-                <aside className="lpm-aside" style={{ color: "var(--theme-h1-color)" }}>
+                <aside className="lpm-aside theme-h1-color">
                     <div
-                        className="lpm-bg-image"
+                        className="lpm-bg-image bg-center"
                         style={{
                             backgroundImage: "var(--theme-bg-page)",
                             backgroundSize: "cover",
-                            backgroundPosition: "center",
                             zIndex: 0,
                         }}
                     />
                     <div
-                        className="lpm-bg-scrim"
+                        className="lpm-bg-scrim z-1"
                         style={{
-                            zIndex: 1,
                             background: `linear-gradient(180deg,
                                 color-mix(in oklch, var(--theme-button-bg) 30%, transparent) 0%,
                                 color-mix(in oklch, var(--theme-button-bg) 70%, transparent) 100%)`,
                         }}
                     />
 
-                    <div
-                        className="absolute inset-0 flex flex-col items-start justify-end gap-[18px]"
-                        style={{ zIndex: 2, padding: 20 }}
-                    >
-                        <span
-                            className="inline-block text-[11px] uppercase leading-none px-2.5 py-1 rounded-full"
-                            style={{
-                                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                                letterSpacing: "0.18em",
-                                color: "var(--theme-text-contrast)",
-                                border: "1px solid var(--theme-border)",
-                                background: "var(--theme-bg)",
-                                backdropFilter: "blur(8px)",
-                                WebkitBackdropFilter: "blur(8px)",
-                            }}
-                        >
+                    <div className="absolute inset-0 flex flex-col items-start justify-end gap-[18px] p-5 z-2">
+                        <span className="inline-block text-[11px] uppercase leading-none px-2.5 py-1 rounded-full font-mono tracking-[0.18em] theme-text-contrast border theme-border theme-bg backdrop-blur-sm">
                             {season?.phase ?? "SEASON"}
                         </span>
 
-                        <span
-                            className="inline-block text-[10px] uppercase leading-none"
-                            style={{
-                                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                                letterSpacing: "0.18em",
-                                color: "var(--theme-h1-color)",
-                                opacity: 0.6,
-                            }}
-                        >
+                        <span className="inline-block text-[10px] uppercase leading-none font-mono tracking-[0.18em] theme-h1-color opacity-60">
                             Presented by HAAS
                         </span>
 
-                        <div style={{ position: "relative", display: "inline-flex" }}>
+                        <div className="relative inline-flex">
                             <SeasonWordmark
                                 url={season?.wordmarkUrl ?? ""}
                                 label={season?.label ?? "SprocketStats"}
                             />
                             <sup
                                 aria-label="trademark"
-                                style={{
-                                    position: "absolute",
-                                    bottom: 0,
-                                    right: "-14px",
-                                    fontSize: "10px",
-                                    lineHeight: 1,
-                                    color: "var(--theme-h1-color)",
-                                    fontFamily: "'Inter', sans-serif",
-                                    fontWeight: 500,
-                                }}
+                                className="absolute bottom-0 -right-3.5 text-[10px] leading-none theme-h1-color font-sans font-medium"
                             >
                                 ™
                             </sup>
                         </div>
 
-                        <p
-                            className="m-0 max-w-[32ch] opacity-[0.92]"
-                            style={{
-                                fontFamily: "'Space Grotesk', 'Inter', sans-serif",
-                                fontSize: "16px",
-                                lineHeight: 1.5,
-                                color: "var(--theme-h1-color)",
-                            }}
-                        >
+                        <p className="m-0 max-w-[32ch] opacity-[0.92] font-sans text-base leading-normal theme-h1-color">
                             Lets go Team Sprocket!
                         </p>
                     </div>
 
                     {/* Time badge */}
-                    <div
-                        className="absolute flex flex-col items-end gap-1.5 text-[11px]"
-                        style={{
-                            top: 20, right: 20,
-                            zIndex: 2,
-                            fontFamily: "'JetBrains Mono', monospace",
-                            letterSpacing: "0.14em",
-                            color: "var(--theme-text-contrast)",
-                        }}
-                    >
+                    <div className="absolute top-5 right-5 flex flex-col items-end gap-1.5 text-[11px] z-2 font-mono tracking-[0.14em] theme-text-contrast">
                         {timeInfo.weekInfo  && <span>{timeInfo.weekInfo}</span>}
                         {timeInfo.dateRange && <span>{timeInfo.dateRange}</span>}
                     </div>
@@ -351,41 +295,21 @@ export default function LoginPageMobile({ season, timeInfo, loading, signInWithG
                         >
                             <div className="flex items-center gap-2.5 mb-4">
                                 <div
+                                    className="size-8 shrink-0"
                                     style={{
-                                        width: 32,
-                                        height: 32,
-                                        flexShrink: 0,
                                         backgroundColor: "var(--theme-h1-color)",
                                         mask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
                                         WebkitMask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
                                     }}
                                 />
-                                <span
-                                    className="font-semibold text-[15px]"
-                                    style={{
-                                        letterSpacing: "0.01em",
-                                        lineHeight: 1,
-                                        color: "var(--theme-h1-color)",
-                                    }}
-                                >
+                                <span className="font-semibold text-[15px] tracking-[0.01em] leading-none theme-h1-color">
                                     SprocketStats
                                 </span>
                             </div>
-                            <h1
-                                className="m-0 mb-1.5 font-semibold"
-                                style={{
-                                    fontFamily: "'Space Grotesk', 'Inter', sans-serif",
-                                    fontSize: "32px",
-                                    letterSpacing: "-0.01em",
-                                    color: "var(--theme-h1-color)",
-                                }}
-                            >
+                            <h1 className="m-0 mb-1.5 font-semibold font-sans theme-h1-color text-[32px] tracking-[-0.01em]">
                                 Sign in
                             </h1>
-                            <p
-                                className="m-0 text-[14px]"
-                                style={{ color: "var(--theme-subtext-color)" }}
-                            >
+                            <p className="m-0 text-[14px] theme-subtext-color">
                                 Sign in with your school email.
                             </p>
                         </div>
@@ -395,16 +319,10 @@ export default function LoginPageMobile({ season, timeInfo, loading, signInWithG
                             onClick={signInWithGoogle}
                             disabled={loading}
                             type="button"
-                            className="w-full grid items-center gap-3 px-[18px] cursor-pointer disabled:opacity-50"
+                            className="w-full grid items-center gap-3 px-[18px] h-[52px] rounded-xl font-sans font-semibold text-[15px] leading-none tracking-[0.005em] bg-white text-[#1f1f1f] cursor-pointer disabled:opacity-50"
                             style={{
-                                height: "52px",
-                                borderRadius: "12px",
                                 gridTemplateColumns: "auto 1fr auto",
-                                font: "600 15px/1 'Inter', sans-serif",
-                                letterSpacing: "0.005em",
-                                background: "#ffffff",
                                 border: "1px solid color-mix(in oklch, #1a1a1a 12%, transparent)",
-                                color: "#1f1f1f",
                                 boxShadow: "0 6px 18px -8px rgba(0,0,0,.25)",
                                 transition: "background .15s, border-color .15s, transform .12s, box-shadow .15s",
                             }}
@@ -413,10 +331,7 @@ export default function LoginPageMobile({ season, timeInfo, loading, signInWithG
                             onMouseDown={e  => (e.currentTarget.style.transform  = "translateY(1px)")}
                             onMouseUp={e    => (e.currentTarget.style.transform  = "")}
                         >
-                            <span
-                                className="flex items-center justify-center flex-none"
-                                style={{ width: 28, height: 28, borderRadius: "50%", background: "transparent" }}
-                            >
+                            <span className="flex items-center justify-center flex-none rounded-full size-7">
                                 <GoogleG />
                             </span>
                             <span className="justify-self-start text-left">
