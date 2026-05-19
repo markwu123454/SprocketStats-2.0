@@ -100,10 +100,16 @@ export default function AppShell() {
 
                         <Link to="/dashboard" className="flex items-center gap-2 select-none pl-1 md:pl-0">
                             <div className="relative w-8 h-8 shrink-0">
-                                <img
-                                    className="absolute inset-0 w-full h-full scale-125"
-                                    src="/sprocket_logo_gear.svg"
-                                    alt=""
+                                <div
+                                    style={{
+                                        width: 32,
+                                        height: 32,
+                                        flexShrink: 0,
+                                        backgroundColor: "var(--theme-h1-color)",
+                                        mask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
+                                        WebkitMask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
+                                        transform: "scale(1.25)",
+                                    }}
                                 />
                             </div>
                             <span className="font-bold text-base theme-text hidden sm:block">SprocketStats</span>
