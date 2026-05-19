@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timedelta, timezone
 
+# noinspection PyUnresolvedReferences
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse

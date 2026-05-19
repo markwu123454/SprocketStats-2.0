@@ -7,7 +7,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 import db
-from endpoints import general, auth
+from endpoints import router
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -34,5 +34,4 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(general.router)
-app.include_router(auth.router, prefix="/auth")
+app.include_router(router)
