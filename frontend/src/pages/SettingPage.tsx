@@ -1,5 +1,5 @@
 import { useAuth } from "@/contexts/authContext.tsx"
-import { formatRole } from "@/pages/OnboardingPage.tsx"
+import { formatRole } from "@/lib/Roles"
 import { LogOut, Mail, ShieldCheck, Palette, Navigation } from "lucide-react"
 import { useState } from "react"
 import { useTheme } from "@/contexts/themeProvider.tsx"
