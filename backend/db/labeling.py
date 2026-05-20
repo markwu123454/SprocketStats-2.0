@@ -11,19 +11,17 @@ async def get_labeling_summary() -> list[asyncpg.Record]:
     try:
         return await conn.fetch(
             """
-            SELECT
-                p.id                                                        AS project_id,
-                p.title                                                     AS project,
-                COUNT(DISTINCT t.id)                                        AS total_tasks,
-                COUNT(DISTINCT t.id) FILTER (WHERE t.is_labeled = true)    AS labeled_tasks,
-                COUNT(DISTINCT t.id) FILTER (WHERE t.is_labeled = false)   AS unlabeled_tasks,
-                ROUND(
+            SELECT p.id                 AS project_id,
+                   p.title              AS project,
+                   COUNT(DISTINCT t.id) AS total_tasks,
+                   COUNT(DISTINCT t.id)    FILTER (WHERE t.is_labeled = true)    AS labeled_tasks, COUNT(DISTINCT t.id) FILTER (WHERE t.is_labeled = false)   AS unlabeled_tasks, ROUND(
                     COUNT(DISTINCT t.id) FILTER (WHERE t.is_labeled = true)::numeric
                     / NULLIF(COUNT(DISTINCT t.id), 0) * 100, 1
-                )                                                           AS pct_labeled
+                                                                                                                                                                                  ) AS pct_labeled
             FROM project p
-            LEFT JOIN task t ON t.project_id = p.id
+                     LEFT JOIN task t ON t.project_id = p.id
             WHERE p.deleted_at IS NULL
+              AND p.id = 7
             GROUP BY p.id, p.title
             ORDER BY p.title
             """
@@ -40,21 +38,19 @@ async def get_annotator_contributions() -> list[asyncpg.Record]:
     try:
         return await conn.fetch(
             """
-            SELECT
-                p.id                                                             AS project_id,
-                p.title                                                          AS project,
-                u.id                                                             AS user_id,
-                u.first_name || ' ' || u.last_name                              AS annotator,
-                u.email,
-                COUNT(tc.id) FILTER (WHERE tc.was_cancelled = false)            AS annotations_done,
-                COUNT(tc.id) FILTER (WHERE tc.was_cancelled = true)             AS skipped,
-                ROUND(
+            SELECT p.id                               AS project_id,
+                   p.title                            AS project,
+                   u.id                               AS user_id,
+                   u.first_name || ' ' || u.last_name AS annotator,
+                   u.email,
+                   COUNT(tc.id)                          FILTER (WHERE tc.was_cancelled = false)            AS annotations_done, COUNT(tc.id) FILTER (WHERE tc.was_cancelled = true)             AS skipped, ROUND(
                     AVG(tc.lead_time) FILTER (WHERE tc.was_cancelled = false)::numeric, 1
-                )                                                                AS avg_time_secs
+                                                                                                                                                                                                             ) AS avg_time_secs
             FROM task_completion tc
-            JOIN project p ON p.id = tc.project_id
-            JOIN htx_user u ON u.id = tc.completed_by_id
+                     JOIN project p ON p.id = tc.project_id
+                     JOIN htx_user u ON u.id = tc.completed_by_id
             WHERE p.deleted_at IS NULL
+              AND p.id = 7
             GROUP BY p.id, p.title, u.id, u.first_name, u.last_name, u.email
             ORDER BY p.title, annotations_done DESC
             """

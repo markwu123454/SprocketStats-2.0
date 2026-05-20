@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { LoginPageProps } from "./LoginPageRouter";
+import {useTheme} from "@/contexts/themeProvider.tsx";
 
 /* ── Season wordmark — fetched & inlined so currentColor works ─ */
 function SeasonWordmark({ url, label }: { url: string; label: string }) {
@@ -48,6 +49,7 @@ function GoogleG() {
    LoginPageDesktop
    ════════════════════════════════════════════════════════════════ */
 export default function LoginPageDesktop({ season, timeInfo, loading, signInWithGoogle }: LoginPageProps) {
+    const { isDark } = useTheme()
 
     // Lock document scroll while mounted
     useEffect(() => {
@@ -188,6 +190,22 @@ export default function LoginPageDesktop({ season, timeInfo, loading, signInWith
                             </svg>
                         </span>
                     </button>
+
+                    <p className="mt-3 mb-0 text-[12px] leading-[1.6] theme-subtext-color opacity-70 text-center">
+                        SprocketStats is sponsored by{" "}
+                        <a href="https://humansignal.com/"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           className="opacity-100 inline-flex items-center gap-1 align-middle"
+                        >
+                            <img
+                                src={isDark ? "/human_signal_dark_logo.png" : "/human_signal_light_logo.png"}
+                                alt="HumanSignal"
+                                className="h-4 w-auto inline-block"
+                            />
+                            <span className="theme-h1-color font-medium">HumanSignal</span>
+                        </a>
+                    </p>
                 </div>
             </section>
         </div>

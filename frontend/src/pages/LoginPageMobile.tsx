@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { LoginPageProps } from "./LoginPageRouter";
+import {useTheme} from "@/contexts/themeProvider.tsx";
 
 /* ── Season wordmark — fetched & inlined so currentColor works ─ */
 function SeasonWordmark({ url, label }: { url: string; label: string }) {
@@ -54,6 +55,8 @@ const EXPAND_HEIGHT  = 320;
    LoginPageMobile
    ════════════════════════════════════════════════════════════════ */
 export default function LoginPageMobile({ season, timeInfo, loading, signInWithGoogle }: LoginPageProps) {
+    const { isDark } = useTheme()
+
     const sheetRef  = useRef<HTMLElement>(null);
     const dragStart = useRef<{ y: number; h: number } | null>(null);
     const [sheetHeight, setSheetHeight] = useState(PEEK_HEIGHT);
@@ -174,23 +177,18 @@ export default function LoginPageMobile({ season, timeInfo, loading, signInWithG
                     width: 100%;
                     max-width: 360px;
                     margin: 0 auto;
+                    display: flex;
+                    flex-direction: column;
                 }
                 .lpm-reveal-head {
-                    position: absolute;
-                    left: 0; right: 0;
                     margin-bottom: 20px;
-                    transition: bottom 0.38s cubic-bezier(0.32, 0.72, 0, 1);
                 }
                 .lpm-reveal-foot {
                     position: absolute;
                     left: 0; right: 0;
-                    transition: top 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+                    bottom: 20px;
                 }
                 .lpm-reveal-foot > p { margin-top: 0; }
-                .lpm-sheet.lpm-dragging .lpm-reveal-head,
-                .lpm-sheet.lpm-dragging .lpm-reveal-foot {
-                    transition: none;
-                }
                 .lpm-expand-only {
                     opacity: 0;
                     transform: translateY(8px);
@@ -207,6 +205,20 @@ export default function LoginPageMobile({ season, timeInfo, loading, signInWithG
                     opacity: var(--reveal, 0);
                     transform: translateY(calc((1 - var(--reveal, 0)) * 8px));
                     transition: none;
+                }
+                .lpm-divider {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    margin: 0;
+                }
+                .lpm-divider::before,
+                .lpm-divider::after {
+                    content: "";
+                    flex: 1;
+                    height: 1px;
+                    background: var(--theme-border);
+                    opacity: 0.5;
                 }
             `}</style>
 
@@ -289,10 +301,7 @@ export default function LoginPageMobile({ season, timeInfo, loading, signInWithG
                         style={{ paddingBottom: btnClamp }}
                     >
                         {/* Heading — fades in as sheet expands */}
-                        <div
-                            className="lpm-reveal-head lpm-expand-only"
-                            style={{ bottom: `calc(${btnClamp}px + 52px)` }}
-                        >
+                        <div className="lpm-reveal-head lpm-expand-only">
                             <div className="flex items-center gap-2.5 mb-4">
                                 <div
                                     className="size-8 shrink-0"
@@ -349,6 +358,25 @@ export default function LoginPageMobile({ season, timeInfo, loading, signInWithG
                                 </svg>
                             </span>
                         </button>
+
+                        {/* Footer — fades in below the button as sheet expands */}
+                        <div className="lpm-reveal-foot lpm-expand-only">
+                            <p className="mt-3 mb-0 text-[12px] leading-[1.6] theme-subtext-color opacity-70 text-center">
+                                SprocketStats is sponsored by{" "}
+                                <a href="https://humansignal.com/"
+                                   target="_blank"
+                                   rel="noopener noreferrer"
+                                   className="opacity-100 inline-flex items-center gap-1 align-middle"
+                                >
+                                    <img
+                                        src={isDark ? "/human_signal_dark_logo.png" : "/human_signal_light_logo.png"}
+                                        alt="HumanSignal"
+                                        className="h-4 w-auto inline-block"
+                                    />
+                                    <span className="theme-h1-color font-medium">HumanSignal</span>
+                                </a>
+                            </p>
+                        </div>
                     </div>
                 </section>
             </div>

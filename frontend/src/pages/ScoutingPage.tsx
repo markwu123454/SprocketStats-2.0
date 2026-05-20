@@ -37,11 +37,36 @@ const COL_DEFS: ColDef<ContributionRow>[] = [
     },
 ]
 
+/**
+ * Format a percentage with at least 1 decimal place and 2 significant non-zero digits.
+ *
+ * Examples:
+ *   0        → "0.0%"
+ *   100      → "100%"
+ *   99.3456  → "99.3%"   (2 sig figs before decimal, 1 decimal)
+ *   3.4567   → "3.5%"    (1 decimal gives 2 sig figs)
+ *   0.3456   → "0.35%"   (2 decimals to get 2 sig non-zero figs)
+ *   0.03456  → "0.035%"  (3 decimals to get 2 sig non-zero figs)
+ */
+function formatPct(value: number): string {
+    if (value === 0)   return "0.0%"
+    if (value >= 100)  return "100%"
+    const abs = Math.abs(value)
+    if (abs >= 1) {
+        // 1+ % → 1 decimal place always gives ≥ 2 sig figs
+        return value.toFixed(1) + "%"
+    }
+    // < 1%: find the first non-zero decimal digit position, then show one more
+    const magnitude = Math.floor(Math.log10(abs)) // e.g. -2 for 0.034
+    const decimals  = Math.max(1, -magnitude + 1)  // e.g. 3 for 0.034 → "0.034%"
+    return value.toFixed(decimals) + "%"
+}
+
 export default function ScoutingPage() {
-    const [summary, setSummary]           = useState<SummaryRow[]>([])
+    const [summary, setSummary]             = useState<SummaryRow[]>([])
     const [contributions, setContributions] = useState<ContributionRow[]>([])
-    const [loading, setLoading]           = useState(true)
-    const [error, setError]               = useState<string | null>(null)
+    const [loading, setLoading]             = useState(true)
+    const [error, setError]                 = useState<string | null>(null)
 
     useEffect(() => {
         async function load() {
@@ -68,7 +93,7 @@ export default function ScoutingPage() {
 
     const totalTasks   = summary.reduce((s, r) => s + Number(r.total_tasks),   0)
     const labeledTasks = summary.reduce((s, r) => s + Number(r.labeled_tasks), 0)
-    const pct          = totalTasks > 0 ? Math.round((labeledTasks / totalTasks) * 100) : 0
+    const pct          = totalTasks > 0 ? (labeledTasks / totalTasks) * 100 : 0
 
     return (
         <div className="max-w-7xl mx-auto px-4 py-8 flex flex-col gap-8">
@@ -81,7 +106,7 @@ export default function ScoutingPage() {
             >
                 <div className="flex items-end justify-between">
                     <p className="text-sm font-medium theme-text opacity-70">Overall Completion</p>
-                    <p className="text-3xl font-bold theme-text-contrast">{loading ? "—" : `${pct}%`}</p>
+                    <p className="text-3xl font-bold theme-text-contrast">{loading ? "—" : formatPct(pct)}</p>
                 </div>
                 <div
                     className="w-full rounded-full overflow-hidden"
@@ -99,7 +124,7 @@ export default function ScoutingPage() {
 
             {/* Label Studio link */}
             <a
-                href="https://label-studio-shared-798068859905.us-west2.run.app/user/login/?token=7IKmZlpxScE59qRUTTLbrrAC5IQnUm4mRacqvZzc"
+                href="https://label-studio-shared-798068859905.us-west2.run.app/user/login/?token=7IKmZlpxScE59qRUTTLbrrAC5IQnUm4mRacqvZzc&next=/projects/7/data/%3Ftab%3D6%26labeling%3D1"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center gap-3 rounded-xl border p-5 font-semibold text-lg transition-opacity hover:opacity-80 theme-text-contrast backdrop-blur-sm"

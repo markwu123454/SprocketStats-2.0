@@ -5,6 +5,7 @@ type Theme = "theme-2025" | "theme-2026" | "theme-2027"
 type ThemeContextType = {
     theme: Theme
     setTheme: (t: Theme) => void
+    isDark: boolean
 }
 
 const ThemeContext = createContext<ThemeContextType | null>(null)
@@ -45,8 +46,10 @@ export default function ThemeProvider({ children }: { children: ReactNode }) {
         if (meta) meta.setAttribute("content", bg)
     }
 
+    const isDark = theme === "theme-2025" || theme === "theme-2027"
+
     return (
-        <ThemeContext.Provider value={{ theme, setTheme }}>
+        <ThemeContext.Provider value={{ theme, setTheme, isDark }}>
             {children}
         </ThemeContext.Provider>
     )
