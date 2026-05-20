@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { AgGridReact } from "ag-grid-react"
 import { ExternalLink } from "lucide-react"
 import type { ColDef } from "ag-grid-community"
+
+const LABEL_STUDIO_URL =
+    "https://label-studio-shared-798068859905.us-west2.run.app/user/login/?token=7IKmZlpxScE59qRUTTLbrrAC5IQnUm4mRacqvZzc&next=/projects/7/data/%3Ftab%3D6%26labeling%3D1"
+const LS_KEY = "label_studio_email_ack"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -67,6 +71,25 @@ export default function ScoutingPage() {
     const [contributions, setContributions] = useState<ContributionRow[]>([])
     const [loading, setLoading]             = useState(true)
     const [error, setError]                 = useState<string | null>(null)
+    const [modalOpen, setModalOpen]         = useState(false)
+    const [checked, setChecked]             = useState(false)
+    const backdropRef                       = useRef<HTMLDivElement>(null)
+
+    function handleLabelStudioClick() {
+        if (localStorage.getItem(LS_KEY) === "1") {
+            window.open(LABEL_STUDIO_URL, "_blank", "noopener,noreferrer")
+        } else {
+            setChecked(false)
+            setModalOpen(true)
+        }
+    }
+
+    function handleContinue() {
+        if (!checked) return
+        localStorage.setItem(LS_KEY, "1")
+        window.open(LABEL_STUDIO_URL, "_blank", "noopener,noreferrer")
+        setModalOpen(false)
+    }
 
     useEffect(() => {
         async function load() {
@@ -122,20 +145,94 @@ export default function ScoutingPage() {
                 </p>
             </div>
 
-            {/* Label Studio link */}
-            <a
-                href="https://label-studio-shared-798068859905.us-west2.run.app/user/login/?token=7IKmZlpxScE59qRUTTLbrrAC5IQnUm4mRacqvZzc&next=/projects/7/data/%3Ftab%3D6%26labeling%3D1"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-3 rounded-xl border p-5 font-semibold text-lg transition-opacity hover:opacity-80 theme-text-contrast backdrop-blur-sm"
-                style={{
-                    background:   "color-mix(in oklch, var(--theme-button-bg) 80%, transparent)",
-                    borderColor:  "var(--theme-border)",
-                }}
-            >
-                <ExternalLink size={22} />
-                Open Label Studio
-            </a>
+            {/* Label Studio button + sponsor + modal */}
+            <div className="flex flex-col items-center gap-1.5">
+                <button
+                    onClick={handleLabelStudioClick}
+                    className="w-full flex items-center justify-center gap-3 rounded-xl border p-5 font-semibold text-lg transition-opacity hover:opacity-80 theme-text-contrast backdrop-blur-sm"
+                    style={{
+                        background:  "color-mix(in oklch, var(--theme-button-bg) 80%, transparent)",
+                        borderColor: "var(--theme-border)",
+                    }}
+                >
+                    <ExternalLink size={22} />
+                    Open Label Studio
+                </button>
+                <p className="text-xs theme-subtext-color">
+                    Sponsored by{" "}
+                    <a
+                        href="https://humansignal.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline underline-offset-2 hover:opacity-70 transition-opacity theme-text"
+                    >
+                        HumanSignal
+                    </a>
+                    , the team behind Label Studio
+                </p>
+            </div>
+
+            {/* Email-acknowledgment modal */}
+            {modalOpen && (
+                <div
+                    ref={backdropRef}
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                    style={{ background: "rgba(0,0,0,0.5)" }}
+                    onClick={(e) => { if (e.target === backdropRef.current) setModalOpen(false) }}
+                >
+                    <div
+                        className="w-full max-w-md rounded-2xl border p-6 flex flex-col gap-4 backdrop-blur-sm"
+                        style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
+                    >
+                        <div className="flex items-center gap-2">
+                            <ExternalLink size={18} className="theme-subtext-color" />
+                            <h2 className="text-base font-semibold theme-text-contrast">Before you continue</h2>
+                        </div>
+
+                        <p className="text-sm theme-subtext-color leading-relaxed">
+                            Label Studio tracks your contributions by email. Make sure you sign
+                            in with the <span className="theme-text font-medium">same email</span> you
+                            used to register here — using a different one will disconnect your
+                            annotations from your account.
+                        </p>
+
+                        <label className="flex items-start gap-3 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => setChecked(e.target.checked)}
+                                className="mt-0.5 h-4 w-4 flex-shrink-0 cursor-pointer accent-[var(--theme-text-contrast)]"
+                            />
+                            <span className="text-sm theme-text leading-snug">
+                                I'll use the same email I registered with on this platform.
+                            </span>
+                        </label>
+
+                        <div className="flex gap-2 pt-1">
+                            <button
+                                onClick={() => setModalOpen(false)}
+                                className="flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition-opacity hover:opacity-70 theme-subtext-color"
+                                style={{ borderColor: "var(--theme-border)" }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleContinue}
+                                disabled={!checked}
+                                className="flex-1 rounded-lg border px-4 py-2 text-sm font-semibold transition-opacity theme-text-contrast"
+                                style={{
+                                    background:  "color-mix(in oklch, var(--theme-button-bg) 80%, transparent)",
+                                    borderColor: "var(--theme-border)",
+                                    opacity:     checked ? 1 : 0.35,
+                                    cursor:      checked ? "pointer" : "not-allowed",
+                                }}
+                            >
+                                Continue →
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Contributions table */}
             {error ? (
