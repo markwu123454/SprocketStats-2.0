@@ -69,4 +69,35 @@ async def update_user_onboarding(
     finally:
         await release_db_connection(pool, conn)
 
-__all__ = ["upsert_user", "update_user_onboarding"]
+async def get_users_by_fields(
+    email: list[str] | None = None,
+    display_name: list[str] | None = None,
+    role: list[str] | None = None,
+    team_year: list[str] | None = None,
+) -> list[asyncpg.Record]:
+    field_map = {
+        "email": email,
+        "display_name": display_name,
+        "role": role,
+        "team_year": team_year,
+    }
+    filters, params = [], []
+    for field, values in field_map.items():
+        if values:
+            params.append(values)
+            filters.append(f"{field} = ANY(${len(params)})")
+
+    if not filters:
+        return []
+
+    query = f"SELECT * FROM users WHERE {' AND '.join(filters)}"
+    pool, conn = await get_db_connection(DB_NAME)
+    try:
+        return await conn.fetch(query, *params)
+    except Exception as e:
+        logger.error("get_users_by_fields failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to fetch users")
+    finally:
+        await release_db_connection(pool, conn)
+
+__all__ = ["upsert_user", "get_user", "update_user_onboarding", "get_users_by_fields"]
