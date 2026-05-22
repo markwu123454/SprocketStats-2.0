@@ -9,6 +9,7 @@ description = "SprocketStats"
 requires-python = ">=3.11"
 
 dependencies = [
+    "label-studio-sdk==2.0.22",
     "fastapi[standard]==0.136.1",
     "starlette==1.0.0",
     "uvicorn[standard]==0.47.0",
