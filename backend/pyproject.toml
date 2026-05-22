@@ -21,7 +21,6 @@ dependencies = [
     "httpx==0.28.1",
     "certifi==2026.4.22",
     "itsdangerous==2.2.0",
-    "pydantic==2.13.4",
     "cryptography==48.0.0",
 ]
 
