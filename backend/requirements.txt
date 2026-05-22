@@ -17,6 +17,8 @@ python-jose[cryptography]==3.5.0
 httpx==0.28.1
 certifi==2026.4.22
 
+label-studio-sdk>=2.0.0
+
 # --- Pinned transitive dependencies ---
 annotated-doc==0.0.4
 annotated-types==0.7.0

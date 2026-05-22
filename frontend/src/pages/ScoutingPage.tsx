@@ -3,8 +3,6 @@ import { AgGridReact } from "ag-grid-react"
 import { ExternalLink } from "lucide-react"
 import type { ColDef } from "ag-grid-community"
 
-const LABEL_STUDIO_URL =
-    "https://label-studio-shared-798068859905.us-west2.run.app/user/login/?token=7IKmZlpxScE59qRUTTLbrrAC5IQnUm4mRacqvZzc&next=/projects/7/data/%3Ftab%3D6%26labeling%3D1"
 const LS_KEY = "label_studio_email_ack"
 
 const API = import.meta.env.VITE_BACKEND_URL
@@ -26,6 +24,11 @@ interface ContributionRow {
     annotations_done: number
     skipped: number
     avg_time_secs: number | null
+}
+
+interface LabelingResponse {
+    summary: SummaryRow
+    contributions: ContributionRow[]
 }
 
 const COL_DEFS: ColDef<ContributionRow>[] = [
@@ -67,7 +70,7 @@ function formatPct(value: number): string {
 }
 
 export default function ScoutingPage() {
-    const [summary, setSummary]             = useState<SummaryRow[]>([])
+    const [summary, setSummary]             = useState<SummaryRow | null>(null)
     const [contributions, setContributions] = useState<ContributionRow[]>([])
     const [loading, setLoading]             = useState(true)
     const [error, setError]                 = useState<string | null>(null)
@@ -77,7 +80,8 @@ export default function ScoutingPage() {
 
     function handleLabelStudioClick() {
         if (localStorage.getItem(LS_KEY) === "1") {
-            window.open(LABEL_STUDIO_URL, "_blank", "noopener,noreferrer")
+            window.open("https://app.humansignal.com/user/login/?next=/projects/260156/labeling/"
+                , "_blank", "noopener,noreferrer")
         } else {
             setChecked(false)
             setModalOpen(true)
@@ -87,24 +91,19 @@ export default function ScoutingPage() {
     function handleContinue() {
         if (!checked) return
         localStorage.setItem(LS_KEY, "1")
-        window.open(LABEL_STUDIO_URL, "_blank", "noopener,noreferrer")
+        window.open("https://app.humansignal.com/user/signup/?token=umBrjqaJxKF9yuEhniBIWE3MAxShFCzvLmhc6gNK"
+            , "_blank", "noopener,noreferrer")
         setModalOpen(false)
     }
 
     useEffect(() => {
         async function load() {
             try {
-                const [summaryRes, contribRes] = await Promise.all([
-                    fetch(`${API}/labeling/summary`,       { credentials: "include" }),
-                    fetch(`${API}/labeling/contributions`, { credentials: "include" }),
-                ])
-                if (!summaryRes.ok || !contribRes.ok) throw new Error("Failed to load")
-                const [summaryData, contribData] = await Promise.all([
-                    summaryRes.json() as Promise<SummaryRow[]>,
-                    contribRes.json() as Promise<ContributionRow[]>,
-                ])
-                setSummary(summaryData)
-                setContributions(contribData)
+                const res = await fetch(`${API}/labeling`, { credentials: "include" })
+                if (!res.ok) throw new Error("Failed to load")
+                const data = await res.json() as LabelingResponse
+                setSummary(data.summary)
+                setContributions(data.contributions)
             } catch {
                 setError("Failed to load labeling data")
             } finally {
@@ -114,12 +113,12 @@ export default function ScoutingPage() {
         void load()
     }, [])
 
-    const totalTasks   = summary.reduce((s, r) => s + Number(r.total_tasks),   0)
-    const labeledTasks = summary.reduce((s, r) => s + Number(r.labeled_tasks), 0)
+    const totalTasks   = summary?.total_tasks   ?? 0
+    const labeledTasks = summary?.labeled_tasks ?? 0
     const pct          = totalTasks > 0 ? (labeledTasks / totalTasks) * 100 : 0
 
     return (
-        <div className="max-w-7xl mx-auto px-4 py-8 flex flex-col gap-8">
+        <div className="mx-auto px-4 py-8 flex flex-col gap-8 h-full">
             <h1 className="text-2xl font-bold theme-h1-color">Labeling Progress</h1>
 
             {/* Progress bar */}
@@ -181,8 +180,7 @@ export default function ScoutingPage() {
                     onClick={(e) => { if (e.target === backdropRef.current) setModalOpen(false) }}
                 >
                     <div
-                        className="w-full max-w-md rounded-2xl border p-6 flex flex-col gap-4 backdrop-blur-sm"
-                        style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
+                        className="w-full max-w-md rounded-2xl border p-6 flex flex-col gap-4 backdrop-blur-sm theme-bg theme-border"
                     >
                         <div className="flex items-center gap-2">
                             <ExternalLink size={18} className="theme-subtext-color" />
@@ -192,7 +190,7 @@ export default function ScoutingPage() {
                         <p className="text-sm theme-subtext-color leading-relaxed">
                             Label Studio tracks your contributions by email. Make sure you sign
                             in with the <span className="theme-text font-medium">same email</span> you
-                            used to register here — using a different one will disconnect your
+                            used to register here, using a different one will disconnect your
                             annotations from your account.
                         </p>
 
@@ -201,7 +199,7 @@ export default function ScoutingPage() {
                                 type="checkbox"
                                 checked={checked}
                                 onChange={(e) => setChecked(e.target.checked)}
-                                className="mt-0.5 h-4 w-4 flex-shrink-0 cursor-pointer accent-[var(--theme-text-contrast)]"
+                                className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-(--theme-text-contrast)"
                             />
                             <span className="text-sm theme-text leading-snug">
                                 I'll use the same email I registered with on this platform.
@@ -211,18 +209,16 @@ export default function ScoutingPage() {
                         <div className="flex gap-2 pt-1">
                             <button
                                 onClick={() => setModalOpen(false)}
-                                className="flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition-opacity hover:opacity-70 theme-subtext-color"
-                                style={{ borderColor: "var(--theme-border)" }}
+                                className="flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition-opacity hover:opacity-70 theme-subtext-color theme-border"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleContinue}
                                 disabled={!checked}
-                                className="flex-1 rounded-lg border px-4 py-2 text-sm font-semibold transition-opacity theme-text-contrast"
+                                className="flex-1 rounded-lg border px-4 py-2 text-sm font-semibold transition-opacity theme-text-contrast theme-border"
                                 style={{
                                     background:  "color-mix(in oklch, var(--theme-button-bg) 80%, transparent)",
-                                    borderColor: "var(--theme-border)",
                                     opacity:     checked ? 1 : 0.35,
                                     cursor:      checked ? "pointer" : "not-allowed",
                                 }}
@@ -235,13 +231,14 @@ export default function ScoutingPage() {
             )}
 
             {/* Contributions table */}
-            {error ? (
-                <p className="text-sm theme-subtext-color">{error}</p>
-            ) : (
-                <div
-                    className="rounded-xl border overflow-hidden"
-                    style={{ borderColor: "var(--theme-border)", height: "480px" }}
-                >
+            <div className="flex flex-col gap-2 flex-1 min-h-0">
+                {error && (
+                    <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
+                       style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
+                        {error}
+                    </p>
+                )}
+                <div className="rounded-xl border overflow-hidden theme-border flex-1 min-h-0">
                     <AgGridReact
                         rowData={contributions}
                         columnDefs={COL_DEFS}
@@ -249,7 +246,7 @@ export default function ScoutingPage() {
                         defaultColDef={{ sortable: true, resizable: true }}
                     />
                 </div>
-            )}
+            </div>
         </div>
     )
 }

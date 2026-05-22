@@ -27,7 +27,7 @@ export default function DashboardPage() {
                     <h1 className="text-2xl font-bold theme-text">
                         Welcome back, {user?.display_name ?? user?.given_name ?? "Scout"}
                     </h1>
-                    <p className="text-sm theme-subtext-color">Here's your scouting overview</p>
+                    <p className="text-sm theme-subtext-color">Here's your overview</p>
                 </div>
             </div>
 
