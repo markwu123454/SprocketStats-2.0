@@ -1,8 +1,9 @@
-import { useAuth } from "@/contexts/authContext.tsx"
-import { formatRole } from "@/lib/Roles"
+import { useAuth, useOnboardedUser } from "@/contexts/authContext.tsx"
+import { getPerm } from "@/lib/permissions"
 import { LogOut, Mail, ShieldCheck, Palette, Navigation } from "lucide-react"
 import { useState } from "react"
 import { useTheme } from "@/contexts/themeProvider.tsx"
+import Avatar from "@/components/Avatar.tsx"
 
 const NAV_TEXT_KEY = "nav-show-text"
 
@@ -12,11 +13,10 @@ function getNavTextPref(): boolean {
 }
 
 export default function SettingPage() {
-    const { user, logout } = useAuth()
+    const { logout } = useAuth()
+    const user = useOnboardedUser()
     const { theme, setTheme } = useTheme()
     const [showNavText, setShowNavTextState] = useState<boolean>(getNavTextPref)
-
-    if (!user) return null
 
     function setShowNavText(v: boolean) {
         setShowNavTextState(v)
@@ -38,27 +38,22 @@ export default function SettingPage() {
                     className="rounded-xl border p-5 flex items-center gap-4"
                     style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
                 >
-                    <img
-                        src={user.picture}
-                        alt={user.name}
-                        className="w-16 h-16 rounded-full shrink-0"
-                        referrerPolicy="no-referrer"
-                    />
+                    <Avatar name={user.name} picture={user.picture} size={64} />
                     <div className="min-w-0">
-                        <p className="text-lg font-semibold theme-text truncate">{user.display_name ?? user.name}</p>
-                        {user.display_name && user.name !== user.display_name && (
+                        <p className="text-lg font-semibold theme-text truncate">{user.display_name}</p>
+                        {user.name !== user.display_name && (
                             <p className="text-xs theme-subtext-color truncate">{user.name}</p>
                         )}
                         <div className="flex items-center gap-1.5 mt-1">
                             <Mail size={12} className="theme-subtext-color shrink-0" />
                             <p className="text-sm theme-subtext-color truncate">{user.email}</p>
                         </div>
-                        {user.role && (
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                                <ShieldCheck size={12} className="theme-text-contrast shrink-0 opacity-80" />
-                                <p className="text-sm theme-text-contrast opacity-80 truncate">{formatRole(user.role)}</p>
-                            </div>
-                        )}
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            <ShieldCheck size={12} className="theme-text-contrast shrink-0 opacity-80" />
+                            <p className="text-sm theme-text-contrast opacity-80 truncate">
+                                {(getPerm(user.permissions, "label") as string | undefined) ?? user.role}
+                            </p>
+                        </div>
                     </div>
                 </div>
 

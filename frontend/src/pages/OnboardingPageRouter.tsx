@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "@/contexts/authContext.tsx"
 import { useAppReady } from "@/contexts/appReadyContext.tsx"
-import { ROLES_WITHOUT_SCHOOL_INFO } from "@/lib/Roles"
+import type { RoleCatalogEntry } from "@/lib/permissions"
 import OnboardingPageDesktop from "./OnboardingPageDesktop"
 import OnboardingPageMobile from "./OnboardingPageMobile"
 
@@ -46,6 +46,7 @@ export interface OnboardingPageProps {
     error: string | null
     setError: (v: string | null) => void
     needsSchoolInfo: boolean
+    roleCatalog: RoleCatalogEntry[]
     handleSubmit: (e: React.FormEvent) => void
     handleSignOut: () => void
 }
@@ -103,8 +104,24 @@ export default function OnboardingPageRouter() {
     const [selectedTeamYear, setSelectedTeamYear] = useState<string | null>(null)
     const [submitting,       setSubmitting]       = useState(false)
     const [error,            setError]            = useState<string | null>(null)
+    const [roleCatalog,      setRoleCatalog]      = useState<RoleCatalogEntry[]>([])
 
-    const needsSchoolInfo = selectedRole !== null && !ROLES_WITHOUT_SCHOOL_INFO.has(selectedRole)
+    // The role catalog (labels + school-info rule for every role) is owned by the
+    // backend; fetch it for the picker since the user has no role yet.
+    useEffect(() => {
+        let cancelled = false
+        fetch(`${API}/auth/roles`, { credentials: "include" })
+            .then(r => (r.ok ? r.json() : []))
+            .then((data: RoleCatalogEntry[]) => { if (!cancelled) setRoleCatalog(data) })
+            .catch(() => {})
+        return () => { cancelled = true }
+    }, [])
+
+    // Whether the chosen role requires grade/team-year, per the backend catalog.
+    // Defaults to true until the catalog loads (a role can't be picked before then).
+    const needsSchoolInfo =
+        selectedRole !== null &&
+        (roleCatalog.find(r => r.value === selectedRole)?.school_info_required ?? true)
 
     useEffect(() => { markReady() }, [])
 
@@ -171,6 +188,7 @@ export default function OnboardingPageRouter() {
         submitting,
         error,            setError,
         needsSchoolInfo,
+        roleCatalog,
         handleSubmit,
         handleSignOut,
     }

@@ -47,25 +47,16 @@ export default function App() {
                                     <Route path="/" element={<LoginPageRouter/>}/>
                                     <Route path="/onboarding" element={<OnboardingPageRouter/>}/>
 
-                                    <Route element={<AppShell/>}>
-                                        <Route path="/dashboard" element={
-                                            <Protected><DashboardPage/></Protected>
-                                        }/>
-                                        <Route path="/attendance" element={
-                                            <Protected><AttendancePage/></Protected>
-                                        }/>
-                                        <Route path="/competition" element={
-                                            <Protected><CompetitionPage/></Protected>
-                                        }/>
-                                        <Route path="/scouting" element={
-                                            <Protected><ScoutingPage/></Protected>
-                                        }/>
-                                        <Route path="/control" element={
-                                            <Protected><ControlPanelPage/></Protected>
-                                        }/>
-                                        <Route path="/settings" element={
-                                            <Protected><SettingPage/></Protected>
-                                        }/>
+                                    {/* One guard for the whole shell: AuthWrapper gates
+                                        AppShell + every child page, so all of them are
+                                        downstream of the signed-in + onboarded guarantee. */}
+                                    <Route element={<Protected><AppShell/></Protected>}>
+                                        <Route path="/dashboard"   element={<DashboardPage/>}/>
+                                        <Route path="/attendance"  element={<AttendancePage/>}/>
+                                        <Route path="/competition" element={<CompetitionPage/>}/>
+                                        <Route path="/scouting"    element={<ScoutingPage/>}/>
+                                        <Route path="/control"     element={<ControlPanelPage/>}/>
+                                        <Route path="/settings"    element={<SettingPage/>}/>
                                     </Route>
                                 </Routes>
                             </Suspense>

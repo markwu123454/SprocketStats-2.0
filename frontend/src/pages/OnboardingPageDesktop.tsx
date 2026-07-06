@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react"
 import { ChevronRight, ChevronDown, Check } from "lucide-react"
-import { ROLE_OPTIONS, GRADE_OPTIONS, TEAM_YEAR_OPTIONS, formatRole } from "@/lib/Roles"
+import { GRADE_OPTIONS, TEAM_YEAR_OPTIONS } from "@/lib/Roles"
 import type { OnboardingPageProps } from "./OnboardingPageRouter"
 
 /* ── Season wordmark ─────────────────────────────────────────── */
@@ -133,7 +133,18 @@ export function SimpleDropdown({
 }
 
 /* ── RoleDropdown ────────────────────────────────────────────── */
-export function RoleDropdown({ value, onChange }: { value: string | null; onChange: (v: string) => void }) {
+/**
+ * Role picker dropdown. Options are supplied by the caller (sourced from the
+ * backend `GET /roles` catalog) rather than a hardcoded frontend list, so the
+ * displayed label and available roles always match the backend policy map.
+ */
+export function RoleDropdown({
+                                 value, onChange, options,
+                             }: {
+    value: string | null
+    onChange: (v: string) => void
+    options: SimpleOption[]
+}) {
     const [open,   setOpen]   = useState(false)
     const [dropUp, setDropUp] = useState(false)
     const rootRef = useRef<HTMLDivElement>(null)
@@ -179,7 +190,7 @@ export function RoleDropdown({ value, onChange }: { value: string | null; onChan
                     value ? "theme-text" : "theme-subtext-color",
                 ].join(" ")}
             >
-                <span>{value ? formatRole(value) : "Select your role…"}</span>
+                <span>{value ? (options.find(o => o.value === value)?.label ?? value) : "Select your role…"}</span>
                 <ChevronDown
                     size={16}
                     className="theme-subtext-color shrink-0"
@@ -197,7 +208,7 @@ export function RoleDropdown({ value, onChange }: { value: string | null; onChan
                         ...(dropUp ? { bottom: "calc(100% + 8px)" } : { top: "calc(100% + 8px)" }),
                     }}
                 >
-                    {ROLE_OPTIONS.map(opt => {
+                    {options.map(opt => {
                         const active = value === opt.value
                         return (
                             <button
@@ -223,6 +234,12 @@ export function RoleDropdown({ value, onChange }: { value: string | null; onChan
 }
 
 /* ── Shared form body (used by both Desktop and Mobile) ──────── */
+/**
+ * Onboarding form shared by the desktop and mobile layouts. Drives the role
+ * dropdown and the conditional school-info fields from the backend-supplied
+ * `roleCatalog`, so which roles exist and which require grade/team-year come
+ * from the single source of truth rather than hardcoded frontend lists.
+ */
 export function OnboardingForm({
                                    displayName, setDisplayName,
                                    selectedRole, setSelectedRole,
@@ -230,8 +247,10 @@ export function OnboardingForm({
                                    selectedTeamYear, setSelectedTeamYear,
                                    submitting, error, setError,
                                    needsSchoolInfo,
+                                   roleCatalog,
                                    handleSubmit, handleSignOut,
                                }: Omit<OnboardingPageProps, "season">) {
+    const roleOptions = roleCatalog.map(r => ({ value: r.value, label: r.label }))
     return (
         <>
             <div className="mb-6">
@@ -264,9 +283,11 @@ export function OnboardingForm({
                     </label>
                     <RoleDropdown
                         value={selectedRole}
+                        options={roleOptions}
                         onChange={v => {
                             setSelectedRole(v)
-                            if (["alumni", "mentor"].includes(v)) {
+                            // Roles that don't require school info can't keep stale grade/year.
+                            if (!roleCatalog.find(r => r.value === v)?.school_info_required) {
                                 setSelectedGrade(null)
                                 setSelectedTeamYear(null)
                             }

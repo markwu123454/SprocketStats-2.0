@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from "react"
 import { Outlet, Link, useLocation } from "react-router-dom"
-import { useAuth } from "@/contexts/authContext.tsx"
+import { useAuth, useOnboardedUser } from "@/contexts/authContext.tsx"
 import {
     LayoutDashboard, CalendarCheck, Trophy, ClipboardList, Settings,
     LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen, SlidersHorizontal,
 } from "lucide-react"
-import { formatRole, hasControlPanelAccess } from "@/lib/Roles"
+import Avatar from "@/components/Avatar.tsx"
+import { can, getPerm } from "@/lib/permissions"
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community"
 import { useAppReady } from "@/contexts/appReadyContext.tsx"
 
@@ -32,7 +33,9 @@ const CONTROL_PANEL_TAB = {
 }
 
 export default function AppShell() {
-    const { user, logout } = useAuth()
+    const { logout } = useAuth()
+    // Guaranteed present + onboarded: AppShell only renders under <Protected>.
+    const user = useOnboardedUser()
     const location = useLocation()
     const markReady = useAppReady()
 
@@ -78,9 +81,13 @@ export default function AppShell() {
 
     const isActive = (to: string) => location.pathname === to
 
-    const navTabs = hasControlPanelAccess(user?.role)
+    const navTabs = can(user.permissions, "control_panel.view")
         ? [...CORE_TABS, CONTROL_PANEL_TAB]
         : CORE_TABS
+
+    // Human-readable role label comes from the backend policy; fall back to the
+    // raw role slug if the role isn't in the policy map.
+    const roleLabel = (getPerm(user.permissions, "label") as string | undefined) ?? user.role
 
     return (
         <div className="flex flex-col min-h-0 theme-bg-page bg-cover" style={{ height: "var(--real-vh, 100dvh)" }}>
@@ -114,104 +121,81 @@ export default function AppShell() {
                     </div>
 
                     {/* Desktop user menu */}
-                    {user && (
-                        <div className="relative hidden md:block" ref={menuRef}>
-                            <button
-                                onClick={() => setMenuOpen(v => !v)}
-                                className="flex items-center gap-2 px-2 py-1 rounded-lg hover:opacity-80 transition-opacity"
-                            >
-                                <img
-                                    src={user.picture}
-                                    alt={user.name}
-                                    className="w-7 h-7 rounded-full"
-                                    referrerPolicy="no-referrer"
-                                />
-                                <span className="text-sm font-medium theme-text">{user.display_name ?? user.given_name}</span>
-                                <ChevronDown size={14} className="theme-text opacity-60" />
-                            </button>
+                    <div className="relative hidden md:block" ref={menuRef}>
+                        <button
+                            onClick={() => setMenuOpen(v => !v)}
+                            className="flex items-center gap-2 px-2 py-1 rounded-lg hover:opacity-80 transition-opacity"
+                        >
+                            <Avatar name={user.name} picture={user.picture} size={28} />
+                            <span className="text-sm font-medium theme-text">{user.display_name}</span>
+                            <ChevronDown size={14} className="theme-text opacity-60" />
+                        </button>
 
-                            {menuOpen && (
-                                <div className="absolute right-0 mt-1 w-52 rounded-xl border shadow-lg z-50 py-1 theme-bg theme-border">
-                                    <div className="px-3 py-2.5 border-b theme-border">
-                                        <p className="text-sm font-semibold theme-text truncate">{user.display_name ?? user.name}</p>
-                                        <p className="text-xs theme-subtext-color truncate">{user.email}</p>
-                                        {user.role && (
-                                            <p className="text-xs theme-text-contrast opacity-80 truncate mt-0.5">{formatRole(user.role)}</p>
-                                        )}
-                                    </div>
-                                    <Link
-                                        to="/settings"
-                                        onClick={() => setMenuOpen(false)}
-                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
-                                    >
-                                        <Settings size={14} />
-                                        Settings
-                                    </Link>
-                                    <button
-                                        onClick={() => { setMenuOpen(false); void logout() }}
-                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
-                                    >
-                                        <LogOut size={14} />
-                                        Sign out
-                                    </button>
+                        {menuOpen && (
+                            <div className="absolute right-0 mt-1 w-52 rounded-xl border shadow-lg z-50 py-1 theme-bg theme-border">
+                                <div className="px-3 py-2.5 border-b theme-border">
+                                    <p className="text-sm font-semibold theme-text truncate">{user.display_name}</p>
+                                    <p className="text-xs theme-subtext-color truncate">{user.email}</p>
+                                    <p className="text-xs theme-text-contrast opacity-80 truncate mt-0.5">{roleLabel}</p>
                                 </div>
-                            )}
-                        </div>
-                    )}
+                                <Link
+                                    to="/settings"
+                                    onClick={() => setMenuOpen(false)}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
+                                >
+                                    <Settings size={14} />
+                                    Settings
+                                </Link>
+                                <button
+                                    onClick={() => { setMenuOpen(false); void logout() }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
+                                >
+                                    <LogOut size={14} />
+                                    Sign out
+                                </button>
+                            </div>
+                        )}
+                    </div>
 
                     {/* Mobile profile dropdown */}
-                    {user && (
-                        <div className="relative md:hidden shrink-0" ref={mobileMenuRef}>
-                            <button
-                                onClick={() => setMobileMenuOpen(v => !v)}
-                                aria-label="Open profile menu"
-                                aria-expanded={mobileMenuOpen}
-                                className="block rounded-full hover:opacity-80 transition-opacity"
-                            >
-                                <img
-                                    src={user.picture}
-                                    alt={user.name}
-                                    className="w-8 h-8 rounded-full"
-                                    referrerPolicy="no-referrer"
-                                />
-                            </button>
+                    <div className="relative md:hidden shrink-0" ref={mobileMenuRef}>
+                        <button
+                            onClick={() => setMobileMenuOpen(v => !v)}
+                            aria-label="Open profile menu"
+                            aria-expanded={mobileMenuOpen}
+                            className="block rounded-full hover:opacity-80 transition-opacity"
+                        >
+                            <Avatar name={user.name} picture={user.picture} size={32} />
+                        </button>
 
-                            {mobileMenuOpen && (
-                                <div className="absolute right-0 mt-2 w-56 rounded-xl border shadow-lg z-50 py-1 theme-bg theme-border">
-                                    <div className="px-3 py-2.5 border-b theme-border flex items-center gap-2.5">
-                                        <img
-                                            src={user.picture}
-                                            alt={user.name}
-                                            className="w-9 h-9 rounded-full shrink-0"
-                                            referrerPolicy="no-referrer"
-                                        />
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-semibold theme-text truncate">{user.display_name ?? user.name}</p>
-                                            <p className="text-xs theme-subtext-color truncate">{user.email}</p>
-                                            {user.role && (
-                                                <p className="text-xs theme-text-contrast opacity-80 truncate mt-0.5">{formatRole(user.role)}</p>
-                                            )}
-                                        </div>
+                        {mobileMenuOpen && (
+                            <div className="absolute right-0 mt-2 w-56 rounded-xl border shadow-lg z-50 py-1 theme-bg theme-border">
+                                <div className="px-3 py-2.5 border-b theme-border flex items-center gap-2.5">
+                                    <Avatar name={user.name} picture={user.picture} size={36} />
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-semibold theme-text truncate">{user.display_name}</p>
+                                        <p className="text-xs theme-subtext-color truncate">{user.email}</p>
+                                        <p className="text-xs theme-text-contrast opacity-80 truncate mt-0.5">{roleLabel}</p>
                                     </div>
-                                    <Link
-                                        to="/settings"
-                                        onClick={() => setMobileMenuOpen(false)}
-                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
-                                    >
-                                        <Settings size={14} />
-                                        Settings
-                                    </Link>
-                                    <button
-                                        onClick={() => { setMobileMenuOpen(false); void logout() }}
-                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
-                                    >
-                                        <LogOut size={14} />
-                                        Sign out
-                                    </button>
                                 </div>
-                            )}
-                        </div>
-                    )}
+                                <Link
+                                    to="/settings"
+                                    onClick={() => setMobileMenuOpen(false)}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
+                                >
+                                    <Settings size={14} />
+                                    Settings
+                                </Link>
+                                <button
+                                    onClick={() => { setMobileMenuOpen(false); void logout() }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
+                                >
+                                    <LogOut size={14} />
+                                    Sign out
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </header>
 

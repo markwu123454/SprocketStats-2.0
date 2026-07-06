@@ -1,4 +1,5 @@
 import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
@@ -10,7 +11,7 @@ import db
 from endpoints import router
 
 import subprocess
-result = subprocess.run(["/app/.venv/bin/pip", "show", "label-studio-sdk"], capture_output=True, text=True)
+result = subprocess.run([sys.executable, "-m", "pip", "show", "label-studio-sdk"], capture_output=True, text=True)
 print("LABEL SDK:", result.stdout or result.stderr, flush=True)
 
 @asynccontextmanager

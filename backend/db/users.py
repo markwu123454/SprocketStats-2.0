@@ -46,14 +46,23 @@ async def get_user(user_id: str) -> asyncpg.Record | None:
 
 
 async def update_user_onboarding(
-    user_id: str, display_name: str, role: str, grade: str, team_year: str
+    user_id: str, display_name: str, role: str, grade: str | None, team_year: str | None
 ) -> asyncpg.Record:
     pool, conn = await get_db_connection(DB_NAME)
     try:
         return await conn.fetchrow(
             """
             UPDATE users
-            SET display_name = $2, role = $3, grade = $4, team_year = $5, onboarding_complete = true
+            SET display_name = $2,
+                role         = $3,
+                grade        = $4,
+                team_year    = $5,
+                -- Backfill name/given_name from the onboarding display name when
+                -- Google didn't supply them, so an onboarded user always has both.
+                -- COALESCE keeps any real Google value and never clobbers it.
+                name         = COALESCE(name, $2),
+                given_name   = COALESCE(given_name, $2),
+                onboarding_complete = true
             WHERE id = $1
             RETURNING *
             """,

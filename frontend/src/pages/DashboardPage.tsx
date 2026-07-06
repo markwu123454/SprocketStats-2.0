@@ -1,5 +1,6 @@
-import { useAuth } from "@/contexts/authContext.tsx"
+import { useOnboardedUser } from "@/contexts/authContext.tsx"
 import { BarChart3, Users, Trophy, Activity } from "lucide-react"
+import Avatar from "@/components/Avatar.tsx"
 
 const statCards = [
     { label: "Matches Scouted", value: "—", icon: BarChart3, description: "Total matches recorded" },
@@ -9,23 +10,16 @@ const statCards = [
 ]
 
 export default function DashboardPage() {
-    const { user } = useAuth()
+    const user = useOnboardedUser()
 
     return (
         <div className="max-w-7xl mx-auto px-4 py-8 flex flex-col gap-8">
             {/* Header */}
             <div className="flex items-center gap-4">
-                {user?.picture && (
-                    <img
-                        src={user.picture}
-                        alt={user.name}
-                        className="w-12 h-12 rounded-full ring-2"
-                        referrerPolicy="no-referrer"
-                    />
-                )}
+                <Avatar name={user.name} picture={user.picture} size={48} className="ring-2" />
                 <div>
                     <h1 className="text-2xl font-bold theme-text">
-                        Welcome back, {user?.display_name ?? user?.given_name ?? "Scout"}
+                        Welcome back, {user.display_name}
                     </h1>
                     <p className="text-sm theme-subtext-color">Here's your overview</p>
                 </div>
