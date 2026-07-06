@@ -1,12 +1,10 @@
 name: Deploy Frontend to Vercel
-
 on:
   push:
     branches:
       - main
     paths:
       - 'frontend/**'
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -14,8 +12,22 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Deploy to Vercel
+        id: deploy
         working-directory: ./frontend
-        run: npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: |
+          npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }} 2>&1 | tee /tmp/deploy.log
+          grep -o 'https://vercel.com/[^[:space:]]*BX[^[:space:]]*' /tmp/deploy.log | head -1 > /tmp/inspect_url.txt || true
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+
+      - name: Fetch full build logs on failure
+        if: failure()
+        working-directory: ./frontend
+        run: |
+          INSPECT_URL=$(cat /tmp/inspect_url.txt)
+          echo "Inspect URL: $INSPECT_URL"
+          npx vercel logs "$INSPECT_URL" --token=${{ secrets.VERCEL_TOKEN }} 2>&1
         env:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
