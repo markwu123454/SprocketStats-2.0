@@ -6,6 +6,8 @@ import {AuthProvider} from "@/contexts/authContext.tsx"
 import {AppReadyProvider} from "@/contexts/appReadyContext"
 
 import AuthWrapper from "@/components/wrappers/AuthWrapper.tsx"
+import ControlGuard from "@/components/wrappers/ControlGuard.tsx"
+import PermGuard from "@/components/wrappers/PermGuard.tsx"
 
 const LoginPageRouter      = lazy(() => import("@/pages/LoginPageRouter"))
 const OnboardingPageRouter = lazy(() => import("@/pages/OnboardingPageRouter.tsx"))
@@ -14,7 +16,9 @@ const DashboardPage  = lazy(() => import("@/pages/DashboardPage.tsx"))
 const AttendancePage    = lazy(() => import("@/pages/AttendancePage"))
 const CompetitionPage    = lazy(() => import("@/pages/CompetitionPage"))
 const ScoutingPage    = lazy(() => import("@/pages/ScoutingPage"))
-const ControlPanelPage    = lazy(() => import("@/pages/ControlPanelPage"))
+const ControlPanelHub  = lazy(() => import("@/pages/control/ControlPanelHub"))
+const MeetingPage       = lazy(() => import("@/pages/control/MeetingPage"))
+const UpcomingEventPage = lazy(() => import("@/pages/control/UpcomingEventPage"))
 const SettingPage    = lazy(() => import("@/pages/SettingPage"))
 
 function Protected({children}: {children: ReactNode}) {
@@ -52,10 +56,12 @@ export default function App() {
                                         downstream of the signed-in + onboarded guarantee. */}
                                     <Route element={<Protected><AppShell/></Protected>}>
                                         <Route path="/dashboard"   element={<DashboardPage/>}/>
-                                        <Route path="/attendance"  element={<AttendancePage/>}/>
+                                        <Route path="/attendance"  element={<PermGuard perm="attendance.view"><AttendancePage/></PermGuard>}/>
                                         <Route path="/competition" element={<CompetitionPage/>}/>
                                         <Route path="/scouting"    element={<ScoutingPage/>}/>
-                                        <Route path="/control"     element={<ControlPanelPage/>}/>
+                                        <Route path="/control"     element={<ControlPanelHub/>}/>
+                                        <Route path="/control/meeting"        element={<ControlGuard section="meeting"><MeetingPage/></ControlGuard>}/>
+                                        <Route path="/control/upcoming-event" element={<ControlGuard section="upcoming-event"><UpcomingEventPage/></ControlGuard>}/>
                                         <Route path="/settings"    element={<SettingPage/>}/>
                                     </Route>
                                 </Routes>
