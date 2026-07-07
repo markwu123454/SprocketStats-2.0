@@ -69,6 +69,7 @@ async def get_my_attendance(user: dict = Depends(get_current_user)):
 class ClockEntry(BaseModel):
     clock_in: datetime
     clock_out: datetime
+    source: str
 
     @model_validator(mode="after")
     def validate_range(self) -> "ClockEntry":
@@ -79,7 +80,7 @@ class ClockEntry(BaseModel):
 
 @router.post("")
 async def submit_attendance(entry: ClockEntry, user: dict = Depends(get_current_user)):
-    rows = await db.create_attendance_events(user["sub"], "honor_system", entry.clock_in, entry.clock_out)
+    rows = await db.create_attendance_events(user["sub"], entry.source, entry.clock_in, entry.clock_out)
     return [
         {"id": r["id"], "timestamp_pst": r["timestamp_pst"], "event_type": r["event_type"]}
         for r in rows

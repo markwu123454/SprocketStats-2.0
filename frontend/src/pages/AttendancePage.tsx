@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, Trophy } from "lucide-react"
 
 const API = import.meta.env.VITE_BACKEND_URL
@@ -115,6 +116,13 @@ function diffHoursMinutes(start: string, end: string): { h: number, m: number } 
     return { h: Math.floor(mins / 60), m: mins % 60 }
 }
 
+function rawMinutesDiff(start: string, end: string): number {
+    if (!start || !end) return 0
+    const [sh, sm] = start.split(":").map(Number)
+    const [eh, em] = end.split(":").map(Number)
+    return (eh * 60 + em) - (sh * 60 + sm)
+}
+
 function combineDateAndTime(date: Date, hhmm: string): Date {
     const [h, m] = hhmm.split(":").map(Number)
     const combined = new Date(date)
@@ -206,7 +214,7 @@ function TimeWheel({ label, value, onChange }: { label: string, value: string, o
             const tick = (now: number) => {
                 const dt = Math.min(40, now - last); last = now
                 let pos = posRef.current + velRef.current * dt
-                velRef.current *= Math.pow(0.9975, dt)
+                velRef.current *= Math.pow(0.985, dt)
                 if (pos < 0) { pos = 0; velRef.current = 0 }
                 if (pos > max) { pos = max; velRef.current = 0 }
                 setPos(pos)
@@ -256,10 +264,16 @@ function TimeWheel({ label, value, onChange }: { label: string, value: string, o
         const onWheel = (e: WheelEvent) => {
             e.preventDefault()
             interactingRef.current = true
-            const cap = 0.045
-            velRef.current = clamp((velRef.current || 0) + (e.deltaY / 100) * 0.0018, -cap, cap)
-            if (runningRef.current) return
             cancel()
+
+            const DIRECT_SENSITIVITY = 0.006
+            const dIdx = clamp(e.deltaY * DIRECT_SENSITIVITY, -0.6, 0.6)
+            setPos(posRef.current + dIdx)
+
+            const cap = 0.02
+            velRef.current = clamp(dIdx * 0.15, -cap, cap)
+
+            if (runningRef.current) return
             spin()
         }
 
@@ -306,6 +320,8 @@ export default function AttendancePage() {
     const [submitError, setSubmitError] = useState<string | null>(null)
 
     const [calOpen, setCalOpen] = useState(false)
+    const calTriggerRef = useRef<HTMLDivElement>(null)
+    const [calPos, setCalPos] = useState<{ top: number, left: number } | null>(null)
     const [viewY, setViewY] = useState(() => new Date().getFullYear())
     const [viewM, setViewM] = useState(() => new Date().getMonth())
 
@@ -315,6 +331,8 @@ export default function AttendancePage() {
     const [loadError, setLoadError] = useState<string | null>(null)
 
     const total = useMemo(() => diffHoursMinutes(clockIn, clockOut), [clockIn, clockOut])
+    const rawMinutes = useMemo(() => rawMinutesDiff(clockIn, clockOut), [clockIn, clockOut])
+    const timeRangeInvalid = rawMinutes < 0
     const today = useMemo(() => new Date(), [])
 
     const fetchMeetings = useCallback(async () => {
@@ -369,6 +387,23 @@ export default function AttendancePage() {
         setViewM(d.getMonth())
     }, [selectedDateKey])
 
+    // Position the portaled calendar popover under its trigger, and close it if the page scrolls/resizes.
+    useEffect(() => {
+        if (!calOpen) return
+        const el = calTriggerRef.current
+        if (!el) return
+        const r = el.getBoundingClientRect()
+        setCalPos({ top: r.bottom + 4, left: r.left + r.width / 2 })
+
+        const close = () => setCalOpen(false)
+        window.addEventListener("scroll", close, true)
+        window.addEventListener("resize", close)
+        return () => {
+            window.removeEventListener("scroll", close, true)
+            window.removeEventListener("resize", close)
+        }
+    }, [calOpen])
+
     const selectedMeeting = scheduledDates.find(([key]) => key === selectedDateKey)?.[1]
 
     const liveMeeting = useMemo(() => {
@@ -398,6 +433,7 @@ export default function AttendancePage() {
                 body: JSON.stringify({
                     clock_in: combineDateAndTime(date, clockIn).toISOString(),
                     clock_out: combineDateAndTime(date, clockOut).toISOString(),
+                    source: "normal",
                 }),
             })
             if (!res.ok) throw new Error("Failed to submit hours")
@@ -416,18 +452,13 @@ export default function AttendancePage() {
 
             {/* Log hours */}
             <div className="rounded-xl border p-6 flex flex-col gap-4 backdrop-blur-sm" style={cardStyle}>
-                <div className="flex items-start justify-between gap-3">
-                    <div>
-                        <p className="text-xs font-semibold tracking-wider theme-subtext-color">LOG YOUR HOURS</p>
-                        <h2 className="text-lg font-bold theme-text">Enter your time</h2>
-                    </div>
-                    <span className="shrink-0 text-xs font-medium px-2.5 py-1 rounded-full border theme-subtext-color theme-border">
-                        Honor system
-                    </span>
+                <div>
+                    <p className="text-xs font-semibold tracking-wider theme-subtext-color">LOG YOUR HOURS</p>
+                    <h2 className="text-lg font-bold theme-text">Enter your time</h2>
                 </div>
 
                 {/* Date picker (inline calendar) */}
-                <div className="relative">
+                <div className="relative" ref={calTriggerRef}>
                     <button
                         onClick={() => setCalOpen(o => !o)}
                         className="w-full flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-left"
@@ -445,12 +476,12 @@ export default function AttendancePage() {
                         <ChevronDown size={14} className={`theme-subtext-color shrink-0 ${selectedMeeting ? "ml-2.5" : "ml-auto"}`} />
                     </button>
 
-                    {calOpen && (
+                    {calOpen && calPos && createPortal(
                         <>
-                            <div className="fixed inset-0 z-20" onClick={() => setCalOpen(false)} />
+                            <div className="fixed inset-0 z-50" onClick={() => setCalOpen(false)} />
                             <div
-                                className="absolute left-1/2 -translate-x-1/2 z-30 mt-1 rounded-xl border p-3 w-max shadow-[0_20px_50px_-18px_rgba(0,0,0,0.6)]"
-                                style={cardStyle}
+                                className="fixed z-50 -translate-x-1/2 rounded-xl border p-3 w-max shadow-[0_20px_50px_-18px_rgba(0,0,0,0.6)]"
+                                style={{ ...cardStyle, top: calPos.top, left: calPos.left }}
                             >
                                 <div className="flex items-center justify-between mb-2.5">
                                     <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg border flex items-center justify-center theme-text theme-border">
@@ -477,12 +508,11 @@ export default function AttendancePage() {
                                                 return (
                                                     <button
                                                         key={di}
-                                                        disabled={!scheduled}
                                                         onClick={() => { setSelectedDateKey(key); setSubmitted(false); setCalOpen(false) }}
-                                                        className="w-[38px] h-[38px] rounded-[9px] font-mono text-[13px] flex items-center justify-center relative disabled:cursor-default enabled:cursor-pointer"
+                                                        className="w-[38px] h-[38px] rounded-[9px] font-mono text-[13px] flex items-center justify-center relative cursor-pointer"
                                                         style={isSel
                                                             ? { background: "var(--theme-text-contrast)", color: "var(--theme-bg)", fontWeight: 700 }
-                                                            : { color: scheduled ? "var(--theme-text)" : "color-mix(in oklch, var(--theme-subtext-color) 40%, transparent)", fontWeight: 500 }}
+                                                            : { color: "var(--theme-text)", fontWeight: 500 }}
                                                     >
                                                         {d}
                                                         {scheduled && !isSel && (
@@ -495,12 +525,13 @@ export default function AttendancePage() {
                                     ))}
                                 </div>
                             </div>
-                        </>
+                        </>,
+                        document.body
                     )}
                 </div>
 
                 {/* Clock in / out wheels */}
-                <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <TimeWheel label="Clock in" value={clockIn} onChange={(v) => { setClockIn(v); setSubmitted(false) }} />
                     <TimeWheel label="Clock out" value={clockOut} onChange={(v) => { setClockOut(v); setSubmitted(false) }} />
                 </div>
@@ -511,12 +542,16 @@ export default function AttendancePage() {
                 </div>
 
                 <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm theme-text">
-                        Total <span className="font-mono font-bold theme-text-contrast">{total.h}h {String(total.m).padStart(2, "0")}m</span>
-                    </p>
+                    {timeRangeInvalid ? (
+                        <p className="text-sm text-red-500">Clock out must be after clock in</p>
+                    ) : (
+                        <p className="text-sm theme-text">
+                            Total <span className="font-mono font-bold theme-text-contrast">{total.h}h {String(total.m).padStart(2, "0")}m</span>
+                        </p>
+                    )}
                     <button
                         onClick={() => void handleSubmit()}
-                        disabled={submitting || !selectedDateKey}
+                        disabled={submitting || !selectedDateKey || timeRangeInvalid}
                         className="flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-sm transition-opacity hover:opacity-90 disabled:opacity-60"
                         style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
                     >
