@@ -17,6 +17,6 @@ primary_region = 'lax'
   processes = ['app']
 
 [[vm]]
-  memory = '1gb'
+  memory = '512mb'
   cpus = 1
   memory_mb = 1024
