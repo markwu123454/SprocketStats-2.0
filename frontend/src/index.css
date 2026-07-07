@@ -21,6 +21,14 @@
     --scrollbar-thumb: #1b3d80;
     --scrollbar-thumb-hover: #2563eb;
 
+    /* AG Grid — REEFSCAPE (deep-ocean navy) */
+    --ag-grid-chrome-bg: #081c40;
+    --ag-grid-header-bg: #0e2a5e;
+    --ag-grid-odd-row-bg: rgba(255, 255, 255, 0.03);
+    --ag-grid-hover-bg: rgba(147, 197, 253, 0.12);
+    --ag-grid-selected-bg: rgba(147, 197, 253, 0.18);
+    --ag-grid-row-border: rgba(26, 69, 152, 0.55);
+
     --theme-season-name: "REEFSCAPE";
     --theme-season-tag: "2025 · DIVE";
 }
@@ -39,6 +47,14 @@
     --scrollbar-thumb: #bdaf67;
     --scrollbar-thumb-hover: #d6c98a;
 
+    /* AG Grid — REBUILT (warm parchment) */
+    --ag-grid-chrome-bg: #f9f1d8;
+    --ag-grid-header-bg: #f3e7c8;
+    --ag-grid-odd-row-bg: rgba(122, 101, 30, 0.045);
+    --ag-grid-hover-bg: rgba(122, 101, 30, 0.10);
+    --ag-grid-selected-bg: rgba(122, 101, 30, 0.16);
+    --ag-grid-row-border: rgba(230, 221, 174, 0.9);
+
     --theme-season-name: "REBUILT";
     --theme-season-tag: "2026 · AGE";
 }
@@ -56,6 +72,14 @@
     --scrollbar-track: transparent;
     --scrollbar-thumb: #2d6160;
     --scrollbar-thumb-hover: #45908d;
+
+    /* AG Grid — BIOCORE (deep-canopy teal) */
+    --ag-grid-chrome-bg: #082626;
+    --ag-grid-header-bg: #0d3a3b;
+    --ag-grid-odd-row-bg: rgba(255, 255, 255, 0.03);
+    --ag-grid-hover-bg: rgba(245, 213, 71, 0.10);
+    --ag-grid-selected-bg: rgba(245, 213, 71, 0.16);
+    --ag-grid-row-border: rgba(45, 97, 96, 0.6);
 
     --theme-season-name: "BIOCORE";
     --theme-season-tag: "2027 · CANOPY";

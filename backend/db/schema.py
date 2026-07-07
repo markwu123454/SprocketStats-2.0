@@ -25,6 +25,32 @@ async def init_db():
                     last_login          TIMESTAMPTZ NOT NULL DEFAULT now()
                 )
             """)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS meeting_hours (
+                    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                    created_by  TEXT        NOT NULL REFERENCES users(id),
+                    start_time  TIMESTAMPTZ NOT NULL,
+                    end_time    TIMESTAMPTZ NOT NULL,
+                    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    CONSTRAINT check_valid_time_range CHECK (end_time > start_time)
+                )
+            """)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS attendance (
+                    id            TEXT        PRIMARY KEY DEFAULT (gen_random_uuid())::text,
+                    user_id       TEXT        NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+                    timestamp_pst TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    event_type    TEXT        NOT NULL
+                        CONSTRAINT attendance_event_type_check CHECK (event_type = ANY (ARRAY['check_in', 'check_out'])),
+                    source        TEXT,
+                    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+            """)
+            await conn.execute("CREATE INDEX IF NOT EXISTS attendance_user_id_idx ON attendance (user_id)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS attendance_timestamp_pst_idx ON attendance (timestamp_pst)")
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS attendance_user_timestamp_idx ON attendance (user_id, timestamp_pst)"
+            )
     except Exception as e:
         logger.error("Failed to initialize schema: %s", e)
         raise HTTPException(status_code=500, detail=f"Failed to initialize schema: {e}")
