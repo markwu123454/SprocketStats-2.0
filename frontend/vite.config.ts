@@ -39,7 +39,7 @@ export default defineConfig({
             injectRegister: "auto",
 
             devOptions: {
-                enabled: false,
+                enabled: true,
                 type: "module",
             },
         })

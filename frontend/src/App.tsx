@@ -22,6 +22,7 @@ const UpcomingEventPage = lazy(() => import("@/pages/control/UpcomingEventPage")
 const MembersPage       = lazy(() => import("@/pages/control/MembersPage"))
 const NotificationsPage = lazy(() => import("@/pages/control/NotificationsPage"))
 const NotificationDetailPage = lazy(() => import("@/pages/control/NotificationDetailPage"))
+const PushNotificationsPage = lazy(() => import("@/pages/control/PushNotificationsPage"))
 const SettingPage    = lazy(() => import("@/pages/SettingPage"))
 
 function Protected({children}: {children: ReactNode}) {
@@ -69,6 +70,7 @@ export default function App() {
                                         <Route path="/control/notifications"  element={<ControlGuard section="notifications"><NotificationsPage/></ControlGuard>}/>
                                         <Route path="/control/notifications/new" element={<ControlGuard section="notifications"><NotificationDetailPage isNew/></ControlGuard>}/>
                                         <Route path="/control/notifications/:id" element={<ControlGuard section="notifications"><NotificationDetailPage/></ControlGuard>}/>
+                                        <Route path="/control/push"           element={<ControlGuard section="push"><PushNotificationsPage/></ControlGuard>}/>
                                         <Route path="/settings"    element={<SettingPage/>}/>
                                     </Route>
                                 </Routes>
