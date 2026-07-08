@@ -7,15 +7,28 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
+sys.tracebacklimit = 2
+
+REQUIRED_ENV_VARS = [
+    "SESSION_SECRET",
+    "FRONTEND_URL",
+    "JWT_SECRET",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "LABEL_STUDIO_URL",
+    "LABEL_STUDIO_TOKEN",
+    "DATABASE_URL",
+    "DATABASE_URL_LABEL_STUDIO",
+]
+if os.environ.get("ENV") != "development":
+    REQUIRED_ENV_VARS.append("CORS_ORIGIN")
+
+missing_env_vars = [var for var in REQUIRED_ENV_VARS if not os.environ.get(var)]
+if missing_env_vars:
+    raise RuntimeError(f"Missing required environment variables: {', '.join(missing_env_vars)}")
+
 import db
 from endpoints import router
-'''
-import subprocess
-result = subprocess.run([sys.executable, "-m", "pip", "show", "label-studio-sdk"], capture_output=True, text=True)
-print("LABEL SDK:", result.stdout or result.stderr, flush=True)
-'''
-
-sys.tracebacklimit = 2
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
