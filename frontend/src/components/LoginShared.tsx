@@ -139,6 +139,22 @@ export function SponsorFooter() {
     );
 }
 
+/* ── Banned account notice ───────────────────────────────────── */
+export function BannedNotice() {
+    return (
+        <p
+            className="m-0 mt-4 mb-3 px-3 py-2 rounded-lg border text-[13px] leading-snug"
+            style={{
+                color: "#dc2626",
+                borderColor: "color-mix(in oklch, #dc2626 40%, transparent)",
+                background: "color-mix(in oklch, #dc2626 10%, transparent)",
+            }}
+        >
+            This account has been banned. Contact a captain or mentor if you think that's a mistake.
+        </p>
+    );
+}
+
 /* ── Sign-in heading ─────────────────────────────────────────── */
 export function SignInHeading() {
     return (

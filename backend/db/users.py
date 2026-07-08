@@ -116,7 +116,7 @@ async def list_all_users() -> list[asyncpg.Record]:
         try:
             return await conn.fetch(
                 """
-                SELECT id, email, name, display_name, role, grade, team_year
+                SELECT id, email, name, display_name, role, grade, team_year, approved_by, banned_at
                 FROM users
                 ORDER BY display_name ASC NULLS LAST, email ASC
                 """
@@ -135,6 +135,10 @@ async def update_users(updates: list[dict]) -> None:
     nothing is partially saved. Email is intentionally not updatable here -- it's
     the OAuth identity and the roster edit surface must not change it.
 
+    Changing ``role`` clears any existing ``approved_by``: an approval vouches for
+    a specific self-selected role, so a role change invalidates it and it must be
+    re-approved.
+
     :param updates: One dict per user, each with an ``id`` plus the editable
         fields to set (missing fields are written as ``NULL``).
     """
@@ -151,7 +155,8 @@ async def update_users(updates: list[dict]) -> None:
                             display_name = $3,
                             role         = $4,
                             grade        = $5,
-                            team_year    = $6
+                            team_year    = $6,
+                            approved_by  = CASE WHEN role IS DISTINCT FROM $4 THEN NULL ELSE approved_by END
                         WHERE id = $1
                         """,
                         u["id"],
@@ -166,4 +171,68 @@ async def update_users(updates: list[dict]) -> None:
             raise HTTPException(status_code=500, detail="Failed to update users")
 
 
-__all__ = ["upsert_user", "get_user", "update_user_onboarding", "get_users_by_fields", "list_all_users", "update_users"]
+async def approve_user(user_id: str, approver_id: str) -> asyncpg.Record | None:
+    """Record that ``approver_id`` vouches for ``user_id``'s identity and role."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow(
+                "UPDATE users SET approved_by = $2 WHERE id = $1 RETURNING *",
+                user_id,
+                approver_id,
+            )
+        except Exception as e:
+            logger.error("approve_user failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to approve member")
+
+
+async def unapprove_user(user_id: str) -> asyncpg.Record | None:
+    """Clear a member's approval."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow(
+                "UPDATE users SET approved_by = NULL WHERE id = $1 RETURNING *",
+                user_id,
+            )
+        except Exception as e:
+            logger.error("unapprove_user failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to unapprove member")
+
+
+async def ban_user(user_id: str) -> asyncpg.Record | None:
+    """Soft-ban a member. Their row and role are untouched; only ``banned_at`` is set."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow(
+                "UPDATE users SET banned_at = now() WHERE id = $1 RETURNING *",
+                user_id,
+            )
+        except Exception as e:
+            logger.error("ban_user failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to ban member")
+
+
+async def unban_user(user_id: str) -> asyncpg.Record | None:
+    """Lift a member's ban."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow(
+                "UPDATE users SET banned_at = NULL WHERE id = $1 RETURNING *",
+                user_id,
+            )
+        except Exception as e:
+            logger.error("unban_user failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to unban member")
+
+
+__all__ = [
+    "upsert_user",
+    "get_user",
+    "update_user_onboarding",
+    "get_users_by_fields",
+    "list_all_users",
+    "update_users",
+    "approve_user",
+    "unapprove_user",
+    "ban_user",
+    "unban_user",
+]
