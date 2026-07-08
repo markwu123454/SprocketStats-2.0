@@ -1,6 +1,7 @@
 import { useOnboardedUser } from "@/contexts/authContext.tsx"
 import { can } from "@/lib/permissions"
 import ControlSectionLayout from "./ControlSectionLayout"
+import MeetingHoursEditor from "./MeetingHoursEditor"
 
 /**
  * Meeting control page — one page for both meeting time and agenda.
@@ -21,7 +22,7 @@ export default function MeetingPage() {
             {canTime && (
                 <section className="flex flex-col gap-2">
                     <h2 className="text-sm font-semibold theme-text">Meeting Time</h2>
-                    <p className="text-sm theme-subtext-color">Set and manage the meeting time.</p>
+                    <MeetingHoursEditor />
                 </section>
             )}
 
