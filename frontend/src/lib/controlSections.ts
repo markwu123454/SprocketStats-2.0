@@ -14,7 +14,7 @@
 // predicate, so they never drift. Gating here is cosmetic; the backend still
 // enforces each action on the real endpoints.
 
-import { CalendarClock, CalendarPlus, type LucideIcon } from "lucide-react"
+import { CalendarClock, CalendarPlus, Users, type LucideIcon } from "lucide-react"
 import { can, type PermPolicy } from "./permissions"
 
 /** Convenience: dotted capability paths all live under `control_panel.`. */
@@ -42,6 +42,13 @@ export const CONTROL_SECTIONS: ControlSection[] = [
         label: "Upcoming Event",
         icon: CalendarPlus,
         visible: p => can(p, CP + "upcoming_event"),
+    },
+    {
+        to: "members",
+        label: "Members",
+        icon: Users,
+        // Full member roster (includes emails); Captains and Mentors only.
+        visible: p => can(p, CP + "members"),
     },
 ]
 

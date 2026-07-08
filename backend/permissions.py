@@ -38,8 +38,8 @@ ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
     "operations_lead":      {"label": "Operations Lead",      "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True}},
     "outreach_member":      {"label": "Outreach Member",      "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}},
     "outreach_lead":        {"label": "Outreach Lead",        "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True}},
-    "captain":              {"label": "Captain",              "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True}},
-    "mentor":               {"label": "Mentor",               "school_info": {"required": False}, "attendance": {"view": False}, "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True}},
+    "captain":              {"label": "Captain",              "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True, "members": True}},
+    "mentor":               {"label": "Mentor",               "school_info": {"required": False}, "attendance": {"view": False}, "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True, "members": True}},
     "alumni":               {"label": "Alumni",               "school_info": {"required": False}, "attendance": {"view": False}, "control_panel": {"view": False}},
 }
 
