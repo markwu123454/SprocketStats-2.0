@@ -29,15 +29,35 @@ async def get_meetings(_: dict = Depends(get_current_user)):
 
 @router.get("/leaderboard")
 async def get_leaderboard(user: dict = Depends(get_current_user)):
+    # Rows come back ordered by (user_id, checkin_time), so overlapping/adjacent
+    # entries for the same user are merged with a single sweep to avoid
+    # double-counting time that was logged more than once.
     rows = await db.list_all_attendance()
 
     names: dict[str, str] = {}
     totals: dict[str, float] = {}
+    open_interval: dict[str, tuple[datetime, datetime]] = {}
+
+    def close_interval(uid: str) -> None:
+        start, end = open_interval.pop(uid)
+        totals[uid] = totals.get(uid, 0.0) + (end - start).total_seconds()
 
     for row in rows:
         uid = row["user_id"]
         names[uid] = row["display_name"] or row["given_name"] or "Unknown User"
-        totals[uid] = totals.get(uid, 0.0) + (row["checkout_time"] - row["checkin_time"]).total_seconds()
+        start, end = row["checkin_time"], row["checkout_time"]
+
+        current = open_interval.get(uid)
+        if current is None:
+            open_interval[uid] = (start, end)
+        elif start <= current[1]:
+            open_interval[uid] = (current[0], max(current[1], end))
+        else:
+            close_interval(uid)
+            open_interval[uid] = (start, end)
+
+    for uid in list(open_interval):
+        close_interval(uid)
 
     ranked = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
     return [
