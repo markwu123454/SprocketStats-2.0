@@ -38,6 +38,7 @@ export interface LoginPageProps {
     season: SeasonInfo | null;
     timeInfo: TimeInfo;
     loading: boolean;
+    banned: boolean;
     signInWithGoogle: () => void;
 }
 
@@ -105,7 +106,7 @@ function useIsMobile(): boolean {
 
 /* ── Router ──────────────────────────────────────────────────── */
 export default function LoginPageRouter() {
-    const { user, loading, signInWithGoogle } = useAuth();
+    const { user, loading, banned, signInWithGoogle } = useAuth();
     const navigate  = useNavigate();
     const markReady = useAppReady();
     const season    = useThemeSeasonInfo();
@@ -121,7 +122,7 @@ export default function LoginPageRouter() {
         if (!loading && user) navigate("/dashboard", { replace: true });
     }, [user, loading, navigate]);
 
-    const props: LoginPageProps = { season, timeInfo, loading, signInWithGoogle };
+    const props: LoginPageProps = { season, timeInfo, loading, banned, signInWithGoogle };
 
     return isMobile
         ? <LoginPageMobile  {...props} />

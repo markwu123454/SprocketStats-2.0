@@ -6,6 +6,7 @@ import {
     LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen, SlidersHorizontal,
 } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
+import NotificationGate from "@/components/NotificationGate.tsx"
 import { can, getPerm, type PermPolicy } from "@/lib/permissions"
 import { visibleSections, type ControlSection } from "@/lib/controlSections"
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community"
@@ -301,6 +302,8 @@ export default function AppShell() {
                     })}
                 </div>
             </nav>
+
+            <NotificationGate />
 
             <style>{`
                 @keyframes spin     { to { transform: rotate(360deg);  } }

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, field_validator
 
 import db
@@ -103,6 +103,75 @@ async def update_members(
     return {"ok": True, "updated": len(updates)}
 
 
+@router.post("/{user_id}/approve")
+async def approve_member(user_id: str, user: dict = Depends(require_members)):
+    """Sign off on a member's identity and self-selected role.
+
+    The approver is taken from the authenticated session (never the request
+    body), so approval can't be forged as someone else. A member can't approve
+    themselves.
+
+    :param user_id: The member being approved.
+    :param user: The authenticated, authorized approver.
+    :returns: ``{"id", "approved_by"}``.
+    """
+    if user_id == user["sub"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot approve yourself")
+    row = await db.approve_user(user_id, user["sub"])
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    return {"id": row["id"], "approved_by": row["approved_by"]}
+
+
+@router.delete("/{user_id}/approve")
+async def unapprove_member(user_id: str, _: dict = Depends(require_members)):
+    """Clear a member's approval.
+
+    :param user_id: The member to unapprove.
+    :param _: The authenticated, authorized user (enforces access; value unused).
+    :returns: ``{"id", "approved_by"}`` (``approved_by`` is always ``None``).
+    """
+    row = await db.unapprove_user(user_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    return {"id": row["id"], "approved_by": row["approved_by"]}
+
+
+@router.post("/{user_id}/ban")
+async def ban_member(user_id: str, user: dict = Depends(require_members)):
+    """Soft-ban a member: their row and role stay intact, only ``banned_at`` is set.
+
+    Enforcement happens in ``/auth/me`` (the only endpoint that re-checks the DB
+    on every call), so an already-open session isn't cut off mid-request; the ban
+    takes effect the next time the client re-fetches the current user. A member
+    can't ban themselves.
+
+    :param user_id: The member being banned.
+    :param user: The authenticated, authorized user.
+    :returns: ``{"id", "banned_at"}``.
+    """
+    if user_id == user["sub"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot ban yourself")
+    row = await db.ban_user(user_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    return {"id": row["id"], "banned_at": row["banned_at"].isoformat() if row["banned_at"] else None}
+
+
+@router.delete("/{user_id}/ban")
+async def unban_member(user_id: str, _: dict = Depends(require_members)):
+    """Lift a member's ban.
+
+    :param user_id: The member to unban.
+    :param _: The authenticated, authorized user (enforces access; value unused).
+    :returns: ``{"id", "banned_at"}`` (``banned_at`` is always ``None``).
+    """
+    row = await db.unban_user(user_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    return {"id": row["id"], "banned_at": None}
+
+
 def _row_to_member(r) -> dict:
     """Shape a DB user record into the member row the grid consumes."""
     return {
@@ -113,4 +182,6 @@ def _row_to_member(r) -> dict:
         "role": r["role"],
         "grade": r["grade"],
         "team_year": r["team_year"],
+        "approved_by": r["approved_by"],
+        "banned_at": r["banned_at"].isoformat() if r["banned_at"] else None,
     }

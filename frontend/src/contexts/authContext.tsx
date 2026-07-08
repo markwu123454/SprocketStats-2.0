@@ -1,6 +1,17 @@
 import {createContext, useCallback, useContext, useEffect, useState} from "react"
 import type {PermPolicy} from "@/lib/permissions"
 
+/** A notice targeted at the current user that they haven't responded to yet. */
+export interface PendingNotification {
+    id: string
+    title: string
+    body: string
+    link: string | null
+    hard_block: boolean
+    response_options: string[]
+    response_mode: "single" | "multi"
+}
+
 /** Fields present on every authenticated user, regardless of onboarding state. */
 interface BaseUser {
     id: string
@@ -12,6 +23,9 @@ interface BaseUser {
     // attributes like `label`/`school_info`). Always sent by `/auth/me`
     // (an empty object for a role-less user). Read via `can`/`getPerm`.
     permissions: PermPolicy
+    // Notices targeted at this user's role that they haven't acted on yet,
+    // hard-blocking notices first. Always sent by `/auth/me` (empty array if none).
+    pending_notifications: PendingNotification[]
 }
 
 /** A signed-in user who hasn't finished onboarding yet — profile fields may be absent. */
@@ -46,6 +60,9 @@ export type User = PendingUser | OnboardedUser
 interface AuthContextValue {
     user: User | null
     loading: boolean
+    // Set when the last /auth/me call came back 403 "banned" — the account is
+    // real but has been banned, distinct from simply not being signed in.
+    banned: boolean
     signInWithGoogle: () => void
     logout: () => Promise<void>
     refreshUser: () => Promise<void>
@@ -58,11 +75,21 @@ const API = import.meta.env.VITE_BACKEND_URL
 export function AuthProvider({children}: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null)
     const [loading, setLoading] = useState(true)
+    const [banned, setBanned] = useState(false)
 
     const fetchUser = useCallback(async () => {
-        const data = (await fetch(`${API}/auth/me`, {credentials: "include"})
-            .then((r) => (r.ok ? r.json() : null))) as User | null
-        setUser(data)
+        const res = await fetch(`${API}/auth/me`, {credentials: "include"})
+        if (res.status === 403) {
+            // Banned accounts hold a technically-valid cookie, so clear it
+            // server-side too — otherwise every subsequent /auth/me repeats the 403
+            // and no other endpoint will ever notice they're banned.
+            await fetch(`${API}/auth/logout`, {method: "POST", credentials: "include"})
+            setBanned(true)
+            setUser(null)
+            return
+        }
+        setBanned(false)
+        setUser(res.ok ? (await res.json()) as User : null)
     }, [])
 
     useEffect(() => {
@@ -76,6 +103,7 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
     const logout = useCallback(async () => {
         await fetch(`${API}/auth/logout`, {method: "POST", credentials: "include"})
         setUser(null)
+        setBanned(false)
     }, [])
 
     const refreshUser = useCallback(async () => {
@@ -83,7 +111,7 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
     }, [fetchUser])
 
     return (
-        <AuthContext.Provider value={{user, loading, signInWithGoogle, logout, refreshUser}}>
+        <AuthContext.Provider value={{user, loading, banned, signInWithGoogle, logout, refreshUser}}>
             {children}
         </AuthContext.Provider>
     )

@@ -273,9 +273,21 @@ async def me(user: dict = Depends(get_current_user)):
     policy into the JWT) means a change to the policy map takes effect on the
     next request, without waiting for tokens to expire.
 
+    This is also the only endpoint that re-checks ban status against the DB: the
+    JWT is otherwise trusted as-is for the life of the session, so a ban only
+    takes effect once the client re-fetches the current user (e.g. on next page
+    load), not on every request.
+
     :param user: The authenticated user's JWT claims.
     :returns: The user's profile fields and their ``permissions`` policy object.
+    :raises HTTPException: 403 if the account has been banned.
     """
+    row = await db.get_user(user["sub"])
+    if row is not None and row["banned_at"] is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account banned")
+
+    pending = await db.get_pending_notifications_for_user(user["sub"], user.get("role"))
+
     return {
         "id": user["sub"],
         "email": user["email"],
@@ -288,6 +300,18 @@ async def me(user: dict = Depends(get_current_user)):
         "team_year": user.get("team_year"),
         "onboarding_complete": user.get("onboarding_complete", False),
         "permissions": get_permissions_for_role(user.get("role")),
+        "pending_notifications": [
+            {
+                "id": str(n["id"]),
+                "title": n["title"],
+                "body": n["body"],
+                "link": n["link"],
+                "hard_block": n["hard_block"],
+                "response_options": n["response_options"],
+                "response_mode": n["response_mode"],
+            }
+            for n in pending
+        ],
     }
 
 
