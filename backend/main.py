@@ -9,10 +9,13 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import db
 from endpoints import router
-
+'''
 import subprocess
 result = subprocess.run([sys.executable, "-m", "pip", "show", "label-studio-sdk"], capture_output=True, text=True)
 print("LABEL SDK:", result.stdout or result.stderr, flush=True)
+'''
+
+sys.tracebacklimit = 2
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
