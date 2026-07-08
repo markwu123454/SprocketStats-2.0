@@ -39,17 +39,18 @@ async def init_db():
                 CREATE TABLE IF NOT EXISTS attendance (
                     id            TEXT        PRIMARY KEY DEFAULT (gen_random_uuid())::text,
                     user_id       TEXT        NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-                    timestamp_pst TIMESTAMPTZ NOT NULL DEFAULT now(),
-                    event_type    TEXT        NOT NULL
-                        CONSTRAINT attendance_event_type_check CHECK (event_type = ANY (ARRAY['check_in', 'check_out'])),
+                    checkin_time  TIMESTAMPTZ NOT NULL DEFAULT now(),
                     source        TEXT,
-                    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+                    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    checkout_time TIMESTAMPTZ NOT NULL DEFAULT now()
                 )
             """)
             await conn.execute("CREATE INDEX IF NOT EXISTS attendance_user_id_idx ON attendance (user_id)")
-            await conn.execute("CREATE INDEX IF NOT EXISTS attendance_timestamp_pst_idx ON attendance (timestamp_pst)")
             await conn.execute(
-                "CREATE INDEX IF NOT EXISTS attendance_user_timestamp_idx ON attendance (user_id, timestamp_pst)"
+                "CREATE INDEX IF NOT EXISTS attendance_user_timestamp_idx ON attendance (user_id, checkin_time)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS attendance_timestamp_pst_idx ON attendance (checkin_time, checkout_time)"
             )
     except Exception as e:
         logger.error("Failed to initialize schema: %s", e)

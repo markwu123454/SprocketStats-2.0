@@ -431,8 +431,8 @@ export default function AttendancePage() {
                 credentials: "include",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    clock_in: combineDateAndTime(date, clockIn).toISOString(),
-                    clock_out: combineDateAndTime(date, clockOut).toISOString(),
+                    checkin_time: combineDateAndTime(date, clockIn).toISOString(),
+                    checkout_time: combineDateAndTime(date, clockOut).toISOString(),
                     source: "normal",
                 }),
             })
