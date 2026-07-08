@@ -29,21 +29,35 @@ async def get_meetings(_: dict = Depends(get_current_user)):
 
 @router.get("/leaderboard")
 async def get_leaderboard(user: dict = Depends(get_current_user)):
+    # Rows come back ordered by (user_id, checkin_time), so overlapping/adjacent
+    # entries for the same user are merged with a single sweep to avoid
+    # double-counting time that was logged more than once.
     rows = await db.list_all_attendance()
 
     names: dict[str, str] = {}
-    pending_check_in: dict[str, datetime] = {}
     totals: dict[str, float] = {}
+    open_interval: dict[str, tuple[datetime, datetime]] = {}
+
+    def close_interval(uid: str) -> None:
+        start, end = open_interval.pop(uid)
+        totals[uid] = totals.get(uid, 0.0) + (end - start).total_seconds()
 
     for row in rows:
         uid = row["user_id"]
         names[uid] = row["display_name"] or row["given_name"] or "Unknown User"
-        if row["event_type"] == "check_in":
-            pending_check_in[uid] = row["timestamp_pst"]
-        elif row["event_type"] == "check_out":
-            start = pending_check_in.pop(uid, None)
-            if start is not None:
-                totals[uid] = totals.get(uid, 0.0) + (row["timestamp_pst"] - start).total_seconds()
+        start, end = row["checkin_time"], row["checkout_time"]
+
+        current = open_interval.get(uid)
+        if current is None:
+            open_interval[uid] = (start, end)
+        elif start <= current[1]:
+            open_interval[uid] = (current[0], max(current[1], end))
+        else:
+            close_interval(uid)
+            open_interval[uid] = (start, end)
+
+    for uid in list(open_interval):
+        close_interval(uid)
 
     ranked = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
     return [
@@ -61,27 +75,24 @@ async def get_leaderboard(user: dict = Depends(get_current_user)):
 async def get_my_attendance(user: dict = Depends(get_current_user)):
     rows = await db.list_attendance_for_user(user["sub"])
     return [
-        {"id": r["id"], "timestamp_pst": r["timestamp_pst"], "event_type": r["event_type"]}
+        {"id": r["id"], "checkin_time": r["checkin_time"], "checkout_time": r["checkout_time"]}
         for r in rows
     ]
 
 
 class ClockEntry(BaseModel):
-    clock_in: datetime
-    clock_out: datetime
+    checkin_time: datetime
+    checkout_time: datetime
     source: str
 
     @model_validator(mode="after")
     def validate_range(self) -> "ClockEntry":
-        if self.clock_out <= self.clock_in:
-            raise ValueError("clock_out must be after clock_in")
+        if self.checkout_time <= self.checkin_time:
+            raise ValueError("checkout_time must be after checkin_time")
         return self
 
 
 @router.post("")
 async def submit_attendance(entry: ClockEntry, user: dict = Depends(get_current_user)):
-    rows = await db.create_attendance_events(user["sub"], entry.source, entry.clock_in, entry.clock_out)
-    return [
-        {"id": r["id"], "timestamp_pst": r["timestamp_pst"], "event_type": r["event_type"]}
-        for r in rows
-    ]
+    row = await db.create_attendance_entry(user["sub"], entry.source, entry.checkin_time, entry.checkout_time)
+    return {"id": row["id"], "checkin_time": row["checkin_time"], "checkout_time": row["checkout_time"]}
