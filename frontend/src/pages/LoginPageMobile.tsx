@@ -1,10 +1,10 @@
 import { useRef, useState } from "react";
 import type { LoginPageProps } from "./LoginPageRouter";
 import {
-    BannedNotice,
     BrandLockup,
     GoogleButton,
     HeroContent,
+    LoginErrorNotice,
     SignInHeading,
     SponsorFooter,
     useScrollLock,
@@ -19,7 +19,7 @@ const EXPAND_HEIGHT  = 320;
 /* ════════════════════════════════════════════════════════════════
    LoginPageMobile — hero + draggable bottom sheet
    ════════════════════════════════════════════════════════════════ */
-export default function LoginPageMobile({ season, timeInfo, loading, banned, signInWithGoogle }: LoginPageProps) {
+export default function LoginPageMobile({ season, timeInfo, loading, banned, authError, signInWithGoogle }: LoginPageProps) {
     useScrollLock();
 
     const sheetRef  = useRef<HTMLElement>(null);
@@ -221,12 +221,21 @@ export default function LoginPageMobile({ season, timeInfo, loading, banned, sig
                         </div>
 
                         {/* Google button — always visible */}
-                        <GoogleButton loading={loading} onClick={signInWithGoogle} />
+                        <GoogleButton loading={loading} disabled={authError} onClick={signInWithGoogle} />
 
-                        {/* Footer — fades in below the button as sheet expands, banned
-                            notice (if any) fades in alongside it */}
+                        {/* Footer — fades in below the button as sheet expands, banned/
+                            error notice (if any) fades in alongside it */}
                         <div className="lpm-reveal-foot lpm-expand-only">
-                            {banned && <BannedNotice />}
+                            {banned && (
+                                <LoginErrorNotice>
+                                    This account has been banned. Contact a captain or mentor if you think that's a mistake.
+                                </LoginErrorNotice>
+                            )}
+                            {authError && (
+                                <LoginErrorNotice>
+                                    Can't reach the server right now. Try again in a moment.
+                                </LoginErrorNotice>
+                            )}
                             <SponsorFooter />
                         </div>
                     </div>

@@ -57,17 +57,19 @@ export function GoogleG() {
 /* ── Google sign-in button ───────────────────────────────────── */
 export function GoogleButton({
     loading,
+    disabled = false,
     onClick,
 }: {
     loading: boolean;
+    disabled?: boolean;
     onClick: () => void;
 }) {
     return (
         <button
             onClick={onClick}
-            disabled={loading}
+            disabled={loading || disabled}
             type="button"
-            className="w-full grid items-center gap-3 px-[18px] h-[52px] rounded-xl font-sans font-semibold text-[15px] leading-none tracking-[0.005em] bg-white hover:bg-[#f7f7f7] active:translate-y-px text-[#1f1f1f] cursor-pointer disabled:opacity-50 transition-[background-color,transform,box-shadow] duration-150"
+            className="w-full grid items-center gap-3 px-[18px] h-[52px] rounded-xl font-sans font-semibold text-[15px] leading-none tracking-[0.005em] bg-white hover:bg-[#f7f7f7] active:translate-y-px text-[#1f1f1f] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-[background-color,transform,box-shadow] duration-150"
             style={{
                 gridTemplateColumns: "auto 1fr auto",
                 border: "1px solid color-mix(in oklch, #1a1a1a 12%, transparent)",
@@ -139,8 +141,8 @@ export function SponsorFooter() {
     );
 }
 
-/* ── Banned account notice ───────────────────────────────────── */
-export function BannedNotice() {
+/* ── Login error notice — banned account, unreachable backend, etc ── */
+export function LoginErrorNotice({ children }: { children: React.ReactNode }) {
     return (
         <p
             className="m-0 mt-4 mb-3 px-3 py-2 rounded-lg border text-[13px] leading-snug"
@@ -150,7 +152,7 @@ export function BannedNotice() {
                 background: "color-mix(in oklch, #dc2626 10%, transparent)",
             }}
         >
-            This account has been banned. Contact a captain or mentor if you think that's a mistake.
+            {children}
         </p>
     );
 }

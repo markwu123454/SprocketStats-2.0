@@ -3,34 +3,14 @@ import { useNavigate } from "react-router-dom"
 import { useAuth } from "@/contexts/authContext.tsx"
 import { useAppReady } from "@/contexts/appReadyContext.tsx"
 import type { RoleCatalogEntry } from "@/lib/permissions"
+import { useIsMobile } from "@/lib/useIsMobile"
+import { useThemeSeasonInfo, type SeasonInfo } from "@/lib/seasonTheme"
 import OnboardingPageDesktop from "./OnboardingPageDesktop"
 import OnboardingPageMobile from "./OnboardingPageMobile"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
-/* ── Theme → season metadata map ────────────────────────────── */
-const THEME_SEASONS: Record<string, { year: number; phase: string; label: string; dateRange: string }> = {
-    "theme-2025": { year: 2025, phase: "REEFSCAPE", label: "Reefscape", dateRange: "2025 · DIVE"   },
-    "theme-2026": { year: 2026, phase: "REBUILT",   label: "Rebuilt",   dateRange: "2026 · AGE"    },
-    "theme-2027": { year: 2027, phase: "BIOCORE",   label: "Biocore",   dateRange: "2027 · CANOPY" },
-}
-
-function getActiveTheme(): string {
-    for (const key of Object.keys(THEME_SEASONS)) {
-        if (document.documentElement.classList.contains(key) || document.body.classList.contains(key)) {
-            return key
-        }
-    }
-    return "theme-2027"
-}
-
-/* ── Types ───────────────────────────────────────────────────── */
-export interface SeasonInfo {
-    phase: string
-    label: string
-    dateRange: string
-    wordmarkUrl: string
-}
+export type { SeasonInfo }
 
 export interface OnboardingPageProps {
     season: SeasonInfo | null
@@ -49,45 +29,6 @@ export interface OnboardingPageProps {
     roleCatalog: RoleCatalogEntry[]
     handleSubmit: (e: React.FormEvent) => void
     handleSignOut: () => void
-}
-
-/* ── Helpers ─────────────────────────────────────────────────── */
-function getSeasonFromTheme(): SeasonInfo {
-    const themeKey = getActiveTheme()
-    const meta = THEME_SEASONS[themeKey]
-    return {
-        phase:       meta.phase,
-        label:       meta.label,
-        dateRange:   meta.dateRange,
-        wordmarkUrl: `/seasons/${meta.year}/wordmark.svg`,
-    }
-}
-
-/* ── Hooks ───────────────────────────────────────────────────── */
-function useThemeSeasonInfo(): SeasonInfo | null {
-    const [season, setSeason] = useState<SeasonInfo | null>(null)
-
-    useEffect(() => {
-        setSeason(getSeasonFromTheme())
-        const observer = new MutationObserver(() => setSeason(getSeasonFromTheme()))
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
-        observer.observe(document.body,            { attributes: true, attributeFilter: ["class"] })
-        return () => observer.disconnect()
-    }, [])
-
-    return season
-}
-
-function useIsMobile(): boolean {
-    const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
-
-    useEffect(() => {
-        const handler = () => setIsMobile(window.innerWidth < 768)
-        window.addEventListener("resize", handler)
-        return () => window.removeEventListener("resize", handler)
-    }, [])
-
-    return isMobile
 }
 
 /* ── Router ──────────────────────────────────────────────────── */

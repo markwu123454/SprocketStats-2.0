@@ -79,8 +79,8 @@ def get_current_user(auth_token: str | None = Cookie(default=None)) -> dict:
 
     Decodes and validates the ``auth_token`` cookie and returns the JWT claims
     (which include ``sub``, ``email``, ``role``, ...). This checks *authentication*
-    only — it does not enforce any role/permission. Use :func:`require_permission`
-    to additionally gate an endpoint on a capability.
+    only — it does not enforce any role/permission. Use :func:`require_access`
+    to additionally gate an endpoint on a role or capability.
 
     :param auth_token: The ``auth_token`` cookie value, injected by FastAPI.
     :returns: The decoded JWT claims dict for the current user.
@@ -94,36 +94,6 @@ def get_current_user(auth_token: str | None = Cookie(default=None)) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
-
-
-def require_permission(path: str):
-    """Build a FastAPI dependency that enforces a capability on an endpoint.
-
-    Returns a dependency which first authenticates via :func:`get_current_user`,
-    resolves the user's policy from their role, and raises 403 unless the policy
-    grants a truthy value at ``path``. Attach it to a route to gate access, e.g.::
-
-        @router.get("", dependencies=[Depends(require_permission("labeling.view"))])
-
-    or bind it as ``user: dict = Depends(require_permission("control_panel.view"))``
-    to also receive the authenticated user. This covers boolean capability gating
-    only; value/threshold checks (e.g. an export row cap) should be done inline in
-    the handler with ``permissions.get_perm``.
-
-    :param path: Dotted capability path the caller's role must be granted,
-        e.g. ``"control_panel.view"``.
-    :returns: A dependency callable returning the authenticated user dict.
-    """
-    def dependency(user: dict = Depends(get_current_user)) -> dict:
-        perms = get_permissions_for_role(user.get("role"))
-        if not can(perms, path):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions",
-            )
-        return user
-
-    return dependency
 
 
 def require_access(
@@ -159,7 +129,7 @@ def require_access(
         # login + must hold one of these roles
         Depends(require_access(roles={"captain", "mentor"}))
 
-        # login + capability (equivalent to require_permission)
+        # login + capability
         Depends(require_access(permissions="control_panel.view"))
 
         # login + role + must have ALL listed capabilities

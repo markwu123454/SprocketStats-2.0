@@ -1,9 +1,9 @@
 import type { LoginPageProps } from "./LoginPageRouter";
 import {
-    BannedNotice,
     BrandLockup,
     GoogleButton,
     HeroContent,
+    LoginErrorNotice,
     SignInHeading,
     SponsorFooter,
     useScrollLock,
@@ -12,7 +12,7 @@ import {
 /* ════════════════════════════════════════════════════════════════
    LoginPageDesktop — split hero / form layout
    ════════════════════════════════════════════════════════════════ */
-export default function LoginPageDesktop({ season, timeInfo, loading, banned, signInWithGoogle }: LoginPageProps) {
+export default function LoginPageDesktop({ season, timeInfo, loading, banned, authError, signInWithGoogle }: LoginPageProps) {
     useScrollLock();
 
     return (
@@ -48,9 +48,18 @@ export default function LoginPageDesktop({ season, timeInfo, loading, banned, si
                         <SignInHeading />
                     </div>
 
-                    <GoogleButton loading={loading} onClick={signInWithGoogle} />
+                    <GoogleButton loading={loading} disabled={authError} onClick={signInWithGoogle} />
 
-                    {banned && <BannedNotice />}
+                    {banned && (
+                        <LoginErrorNotice>
+                            This account has been banned. Contact a captain or mentor if you think that's a mistake.
+                        </LoginErrorNotice>
+                    )}
+                    {authError && (
+                        <LoginErrorNotice>
+                            Can't reach the server right now. Try again in a moment.
+                        </LoginErrorNotice>
+                    )}
 
                     <SponsorFooter />
                 </div>

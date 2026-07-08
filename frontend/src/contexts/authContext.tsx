@@ -63,6 +63,11 @@ interface AuthContextValue {
     // Set when the last /auth/me call came back 403 "banned" — the account is
     // real but has been banned, distinct from simply not being signed in.
     banned: boolean
+    // Set when the last /auth/me call failed for a reason other than "not
+    // signed in" or "banned" — network failure, 404, 500, 503, etc. Signing
+    // in would just hit the same broken backend, so the login UI should
+    // block the button rather than bounce the user through a dead redirect.
+    authError: boolean
     signInWithGoogle: () => void
     logout: () => Promise<void>
     refreshUser: () => Promise<void>
@@ -76,18 +81,42 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null)
     const [loading, setLoading] = useState(true)
     const [banned, setBanned] = useState(false)
+    const [authError, setAuthError] = useState(false)
 
     const fetchUser = useCallback(async () => {
-        const res = await fetch(`${API}/auth/me`, {credentials: "include"})
+        let res: Response
+        try {
+            res = await fetch(`${API}/auth/me`, {credentials: "include"})
+        } catch {
+            // Network failure / server unreachable — distinct from "not signed in".
+            setAuthError(true)
+            setBanned(false)
+            setUser(null)
+            return
+        }
+
         if (res.status === 403) {
             // Banned accounts hold a technically-valid cookie, so clear it
             // server-side too — otherwise every subsequent /auth/me repeats the 403
             // and no other endpoint will ever notice they're banned.
             await fetch(`${API}/auth/logout`, {method: "POST", credentials: "include"})
+            setAuthError(false)
             setBanned(true)
             setUser(null)
             return
         }
+
+        if (!res.ok && res.status !== 401) {
+            // Anything other than "not signed in" (401) is a broken backend
+            // (404/500/503/...) — don't let the user proceed to /auth/login,
+            // which would just redirect back to the same dead server.
+            setAuthError(true)
+            setBanned(false)
+            setUser(null)
+            return
+        }
+
+        setAuthError(false)
         setBanned(false)
         setUser(res.ok ? (await res.json()) as User : null)
     }, [])
@@ -111,7 +140,7 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
     }, [fetchUser])
 
     return (
-        <AuthContext.Provider value={{user, loading, banned, signInWithGoogle, logout, refreshUser}}>
+        <AuthContext.Provider value={{user, loading, banned, authError, signInWithGoogle, logout, refreshUser}}>
             {children}
         </AuthContext.Provider>
     )

@@ -2,32 +2,12 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/authContext.tsx";
 import { useAppReady } from "@/contexts/appReadyContext.tsx";
+import { useIsMobile } from "@/lib/useIsMobile";
+import { useThemeSeasonInfo, type SeasonInfo } from "@/lib/seasonTheme";
 import LoginPageDesktop from "./LoginPageDesktop";
 import LoginPageMobile from "./LoginPageMobile";
 
-/* ── Theme → season metadata map ────────────────────────────── */
-const THEME_SEASONS: Record<string, { year: number; phase: string; label: string; dateRange: string }> = {
-    "theme-2025": { year: 2025, phase: "REEFSCAPE", label: "Reefscape",  dateRange: "2025 · DIVE"   },
-    "theme-2026": { year: 2026, phase: "REBUILT",   label: "Rebuilt",   dateRange: "2026 · AGE"    },
-    "theme-2027": { year: 2027, phase: "BIOCORE",   label: "Biocore",   dateRange: "2027 · CANOPY" },
-};
-
-function getActiveTheme(): string {
-    for (const key of Object.keys(THEME_SEASONS)) {
-        if (document.documentElement.classList.contains(key) || document.body.classList.contains(key)) {
-            return key;
-        }
-    }
-    return "theme-2027";
-}
-
-/* ── Types ───────────────────────────────────────────────────── */
-export interface SeasonInfo {
-    phase: string;
-    label: string;
-    dateRange: string;
-    wordmarkUrl: string;
-}
+export type { SeasonInfo };
 
 export interface TimeInfo {
     weekInfo?: string;
@@ -39,21 +19,11 @@ export interface LoginPageProps {
     timeInfo: TimeInfo;
     loading: boolean;
     banned: boolean;
+    authError: boolean;
     signInWithGoogle: () => void;
 }
 
 /* ── Helpers ─────────────────────────────────────────────────── */
-function getSeasonFromTheme(): SeasonInfo {
-    const themeKey = getActiveTheme();
-    const meta = THEME_SEASONS[themeKey];
-    return {
-        phase:       meta.phase,
-        label:       meta.label,
-        dateRange:   meta.dateRange,
-        wordmarkUrl: `/seasons/${meta.year}/wordmark.svg`,
-    };
-}
-
 function getTimeInfo(): TimeInfo {
     const now = new Date();
     const kickoff      = new Date(2027, 0, 9);
@@ -75,38 +45,9 @@ function getTimeInfo(): TimeInfo {
     return                         { dateRange: "May 2027+" };
 }
 
-/* ── Hooks ───────────────────────────────────────────────────── */
-function useThemeSeasonInfo(): SeasonInfo | null {
-    const [season, setSeason] = useState<SeasonInfo | null>(null);
-
-    useEffect(() => {
-        setSeason(getSeasonFromTheme());
-
-        const observer = new MutationObserver(() => setSeason(getSeasonFromTheme()));
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-        observer.observe(document.body,            { attributes: true, attributeFilter: ["class"] });
-
-        return () => observer.disconnect();
-    }, []);
-
-    return season;
-}
-
-function useIsMobile(): boolean {
-    const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
-
-    useEffect(() => {
-        const handler = () => setIsMobile(window.innerWidth < 768);
-        window.addEventListener("resize", handler);
-        return () => window.removeEventListener("resize", handler);
-    }, []);
-
-    return isMobile;
-}
-
 /* ── Router ──────────────────────────────────────────────────── */
 export default function LoginPageRouter() {
-    const { user, loading, banned, signInWithGoogle } = useAuth();
+    const { user, loading, banned, authError, signInWithGoogle } = useAuth();
     const navigate  = useNavigate();
     const markReady = useAppReady();
     const season    = useThemeSeasonInfo();
@@ -122,7 +63,7 @@ export default function LoginPageRouter() {
         if (!loading && user) navigate("/dashboard", { replace: true });
     }, [user, loading, navigate]);
 
-    const props: LoginPageProps = { season, timeInfo, loading, banned, signInWithGoogle };
+    const props: LoginPageProps = { season, timeInfo, loading, banned, authError, signInWithGoogle };
 
     return isMobile
         ? <LoginPageMobile  {...props} />

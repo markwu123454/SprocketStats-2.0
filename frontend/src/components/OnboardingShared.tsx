@@ -19,21 +19,26 @@ import { SeasonWordmark, BrandLockup, useScrollLock } from "./LoginShared"
 export { BrandLockup, useScrollLock }
 
 /* ── SimpleDropdown ──────────────────────────────────────────── */
+/**
+ * Generic option dropdown used for the role picker and the school-info
+ * fields alike — only the options/placeholder/menu height differ per use.
+ */
 interface SimpleOption { value: string; label: string }
 
 export function SimpleDropdown({
-                                   value, onChange, placeholder, options,
+                                   value, onChange, placeholder, options, menuMax = 180,
                                }: {
     value: string | null
     onChange: (v: string) => void
     placeholder: string
     options: SimpleOption[]
+    menuMax?: number
 }) {
     const [open,   setOpen]   = useState(false)
     const [dropUp, setDropUp] = useState(false)
     const rootRef = useRef<HTMLDivElement>(null)
     const btnRef  = useRef<HTMLButtonElement>(null)
-    const MENU_MAX = 180
+    const MENU_MAX = menuMax
 
     useEffect(() => {
         if (!open) return
@@ -77,107 +82,6 @@ export function SimpleDropdown({
                 ].join(" ")}
             >
                 <span>{selected ? selected.label : placeholder}</span>
-                <ChevronDown
-                    size={16}
-                    className="theme-subtext-color shrink-0"
-                    style={{ transition: "transform .18s ease", transform: open ? "rotate(180deg)" : "none" }}
-                />
-            </button>
-
-            {open && (
-                <div
-                    role="listbox"
-                    className="absolute left-0 right-0 z-50 rounded-lg border overflow-y-auto theme-bg theme-border theme-scrollbar"
-                    style={{
-                        maxHeight: MENU_MAX,
-                        boxShadow: "0 12px 32px -10px rgba(0,0,0,.45)",
-                        ...(dropUp ? { bottom: "calc(100% + 8px)" } : { top: "calc(100% + 8px)" }),
-                    }}
-                >
-                    {options.map(opt => {
-                        const active = value === opt.value
-                        return (
-                            <button
-                                key={opt.value}
-                                type="button"
-                                role="option"
-                                aria-selected={active}
-                                onClick={() => { onChange(opt.value); setOpen(false) }}
-                                className={[
-                                    "w-full flex items-center justify-between px-3 py-2 text-sm text-left transition-colors theme-text",
-                                    active ? "theme-button-hover" : "theme-bg hover:theme-button-hover",
-                                ].join(" ")}
-                            >
-                                <span>{opt.label}</span>
-                                {active && <Check size={15} className="theme-text-contrast shrink-0" />}
-                            </button>
-                        )
-                    })}
-                </div>
-            )}
-        </div>
-    )
-}
-
-/* ── RoleDropdown ────────────────────────────────────────────── */
-/**
- * Role picker dropdown. Options are supplied by the caller (sourced from the
- * backend `GET /roles` catalog) rather than a hardcoded frontend list, so the
- * displayed label and available roles always match the backend policy map.
- */
-export function RoleDropdown({
-                                 value, onChange, options,
-                             }: {
-    value: string | null
-    onChange: (v: string) => void
-    options: SimpleOption[]
-}) {
-    const [open,   setOpen]   = useState(false)
-    const [dropUp, setDropUp] = useState(false)
-    const rootRef = useRef<HTMLDivElement>(null)
-    const btnRef  = useRef<HTMLButtonElement>(null)
-    const MENU_MAX = 220
-
-    useEffect(() => {
-        if (!open) return
-        const onDoc = (e: MouseEvent) => {
-            if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
-        }
-        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false) }
-        document.addEventListener("mousedown", onDoc)
-        document.addEventListener("keydown",   onKey)
-        return () => {
-            document.removeEventListener("mousedown", onDoc)
-            document.removeEventListener("keydown",   onKey)
-        }
-    }, [open])
-
-    function handleToggle() {
-        setOpen(prev => {
-            const next = !prev
-            if (next && btnRef.current) {
-                const rect  = btnRef.current.getBoundingClientRect()
-                const below = window.innerHeight - rect.bottom
-                setDropUp(below < MENU_MAX && rect.top > below)
-            }
-            return next
-        })
-    }
-
-    return (
-        <div ref={rootRef} className="relative">
-            <button
-                ref={btnRef}
-                type="button"
-                onClick={handleToggle}
-                aria-haspopup="listbox"
-                aria-expanded={open}
-                className={[
-                    "w-full flex items-center justify-between rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-border",
-                    value ? "theme-text" : "theme-subtext-color",
-                ].join(" ")}
-            >
-                <span>{value ? (options.find(o => o.value === value)?.label ?? value) : "Select your role…"}</span>
                 <ChevronDown
                     size={16}
                     className="theme-subtext-color shrink-0"
@@ -308,9 +212,11 @@ export function OnboardingForm({
                     <label className="text-sm font-semibold theme-h1-color">
                         What's your role on Team Sprocket?
                     </label>
-                    <RoleDropdown
+                    <SimpleDropdown
                         value={selectedRole}
                         options={roleOptions}
+                        placeholder="Select your role…"
+                        menuMax={220}
                         onChange={v => {
                             setSelectedRole(v)
                             // Roles that don't require school info can't keep stale grade/year.
