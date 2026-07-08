@@ -5,6 +5,7 @@ import { useAppReady } from "@/contexts/appReadyContext.tsx"
 import type { RoleCatalogEntry } from "@/lib/permissions"
 import { useIsMobile } from "@/lib/useIsMobile"
 import { useThemeSeasonInfo, type SeasonInfo } from "@/lib/seasonTheme"
+import { subscribeToPush } from "@/lib/push.ts"
 import OnboardingPageDesktop from "./OnboardingPageDesktop"
 import OnboardingPageMobile from "./OnboardingPageMobile"
 
@@ -88,6 +89,19 @@ export default function OnboardingPageRouter() {
 
         setSubmitting(true)
         setError(null)
+
+        // Best-effort, using this click's user gesture -- browsers require the
+        // permission prompt to originate from a direct interaction, and this is
+        // the last click before the user lands on the dashboard. Never blocks
+        // onboarding: unsupported browsers, a denied prompt, or any subscribe
+        // failure are swallowed, since the user can still enable push later
+        // from Settings.
+        try {
+            await subscribeToPush()
+        } catch {
+            // ignore
+        }
+
         try {
             const res = await fetch(`${API}/auth/onboarding`, {
                 method: "POST",

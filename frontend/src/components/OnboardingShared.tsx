@@ -271,7 +271,7 @@ export function OnboardingForm({
                     }
                     className="w-full flex items-center justify-center gap-2 mt-1 h-[52px] rounded-xl border font-semibold text-sm transition-opacity disabled:opacity-40 theme-bg theme-border theme-text-contrast"
                 >
-                    {submitting ? "Saving…" : "Get Started"}
+                    {submitting ? "Saving…" : "Enable Notifications"}
                     {!submitting && <ChevronRight size={16} />}
                 </button>
             </form>
