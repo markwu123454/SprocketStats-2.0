@@ -19,6 +19,8 @@ REQUIRED_ENV_VARS = [
     "LABEL_STUDIO_TOKEN",
     "DATABASE_URL",
     #"DATABASE_URL_LABEL_STUDIO",
+    "VAPID_PUBLIC_KEY",
+    "VAPID_PRIVATE_KEY",
 ]
 if os.environ.get("ENV") != "development":
     REQUIRED_ENV_VARS.append("CORS_ORIGIN")

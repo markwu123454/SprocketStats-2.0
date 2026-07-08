@@ -88,6 +88,31 @@ async def init_db():
                     "CREATE INDEX IF NOT EXISTS notification_responses_user_idx "
                     "ON notification_responses (user_id)"
                 )
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS push_subscriptions (
+                        id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                        user_id    TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        endpoint   TEXT        NOT NULL UNIQUE,
+                        p256dh     TEXT        NOT NULL,
+                        auth       TEXT        NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """)
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx "
+                    "ON push_subscriptions (user_id)"
+                )
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS push_messages (
+                        id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                        title        TEXT        NOT NULL,
+                        body         TEXT        NOT NULL,
+                        target_roles TEXT[]      NOT NULL DEFAULT '{}',
+                        sent_count   INTEGER     NOT NULL DEFAULT 0,
+                        created_by   TEXT        NOT NULL REFERENCES users(id),
+                        created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """)
         except Exception as e:
             logger.error("Failed to initialize schema: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to initialize schema: {e}")
@@ -107,6 +132,9 @@ async def run_migrations():
             )
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_by TEXT REFERENCES users(id)")
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_at TIMESTAMPTZ")
+            # Link functionality was removed from push notifications -- drop the
+            # now-unused column from any table created before this change.
+            await conn.execute("ALTER TABLE push_messages DROP COLUMN IF EXISTS link")
         except Exception as e:
             logger.warning("Migration warning: %s", e)
 

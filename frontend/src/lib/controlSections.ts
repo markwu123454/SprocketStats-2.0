@@ -14,7 +14,7 @@
 // predicate, so they never drift. Gating here is cosmetic; the backend still
 // enforces each action on the real endpoints.
 
-import { Bell, CalendarClock, CalendarPlus, Users, type LucideIcon } from "lucide-react"
+import { Bell, CalendarClock, CalendarPlus, Send, Users, type LucideIcon } from "lucide-react"
 import { can, type PermPolicy } from "./permissions"
 
 /** Convenience: dotted capability paths all live under `control_panel.`. */
@@ -54,6 +54,14 @@ export const CONTROL_SECTIONS: ControlSection[] = [
         to: "notifications",
         label: "Notifications",
         icon: Bell,
+        visible: p => can(p, CP + "notifications"),
+    },
+    {
+        to: "push",
+        label: "Push Notifications",
+        icon: Send,
+        // Separate page/feature from dashboard Notifications above -- same
+        // authoring permission, but its own table, endpoints, and history.
         visible: p => can(p, CP + "notifications"),
     },
 ]
