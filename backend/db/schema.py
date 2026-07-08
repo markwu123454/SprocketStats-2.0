@@ -27,12 +27,11 @@ async def init_db():
             """)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS meeting_hours (
-                    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-                    created_by      TEXT        NOT NULL REFERENCES users(id),
-                    start_time      TIMESTAMPTZ NOT NULL,
-                    end_time        TIMESTAMPTZ NOT NULL,
-                    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-                    meeting_purpose TEXT,
+                    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                    created_by  TEXT        NOT NULL REFERENCES users(id),
+                    start_time  TIMESTAMPTZ NOT NULL,
+                    end_time    TIMESTAMPTZ NOT NULL,
+                    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
                     CONSTRAINT check_valid_time_range CHECK (end_time > start_time)
                 )
             """)
@@ -72,7 +71,6 @@ async def run_migrations():
         await conn.execute(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN NOT NULL DEFAULT false"
         )
-        await conn.execute("ALTER TABLE meeting_hours ADD COLUMN IF NOT EXISTS meeting_purpose TEXT")
     except Exception as e:
         logger.warning("Migration warning: %s", e)
     finally:

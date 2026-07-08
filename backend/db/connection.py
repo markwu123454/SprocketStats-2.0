@@ -4,6 +4,9 @@ import logging
 import os
 import ssl
 import certifi
+from contextlib import asynccontextmanager
+
+from fastapi import HTTPException
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,8 +27,10 @@ async def _setup_codecs(conn: asyncpg.Connection):
     await conn.set_type_codec("jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
     await conn.set_type_codec("json", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
 
+
 # noinspection PyUnresolvedReferences
-async def get_db_connection(db: str) -> tuple[asyncpg.Pool, asyncpg.Connection]:
+async def _get_pool(db: str) -> asyncpg.Pool:
+    """Return the cached pool for db, creating it on first use."""
     pool = _pools.get(db)
     if pool is None:
         env_var = _DSN_ENV_VARS.get(db)
@@ -48,12 +53,29 @@ async def get_db_connection(db: str) -> tuple[asyncpg.Pool, asyncpg.Connection]:
         )
         _pools[db] = pool
 
-    conn = await pool.acquire()
-    return pool, conn
+    return pool
 
 
-async def release_db_connection(pool: asyncpg.Pool, conn: asyncpg.Connection):
-    await pool.release(conn)
+@asynccontextmanager
+async def db_connection(db: str):
+    """Acquire a pooled connection for db and release it on exit.
+
+    Connection-layer failures (pool creation, acquire) are surfaced as a 500,
+    so call sites only need to handle their own query errors. The yield is kept
+    out of the acquire try block so those query errors propagate unchanged
+    instead of being relabelled as a connection error.
+    """
+    try:
+        pool = await _get_pool(db)
+        conn = await pool.acquire()
+    except Exception as e:
+        logger.error("db connect failed for %s: %s", db, e)
+        raise HTTPException(status_code=500, detail="Database unavailable")
+
+    try:
+        yield conn
+    finally:
+        await pool.release(conn)
 
 
 async def close_pool():
@@ -64,8 +86,7 @@ async def close_pool():
 
 
 __all__ = [
-    "get_db_connection",
-    "release_db_connection",
+    "db_connection",
     "close_pool",
     "DB_NAME",
     "DB_NAME_LABEL_STUDIO",
