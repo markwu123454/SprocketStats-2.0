@@ -1,11 +1,10 @@
 # FRC Scouting App (SprocketStats)
 
 ![Version](https://img.shields.io/github/v/release/markwu123454/SprocketStats?sort=semver)
-![Python](https://img.shields.io/badge/Python-3.11-blue)
+![Python](https://img.shields.io/badge/Python-3.13-blue)
 ![Node.js](https://img.shields.io/badge/Node.js-24.12-brightgreen)
-![.NET](https://img.shields.io/badge/.NET-10%20LTS-purple)
 
-SprocketStats is a cross-platform scouting system for **FIRST Robotics Competition (FRC)** teams.
+SprocketStats is an ML-automated scouting system for **FIRST Robotics Competition (FRC)** teams.
 It is designed for fast, reliable match and team data collection, and seamless analysis and data interpretation.
 
 ---
@@ -19,7 +18,7 @@ It is designed for fast, reliable match and team data collection, and seamless a
 
 This repository is published for **reference and transparency only**.
 
-**Want to use SprocketStats?** All inquiries regarding usage, licensing, collaboration, or adaptation must be directed to the author at [me@markwu.org](mailto:me@markwu.org)
+However, I look forward to any teams or individuals who want to use SprocketStats or contribute to it. **Want to use or contribute to SprocketStats?** All inquiries regarding usage, licensing, collaboration, or adaptation should be directed to the author at [me@markwu.org](mailto:me@markwu.org)
 
 See [LICENSE.md](LICENSE.md) for full legal terms.
 
@@ -27,16 +26,15 @@ See [LICENSE.md](LICENSE.md) for full legal terms.
 
 ## Overview
 
-This project provides a full scouting workflow:
+SprocketStats is an ML-automated scouting system: match and team data collection is driven by machine learning rather than manual entry, which changes what the rest of the app needs to do. The frontend and backend focus on the **team ops** side of the app, which is a significant part of the app:
 
-- Match scouting
-- Pit scouting
 - RBAC (Role Based Access Control)
+- Attendance and meeting management
+- Member and notification management
 - Analytics engine
 - Data presentation and sharing
 
-The system is built to persist across seasons with minimal rework, allowing teams to adapt quickly to
-annual game changes.
+The system is built to persist across seasons with minimal rework, allowing teams to adapt quickly to annual game changes.
 
 ---
 
@@ -44,9 +42,9 @@ annual game changes.
 
 This project is **actively maintained** and used in real competition settings by **Team 3473 (Team Sprocket)**.
 
-Some areas are under active development and refactoring, particularly:
+The app is currently undergoing a significant overhaul in preparation for the **2027 season**. Some areas are under active development and refactoring, particularly:
 
-- Mobile offline caching and sync logic
+- ML-driven scouting automation
 - Mobile push notifications based on scouting assignment
 - Advanced analytics workflows
 
@@ -61,7 +59,7 @@ Public documentation may lag behind internal changes.
 - React + Vite (TypeScript)
 - Tailwind CSS
 - Progressive Web App (PWA)
-- Stateless client design for scalability
+- Covers the team ops surface: RBAC, attendance, meetings, members, notifications, dashboards
 
 ### Backend
 
@@ -69,15 +67,15 @@ Public documentation may lag behind internal changes.
 - Async-first architecture for concurrent device connections
 - TBA API integration for teams, matches, and metadata
 
+### Database
+
+- PostgreSQL, hosted on Neon
+- Accessed asynchronously via `asyncpg` connection pools
+- Separate databases for app data and Label Studio (ML labeling)
+
 ### Analysis Tooling
 
-- Separate desktop-oriented application for:
-  - Statistical analysis
-  - Algorithm testing
-  - Performance modeling
-
-Releases for the analysis tool are available on GitHub Releases
-(usage requires your own database API key).
+- SThe scouting pipeline is currently being rewritten, more details will be avaliable once we start implementing and testing it.
 
 ---
 
