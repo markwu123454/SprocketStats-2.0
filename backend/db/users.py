@@ -1,82 +1,77 @@
 import asyncpg
 import logging
 from fastapi import HTTPException
-from .connection import DB_NAME, get_db_connection, release_db_connection
+from .connection import DB_NAME, db_connection
 
 logger = logging.getLogger(__name__)
 
 
 async def upsert_user(user_info: dict) -> asyncpg.Record:
-    pool, conn = await get_db_connection(DB_NAME)
-    try:
-        return await conn.fetchrow(
-            """
-            INSERT INTO users (id, email, name, given_name, picture, last_login)
-            VALUES ($1, $2, $3, $4, $5, now())
-            ON CONFLICT (id) DO UPDATE
-                SET email      = EXCLUDED.email,
-                    name       = EXCLUDED.name,
-                    given_name = EXCLUDED.given_name,
-                    picture    = EXCLUDED.picture,
-                    last_login = now()
-            RETURNING *
-            """,
-            user_info["sub"],
-            user_info["email"],
-            user_info.get("name"),
-            user_info.get("given_name"),
-            user_info.get("picture"),
-        )
-    except Exception as e:
-        logger.error("upsert_user failed: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to save user")
-    finally:
-        await release_db_connection(pool, conn)
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow(
+                """
+                INSERT INTO users (id, email, name, given_name, picture, last_login)
+                VALUES ($1, $2, $3, $4, $5, now())
+                ON CONFLICT (id) DO UPDATE
+                    SET email      = EXCLUDED.email,
+                        name       = EXCLUDED.name,
+                        given_name = EXCLUDED.given_name,
+                        picture    = EXCLUDED.picture,
+                        last_login = now()
+                RETURNING *
+                """,
+                user_info["sub"],
+                user_info["email"],
+                user_info.get("name"),
+                user_info.get("given_name"),
+                user_info.get("picture"),
+            )
+        except Exception as e:
+            logger.error("upsert_user failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to save user")
 
 
 async def get_user(user_id: str) -> asyncpg.Record | None:
-    pool, conn = await get_db_connection(DB_NAME)
-    try:
-        return await conn.fetchrow("SELECT * FROM users WHERE id = $1", user_id)
-    except Exception as e:
-        logger.error("get_user failed: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to fetch user")
-    finally:
-        await release_db_connection(pool, conn)
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow("SELECT * FROM users WHERE id = $1", user_id)
+        except Exception as e:
+            logger.error("get_user failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to fetch user")
 
 
 async def update_user_onboarding(
     user_id: str, display_name: str, role: str, grade: str | None, team_year: str | None
 ) -> asyncpg.Record:
-    pool, conn = await get_db_connection(DB_NAME)
-    try:
-        return await conn.fetchrow(
-            """
-            UPDATE users
-            SET display_name = $2,
-                role         = $3,
-                grade        = $4,
-                team_year    = $5,
-                -- Backfill name/given_name from the onboarding display name when
-                -- Google didn't supply them, so an onboarded user always has both.
-                -- COALESCE keeps any real Google value and never clobbers it.
-                name         = COALESCE(name, $2),
-                given_name   = COALESCE(given_name, $2),
-                onboarding_complete = true
-            WHERE id = $1
-            RETURNING *
-            """,
-            user_id,
-            display_name,
-            role,
-            grade,
-            team_year,
-        )
-    except Exception as e:
-        logger.error("update_user_onboarding failed: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to update user onboarding")
-    finally:
-        await release_db_connection(pool, conn)
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow(
+                """
+                UPDATE users
+                SET display_name = $2,
+                    role         = $3,
+                    grade        = $4,
+                    team_year    = $5,
+                    -- Backfill name/given_name from the onboarding display name when
+                    -- Google didn't supply them, so an onboarded user always has both.
+                    -- COALESCE keeps any real Google value and never clobbers it.
+                    name         = COALESCE(name, $2),
+                    given_name   = COALESCE(given_name, $2),
+                    onboarding_complete = true
+                WHERE id = $1
+                RETURNING *
+                """,
+                user_id,
+                display_name,
+                role,
+                grade,
+                team_year,
+            )
+        except Exception as e:
+            logger.error("update_user_onboarding failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to update user onboarding")
+
 
 async def get_users_by_fields(
     email: list[str] | None = None,
@@ -100,13 +95,75 @@ async def get_users_by_fields(
         return []
 
     query = f"SELECT * FROM users WHERE {' AND '.join(filters)}"
-    pool, conn = await get_db_connection(DB_NAME)
-    try:
-        return await conn.fetch(query, *params)
-    except Exception as e:
-        logger.error("get_users_by_fields failed: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to fetch users")
-    finally:
-        await release_db_connection(pool, conn)
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetch(query, *params)
+        except Exception as e:
+            logger.error("get_users_by_fields failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to fetch users")
 
-__all__ = ["upsert_user", "get_user", "update_user_onboarding", "get_users_by_fields"]
+
+async def list_all_users() -> list[asyncpg.Record]:
+    """Return every user with the profile fields the Members roster shows.
+
+    Selects only the columns the roster needs (no ``picture``/timestamps) and
+    orders by display name so the grid loads in a stable, human-friendly order
+    with un-onboarded users (null ``display_name``) sorted last. This exposes
+    email for every user, so the endpoint that calls it must stay permission
+    gated (see ``endpoints.members``).
+    """
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetch(
+                """
+                SELECT id, email, name, display_name, role, grade, team_year
+                FROM users
+                ORDER BY display_name ASC NULLS LAST, email ASC
+                """
+            )
+        except Exception as e:
+            logger.error("list_all_users failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to fetch users")
+
+
+async def update_users(updates: list[dict]) -> None:
+    """Bulk-update the editable profile fields for multiple users.
+
+    Writes ``name``, ``display_name``, ``role``, ``grade`` and ``team_year`` for
+    each ``{"id", ...}`` entry. All rows are updated in a single transaction, so a
+    failure on any row (e.g. a DB constraint) rolls back the whole batch and
+    nothing is partially saved. Email is intentionally not updatable here -- it's
+    the OAuth identity and the roster edit surface must not change it.
+
+    :param updates: One dict per user, each with an ``id`` plus the editable
+        fields to set (missing fields are written as ``NULL``).
+    """
+    if not updates:
+        return
+    async with db_connection(DB_NAME) as conn:
+        try:
+            async with conn.transaction():
+                for u in updates:
+                    await conn.execute(
+                        """
+                        UPDATE users
+                        SET name         = $2,
+                            display_name = $3,
+                            role         = $4,
+                            grade        = $5,
+                            team_year    = $6
+                        WHERE id = $1
+                        """,
+                        u["id"],
+                        u.get("name"),
+                        u.get("display_name"),
+                        u.get("role"),
+                        u.get("grade"),
+                        u.get("team_year"),
+                    )
+        except Exception as e:
+            logger.error("update_users failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to update users")
+
+
+__all__ = ["upsert_user", "get_user", "update_user_onboarding", "get_users_by_fields", "list_all_users", "update_users"]
