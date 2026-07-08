@@ -109,4 +109,71 @@ async def get_users_by_fields(
     finally:
         await release_db_connection(pool, conn)
 
-__all__ = ["upsert_user", "get_user", "update_user_onboarding", "get_users_by_fields"]
+async def list_all_users() -> list[asyncpg.Record]:
+    """Return every user with the profile fields the Members roster shows.
+
+    Selects only the columns the roster needs (no ``picture``/timestamps) and
+    orders by display name so the grid loads in a stable, human-friendly order
+    with un-onboarded users (null ``display_name``) sorted last. This exposes
+    email for every user, so the endpoint that calls it must stay permission
+    gated (see ``endpoints.members``).
+    """
+    pool, conn = await get_db_connection(DB_NAME)
+    try:
+        return await conn.fetch(
+            """
+            SELECT id, email, name, display_name, role, grade, team_year
+            FROM users
+            ORDER BY display_name ASC NULLS LAST, email ASC
+            """
+        )
+    except Exception as e:
+        logger.error("list_all_users failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to fetch users")
+    finally:
+        await release_db_connection(pool, conn)
+
+
+async def update_users(updates: list[dict]) -> None:
+    """Bulk-update the editable profile fields for multiple users.
+
+    Writes ``name``, ``display_name``, ``role``, ``grade`` and ``team_year`` for
+    each ``{"id", ...}`` entry. All rows are updated in a single transaction, so a
+    failure on any row (e.g. a DB constraint) rolls back the whole batch and
+    nothing is partially saved. Email is intentionally not updatable here — it's
+    the OAuth identity and the roster edit surface must not change it.
+
+    :param updates: One dict per user, each with an ``id`` plus the editable
+        fields to set (missing fields are written as ``NULL``).
+    """
+    if not updates:
+        return
+    pool, conn = await get_db_connection(DB_NAME)
+    try:
+        async with conn.transaction():
+            for u in updates:
+                await conn.execute(
+                    """
+                    UPDATE users
+                    SET name         = $2,
+                        display_name = $3,
+                        role         = $4,
+                        grade        = $5,
+                        team_year    = $6
+                    WHERE id = $1
+                    """,
+                    u["id"],
+                    u.get("name"),
+                    u.get("display_name"),
+                    u.get("role"),
+                    u.get("grade"),
+                    u.get("team_year"),
+                )
+    except Exception as e:
+        logger.error("update_users failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to update users")
+    finally:
+        await release_db_connection(pool, conn)
+
+
+__all__ = ["upsert_user", "get_user", "update_user_onboarding", "get_users_by_fields", "list_all_users", "update_users"]

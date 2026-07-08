@@ -1,5 +1,4 @@
 import os
-from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta, timezone
 
 # noinspection PyUnresolvedReferences
@@ -121,107 +120,6 @@ def require_permission(path: str):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions",
             )
-        return user
-
-    return dependency
-
-
-def require_access(
-    *,
-    roles: str | Iterable[str] | None = None,
-    permissions: str | Iterable[str] | None = None,
-    permissions_mode: str = "all",
-) -> Callable[..., dict]:
-    """Build one FastAPI dependency that gates on login, role, and permissions.
-
-    This is the general-purpose gate spanning all three access dimensions in a
-    single dependency, so a route needs only one ``Depends`` no matter how it is
-    restricted:
-
-      * **login** — always enforced. The wrapped :func:`get_current_user` rejects
-        an unauthenticated request with 401 before any role/permission check runs.
-      * **role** — if ``roles`` is given, the caller's ``role`` claim must be one
-        of them, else 403. Omit ``roles`` to allow any authenticated role.
-      * **permissions** — if ``permissions`` is given, the caller's role policy
-        must grant the capability path(s), else 403. Omit to skip capability
-        checks. ``permissions_mode`` selects ``"all"`` (default — every path must
-        be granted, AND) or ``"any"`` (at least one, OR).
-
-    Passing neither ``roles`` nor ``permissions`` yields a pure login gate,
-    equivalent to depending on :func:`get_current_user` directly. Single values
-    may be passed as bare strings; multiple as any iterable of strings.
-
-    Examples::
-
-        # login only
-        Depends(require_access())
-
-        # login + must hold one of these roles
-        Depends(require_access(roles={"captain", "mentor"}))
-
-        # login + capability (equivalent to require_permission)
-        Depends(require_access(permissions="control_panel.view"))
-
-        # login + role + must have ALL listed capabilities
-        Depends(require_access(
-            roles="scouting_lead",
-            permissions=["control_panel.view", "control_panel.upcoming_event"],
-        ))
-
-    Role slugs are validated against :data:`VALID_ROLES` at construction time
-    (i.e. on import), so a typo fails fast at startup rather than silently
-    locking everyone out at request time. This gate covers boolean capability
-    gating only; value/threshold checks (e.g. an export row cap) should still be
-    done inline in the handler with ``permissions.get_perm``.
-
-    :param roles: Allowed role slug(s). ``None`` means any authenticated role.
-    :param permissions: Dotted capability path(s) the caller's role must be
-        granted. ``None`` means no capability check.
-    :param permissions_mode: ``"all"`` (default) requires every path; ``"any"``
-        requires at least one.
-    :returns: A dependency callable returning the authenticated user dict.
-    :raises ValueError: If ``permissions_mode`` is invalid or a role slug is
-        unknown (raised at construction time, not per request).
-    """
-    if permissions_mode not in ("all", "any"):
-        raise ValueError(f"permissions_mode must be 'all' or 'any', got {permissions_mode!r}")
-
-    allowed_roles: set[str] | None
-    if roles is None:
-        allowed_roles = None
-    else:
-        allowed_roles = {roles} if isinstance(roles, str) else set(roles)
-        unknown = allowed_roles - VALID_ROLES
-        if unknown:
-            raise ValueError(f"Unknown role(s) in require_access: {sorted(unknown)}")
-
-    if permissions is None:
-        required_paths: list[str] = []
-    elif isinstance(permissions, str):
-        required_paths = [permissions]
-    else:
-        required_paths = list(permissions)
-
-    check = all if permissions_mode == "all" else any
-
-    def dependency(user: dict = Depends(get_current_user)) -> dict:
-        # Login is already enforced: get_current_user raised 401 if unauthenticated.
-        role = user.get("role")
-
-        if allowed_roles is not None and role not in allowed_roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient role",
-            )
-
-        if required_paths:
-            perms = get_permissions_for_role(role)
-            if not check(can(perms, path) for path in required_paths):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Insufficient permissions",
-                )
-
         return user
 
     return dependency

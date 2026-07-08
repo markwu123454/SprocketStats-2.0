@@ -6,7 +6,8 @@ import {
     LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen, SlidersHorizontal,
 } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
-import { can, getPerm } from "@/lib/permissions"
+import { can, getPerm, type PermPolicy } from "@/lib/permissions"
+import { visibleSections, type ControlSection } from "@/lib/controlSections"
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community"
 import { useAppReady } from "@/contexts/appReadyContext.tsx"
 
@@ -19,9 +20,17 @@ function getNavTextPref(): boolean {
     return stored === null ? true : stored === "true"
 }
 
-const CORE_TABS = [
+interface NavTab {
+    to: string
+    label: string
+    icon: typeof LayoutDashboard
+    /** Optional gate; a tab with no predicate is always shown. */
+    visible?: (perms: PermPolicy | null | undefined) => boolean
+}
+
+const CORE_TABS: NavTab[] = [
     { to: "/dashboard",   label: "Dashboard",   icon: LayoutDashboard },
-    { to: "/attendance",  label: "Attendance",  icon: CalendarCheck   },
+    { to: "/attendance",  label: "Attendance",  icon: CalendarCheck, visible: p => can(p, "attendance.view") },
     { to: "/competition", label: "Competition", icon: Trophy          },
     { to: "/scouting",    label: "Scouting",    icon: ClipboardList   },
 ]
@@ -81,9 +90,21 @@ export default function AppShell() {
 
     const isActive = (to: string) => location.pathname === to
 
-    const navTabs = can(user.permissions, "control_panel.view")
-        ? [...CORE_TABS, CONTROL_PANEL_TAB]
-        : CORE_TABS
+    const canViewControl = can(user.permissions, "control_panel.view")
+
+    // Core tabs can carry an optional `visible` predicate (e.g. Attendance is
+    // student-only); an ungated tab is always shown. Both the desktop sidebar and
+    // the mobile bar render this same filtered list so they never drift.
+    const coreTabs = CORE_TABS.filter(t => !t.visible || t.visible(user.permissions))
+
+    // Control Panel fans out into role-gated sub-pages; both this sidebar and the
+    // mobile hub filter the same list through the same predicate so they never drift.
+    const controlSections = visibleSections(user.permissions)
+
+    // Mobile bottom bar keeps Control Panel as a single tab (→ hub of cards).
+    const navTabs = canViewControl
+        ? [...coreTabs, CONTROL_PANEL_TAB]
+        : coreTabs
 
     // Human-readable role label comes from the backend policy; fall back to the
     // raw role slug if the role isn't in the policy map.
@@ -211,7 +232,7 @@ export default function AppShell() {
                     }}
                 >
                     <nav className="flex flex-col gap-0.5 p-2 pt-3">
-                        {navTabs.map(({ to, label, icon: Icon }) => {
+                        {coreTabs.map(({ to, label, icon: Icon }) => {
                             const active = isActive(to)
                             return (
                                 <Link
@@ -238,6 +259,14 @@ export default function AppShell() {
                                 </Link>
                             )
                         })}
+
+                        {canViewControl && (
+                            <ControlPanelNav
+                                sections={controlSections}
+                                collapsed={sidebarCollapsed}
+                                pathname={location.pathname}
+                            />
+                        )}
                     </nav>
                 </aside>
 
@@ -277,6 +306,94 @@ export default function AppShell() {
                 @keyframes spin     { to { transform: rotate(360deg);  } }
                 @keyframes spin-rev { to { transform: rotate(-360deg); } }
             `}</style>
+        </div>
+    )
+}
+
+/**
+ * Desktop sidebar navigation for the Control Panel and its role-gated sub-pages.
+ *
+ * Expanded sidebar → inline accordion: the parent row toggles the section list,
+ * the sub-items navigate. Collapsed sidebar → the parent becomes an icon with a
+ * hover flyout listing the same sub-items (there's no room for inline text).
+ * Both drive the pre-filtered `sections`, so a user only ever sees what their
+ * role grants. The mobile bottom bar keeps Control Panel as a single tab.
+ */
+function ControlPanelNav({
+    sections,
+    collapsed,
+    pathname,
+}: {
+    sections: ControlSection[]
+    collapsed: boolean
+    pathname: string
+}) {
+    const parentActive = pathname.startsWith("/control")
+    const [open, setOpen] = useState(parentActive)
+
+    // Keep the accordion open whenever we're on a control route (deep-link, or
+    // navigating in from the mobile hub then resizing the window up).
+    useEffect(() => { if (parentActive) setOpen(true) }, [parentActive])
+
+    const rowClass = (active: boolean) => [
+        "flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm font-medium transition-all w-full",
+        active ? "theme-text-contrast" : "theme-text opacity-55 hover:opacity-90",
+    ].join(" ")
+    const activeStyle = (active: boolean) =>
+        active ? { background: "color-mix(in oklch, var(--theme-button-bg) 18%, transparent)" } : {}
+
+    // Collapsed: icon + hover flyout.
+    if (collapsed) {
+        return (
+            <div className="relative group">
+                <Link to="/control" title="Control Panel" className={rowClass(parentActive)} style={activeStyle(parentActive)}>
+                    <SlidersHorizontal size={18} className="shrink-0" />
+                </Link>
+                <div className="absolute left-full top-0 ml-2 z-50 hidden group-hover:block min-w-44 rounded-xl border shadow-lg py-1 theme-bg theme-border">
+                    <div className="px-3 py-1.5 text-xs font-semibold theme-subtext-color">Control Panel</div>
+                    {sections.map(({ to, label, icon: Icon }) => {
+                        const active = pathname === `/control/${to}`
+                        return (
+                            <Link
+                                key={to}
+                                to={`/control/${to}`}
+                                className={`flex items-center gap-2.5 px-3 py-2 text-sm ${active ? "theme-text-contrast" : "theme-text opacity-70 hover:opacity-100"}`}
+                            >
+                                <Icon size={16} className="shrink-0" />
+                                {label}
+                            </Link>
+                        )
+                    })}
+                </div>
+            </div>
+        )
+    }
+
+    // Expanded: inline accordion.
+    return (
+        <div className="flex flex-col">
+            <button onClick={() => setOpen(v => !v)} className={rowClass(parentActive)} style={activeStyle(parentActive)}>
+                <SlidersHorizontal size={18} className="shrink-0" />
+                <span className="flex-1 text-left truncate">Control Panel</span>
+                <ChevronDown
+                    size={15}
+                    className="shrink-0 transition-transform"
+                    style={{ transform: open ? "rotate(180deg)" : "none" }}
+                />
+            </button>
+            {open && (
+                <div className="flex flex-col gap-0.5 mt-0.5 pl-3 ml-2 border-l theme-border">
+                    {sections.map(({ to, label, icon: Icon }) => {
+                        const active = pathname === `/control/${to}`
+                        return (
+                            <Link key={to} to={`/control/${to}`} className={rowClass(active)} style={activeStyle(active)}>
+                                <Icon size={16} className="shrink-0" />
+                                <span className="truncate">{label}</span>
+                            </Link>
+                        )
+                    })}
+                </div>
+            )}
         </div>
     )
 }
