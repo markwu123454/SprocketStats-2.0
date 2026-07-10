@@ -19,6 +19,7 @@ export interface LoginPageProps {
     timeInfo: TimeInfo;
     loading: boolean;
     banned: boolean;
+    pendingApproval: boolean;
     authError: boolean;
     signInWithGoogle: () => void;
 }
@@ -47,7 +48,7 @@ function getTimeInfo(): TimeInfo {
 
 /* ── Router ──────────────────────────────────────────────────── */
 export default function LoginPageRouter() {
-    const { user, loading, banned, authError, signInWithGoogle } = useAuth();
+    const { user, loading, banned, pendingApproval, authError, signInWithGoogle } = useAuth();
     const navigate  = useNavigate();
     const markReady = useAppReady();
     const season    = useThemeSeasonInfo();
@@ -63,7 +64,7 @@ export default function LoginPageRouter() {
         if (!loading && user) navigate("/dashboard", { replace: true });
     }, [user, loading, navigate]);
 
-    const props: LoginPageProps = { season, timeInfo, loading, banned, authError, signInWithGoogle };
+    const props: LoginPageProps = { season, timeInfo, loading, banned, pendingApproval, authError, signInWithGoogle };
 
     return isMobile
         ? <LoginPageMobile  {...props} />

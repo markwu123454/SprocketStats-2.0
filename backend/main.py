@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -29,14 +31,41 @@ missing_env_vars = [var for var in REQUIRED_ENV_VARS if not os.environ.get(var)]
 if missing_env_vars:
     print(f"Missing required environment variables: {', '.join(missing_env_vars)}")
 
+import account_state
 import db
 from endpoints import router
+
+logger = logging.getLogger(__name__)
+
+# How often each process reloads the ban/approval cache. Also the upper bound on
+# how long a ban/approval change takes to propagate across server processes.
+ACCOUNT_STATE_REFRESH_SECONDS = 30
+
+
+async def _account_state_refresh_loop():
+    """Reload the account-state cache every ACCOUNT_STATE_REFRESH_SECONDS.
+
+    Runs for the life of the app. A failed refresh is logged and the previous
+    snapshot is kept -- a transient DB blip must not wipe the cache or kill the
+    loop.
+    """
+    while True:
+        await asyncio.sleep(ACCOUNT_STATE_REFRESH_SECONDS)
+        try:
+            await account_state.refresh()
+        except Exception as e:
+            logger.error("account_state refresh failed, keeping previous snapshot: %s", e)
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await db.init_db()
     await db.run_migrations()
+    # Prime the cache before serving so the first request is a hit, not a miss.
+    await account_state.refresh()
+    refresh_task = asyncio.create_task(_account_state_refresh_loop())
     yield
+    refresh_task.cancel()
     await db.close_pool()
 
 app = FastAPI(lifespan=lifespan)

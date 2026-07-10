@@ -9,8 +9,15 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from jose import ExpiredSignatureError, JWTError, jwt
 from pydantic import BaseModel, field_validator, model_validator
 
+import account_state
 import db
-from permissions import ROLE_DEFINITIONS, can, get_perm, get_permissions_for_role, role_catalog
+from permissions import (
+    ROLE_DEFINITIONS,
+    can,
+    get_perm,
+    get_permissions_for_role,
+    role_catalog,
+)
 
 router = APIRouter()
 
@@ -96,6 +103,25 @@ def get_current_user(auth_token: str | None = Cookie(default=None)) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
 
 
+async def require_active(user: dict = Depends(get_current_user)) -> dict:
+    """Login gate that also rejects banned / pending-approval accounts.
+
+    Equivalent to depending on :func:`get_current_user`, plus the ban/approval
+    re-check that historically ran only at ``/auth/me`` -- so a banned or
+    not-yet-approved user's still-valid cookie no longer authorises the endpoint.
+    The check reads the in-memory ``account_state`` cache, so on the hot path it
+    is a dict lookup rather than a DB round-trip. Use this for login-only routes
+    that take an action; :func:`require_access` already layers this in for
+    role/permission-gated routes.
+
+    :param user: The authenticated user's JWT claims (injected).
+    :returns: The same user dict, once confirmed active.
+    :raises HTTPException: 401 if unauthenticated; 403 if banned or pending.
+    """
+    await account_state.assert_active(user["sub"])
+    return user
+
+
 def require_access(
     *,
     roles: str | Iterable[str] | None = None,
@@ -174,8 +200,11 @@ def require_access(
 
     check = all if permissions_mode == "all" else any
 
-    def dependency(user: dict = Depends(get_current_user)) -> dict:
+    async def dependency(user: dict = Depends(get_current_user)) -> dict:
         # Login is already enforced: get_current_user raised 401 if unauthenticated.
+        # Then reject banned / pending-approval accounts (cache-backed, no DB on
+        # the hot path) before any role/permission check.
+        await account_state.assert_active(user["sub"])
         role = user.get("role")
 
         if allowed_roles is not None and role not in allowed_roles:
@@ -243,18 +272,18 @@ async def me(user: dict = Depends(get_current_user)):
     policy into the JWT) means a change to the policy map takes effect on the
     next request, without waiting for tokens to expire.
 
-    This is also the only endpoint that re-checks ban status against the DB: the
-    JWT is otherwise trusted as-is for the life of the session, so a ban only
-    takes effect once the client re-fetches the current user (e.g. on next page
-    load), not on every request.
+    Ban and approval are enforced here via :func:`account_state.assert_active`
+    (the same cache-backed check every protected endpoint now runs), which raises
+    a distinct 403 detail for "banned" vs "pending approval" so the login screen
+    can tell them apart. Because the check reads a periodically-refreshed cache
+    rather than the DB, a ban or approval change takes effect within the refresh
+    interval fleet-wide, not necessarily on the very next request.
 
     :param user: The authenticated user's JWT claims.
     :returns: The user's profile fields and their ``permissions`` policy object.
-    :raises HTTPException: 403 if the account has been banned.
+    :raises HTTPException: 403 if the account has been banned or is pending approval.
     """
-    row = await db.get_user(user["sub"])
-    if row is not None and row["banned_at"] is not None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account banned")
+    await account_state.assert_active(user["sub"])
 
     pending = await db.get_pending_notifications_for_user(user["sub"], user.get("role"))
 
@@ -352,7 +381,7 @@ class OnboardingRequest(BaseModel):
 @router.post("/onboarding")
 async def complete_onboarding(
     body: OnboardingRequest,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_active),
 ):
     updated = await db.update_user_onboarding(user["sub"], body.display_name, body.role, body.grade, body.team_year)
     updated_dict = dict(updated)

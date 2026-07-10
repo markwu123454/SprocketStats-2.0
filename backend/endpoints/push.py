@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator
 
 import db
-from .auth import VALID_ROLES, get_current_user, require_access
+from .auth import VALID_ROLES, require_access, require_active
 
 router = APIRouter()
 
@@ -71,7 +71,7 @@ class PushMessageRequest(BaseModel):
 
 
 @router.get("/public-key")
-async def push_public_key(_: dict = Depends(get_current_user)):
+async def push_public_key(_: dict = Depends(require_active)):
     """VAPID public key the frontend passes as `applicationServerKey` when
     calling `pushManager.subscribe`. Served from the backend so there's one
     source of truth instead of a key duplicated into frontend env vars.
@@ -80,7 +80,7 @@ async def push_public_key(_: dict = Depends(get_current_user)):
 
 
 @router.post("/subscribe")
-async def push_subscribe(body: PushSubscriptionRequest, user: dict = Depends(get_current_user)):
+async def push_subscribe(body: PushSubscriptionRequest, user: dict = Depends(require_active)):
     """Register (or refresh) this browser's push subscription for the current user.
 
     Open to any signed-in user -- every user, not just push authors, needs to
@@ -91,9 +91,14 @@ async def push_subscribe(body: PushSubscriptionRequest, user: dict = Depends(get
 
 
 @router.post("/unsubscribe")
-async def push_unsubscribe(body: PushUnsubscribeRequest, _: dict = Depends(get_current_user)):
-    """Drop a subscription, e.g. when the user disables push in Settings."""
-    await db.delete_push_subscription(body.endpoint)
+async def push_unsubscribe(body: PushUnsubscribeRequest, user: dict = Depends(require_active)):
+    """Drop a subscription, e.g. when the user disables push in Settings.
+
+    Scoped to the caller's own subscriptions: the delete matches on
+    ``endpoint`` *and* ``user_id``, so a user can only remove a device that is
+    registered to them, never someone else's by guessing their endpoint.
+    """
+    await db.delete_push_subscription(body.endpoint, user["sub"])
     return {"ok": True}
 
 

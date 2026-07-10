@@ -12,7 +12,7 @@ import {
 /* ════════════════════════════════════════════════════════════════
    LoginPageDesktop — split hero / form layout
    ════════════════════════════════════════════════════════════════ */
-export default function LoginPageDesktop({ season, timeInfo, loading, banned, authError, signInWithGoogle }: LoginPageProps) {
+export default function LoginPageDesktop({ season, timeInfo, loading, banned, pendingApproval, authError, signInWithGoogle }: LoginPageProps) {
     useScrollLock();
 
     return (
@@ -53,6 +53,11 @@ export default function LoginPageDesktop({ season, timeInfo, loading, banned, au
                     {banned && (
                         <LoginErrorNotice>
                             This account has been banned. Contact a captain or mentor if you think that's a mistake.
+                        </LoginErrorNotice>
+                    )}
+                    {pendingApproval && (
+                        <LoginErrorNotice>
+                            Your account is awaiting approval. Ask a captain or mentor to approve you, then sign in again.
                         </LoginErrorNotice>
                     )}
                     {authError && (

@@ -18,6 +18,10 @@ interface NotificationFull {
     active: boolean
     created_by_name: string | null
     created_by_is_self: boolean
+    // Whether the current viewer may edit/deactivate this notice. Mirrors the
+    // backend author-authority rule (a lead can't edit a captain's/mentor's
+    // notice); the endpoint enforces it, this only hides the controls.
+    can_edit: boolean
     created_at: string
     updated_at: string
 }
@@ -306,24 +310,26 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
                             )}
                         </div>
 
-                        <div className="flex gap-2 pt-1">
-                            <button
-                                onClick={() => setEditing(true)}
-                                className="rounded-lg border px-4 py-2 text-sm font-medium theme-text theme-border transition-opacity hover:opacity-80"
-                            >
-                                Edit
-                            </button>
-                            {detail.notification.active && (
+                        {detail.notification.can_edit && (
+                            <div className="flex gap-2 pt-1">
                                 <button
-                                    onClick={() => void handleDeactivate()}
-                                    disabled={saving}
-                                    className="rounded-lg border px-4 py-2 text-sm font-medium transition-opacity hover:opacity-80 disabled:opacity-40"
-                                    style={{ color: "#dc2626", borderColor: "color-mix(in oklch, #dc2626 50%, transparent)" }}
+                                    onClick={() => setEditing(true)}
+                                    className="rounded-lg border px-4 py-2 text-sm font-medium theme-text theme-border transition-opacity hover:opacity-80"
                                 >
-                                    Deactivate
+                                    Edit
                                 </button>
-                            )}
-                        </div>
+                                {detail.notification.active && (
+                                    <button
+                                        onClick={() => void handleDeactivate()}
+                                        disabled={saving}
+                                        className="rounded-lg border px-4 py-2 text-sm font-medium transition-opacity hover:opacity-80 disabled:opacity-40"
+                                        style={{ color: "#dc2626", borderColor: "color-mix(in oklch, #dc2626 50%, transparent)" }}
+                                    >
+                                        Deactivate
+                                    </button>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex items-center gap-3">

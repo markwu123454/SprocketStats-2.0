@@ -54,14 +54,37 @@ async def save_push_subscription(user_id: str, endpoint: str, p256dh: str, auth:
             raise
 
 
-async def delete_push_subscription(endpoint: str) -> None:
-    """Remove a subscription, e.g. on client-side unsubscribe or a dead endpoint."""
+async def delete_push_subscription(endpoint: str, user_id: str) -> None:
+    """Remove one of ``user_id``'s subscriptions by ``endpoint``.
+
+    Scoped to the owner (``endpoint`` AND ``user_id``) so a user can only drop a
+    device registered to them -- an endpoint alone is not proof of ownership, and
+    matching on it alone would let any signed-in user unsubscribe another's device.
+    """
+    async with db_connection(DB_NAME) as conn:
+        try:
+            await conn.execute(
+                "DELETE FROM push_subscriptions WHERE endpoint = $1 AND user_id = $2",
+                endpoint, user_id,
+            )
+        except Exception as e:
+            logger.error("delete_push_subscription failed: %s", e)
+            raise
+
+
+async def _prune_dead_endpoint(endpoint: str) -> None:
+    """Delete a subscription the push service reported as gone (404/410).
+
+    System-side cleanup, not a user action: the endpoint is globally unique and
+    already known-dead, so it's removed by endpoint alone -- owner scoping only
+    matters to stop a *user* deleting someone else's device. Swallows its own
+    errors so a failed prune never disrupts the rest of a fan-out.
+    """
     async with db_connection(DB_NAME) as conn:
         try:
             await conn.execute("DELETE FROM push_subscriptions WHERE endpoint = $1", endpoint)
         except Exception as e:
-            logger.error("delete_push_subscription failed: %s", e)
-            raise
+            logger.warning("_prune_dead_endpoint failed for %s: %s", endpoint, e)
 
 
 async def get_push_subscriptions_for_roles(target_roles: list[str]) -> list[asyncpg.Record]:
@@ -111,7 +134,7 @@ async def _send_one(sub: asyncpg.Record, payload: str) -> None:
         if status_code in (404, 410):
             # Push service no longer recognizes this endpoint (browser
             # unsubscribed, uninstalled, or the subscription simply expired).
-            await delete_push_subscription(sub["endpoint"])
+            await _prune_dead_endpoint(sub["endpoint"])
         else:
             logger.warning("send_web_push failed for %s: %s", sub["endpoint"], e)
     except Exception as e:

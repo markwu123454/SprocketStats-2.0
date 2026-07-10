@@ -1,24 +1,74 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, field_validator
 
+import account_state
 import db
-from .auth import VALID_GRADES, VALID_ROLES, VALID_TEAM_YEARS, require_access
+from permissions import can, can_role_moderate, get_permissions_for_role, has_moderation_authority
+from .auth import VALID_GRADES, VALID_ROLES, VALID_TEAM_YEARS, get_current_user, require_access
 
 router = APIRouter()
 
-# Both the read and the write must hold this capability (Captains + Mentors only).
+# Full roster management — view + inline edit of every profile. Captains + Mentors
+# only. Editing (roles, names, grades) stays exclusively theirs.
 require_members = require_access(permissions="control_panel.members")
 
 
+async def require_roster_access(user: dict = Depends(get_current_user)) -> dict:
+    """Gate the read-only roster and the moderation (approve/ban) actions.
+
+    Admits anyone who can either fully manage members (``control_panel.members``,
+    i.e. Captains/Mentors) or moderate at least someone (Leads, via their
+    ``can_moderate`` spec). This only decides who may reach the roster at all —
+    the per-target scope (who may approve/ban whom) is enforced separately in each
+    handler through :func:`_authorize_moderation`. Leads get the full roster read
+    (including emails) but a Save/edit that they attempt is still rejected by
+    ``require_members`` on the write endpoint.
+
+    Unlike the capability-gated routes (which flow through ``require_access``),
+    this guard is built directly on ``get_current_user``, so it re-checks
+    ban/approval itself via ``account_state.assert_active`` — otherwise a banned
+    or pending-approval Captain/Lead could still moderate.
+    """
+    await account_state.assert_active(user["sub"])
+    role = user.get("role")
+    if can(get_permissions_for_role(role), "control_panel.members") or has_moderation_authority(role):
+        return user
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+
+
+async def _authorize_moderation(actor: dict, user_id: str, *, self_error: str | None = None) -> None:
+    """Ensure ``actor`` may moderate the target ``user_id``, else raise.
+
+    Enforces the shared approve/ban scope (:func:`permissions.can_role_moderate`)
+    against the target's *current* role, and optionally forbids acting on oneself.
+    Captains/Mentors clear any target; a Lead only clears their own subteam's
+    members and alumni. Raises 400 (self), 404 (no such member), or 403 (out of
+    scope). This authorises the *action*; it deliberately does not check whether
+    ``actor`` is themselves approved (that stays a ``/auth/me``-only concern).
+    """
+    if self_error is not None and user_id == actor["sub"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=self_error)
+    target = await db.get_user(user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    if not can_role_moderate(actor.get("role"), target["role"]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This member is outside your moderation scope",
+        )
+
+
 @router.get("")
-async def list_members(_: dict = Depends(require_members)):
+async def list_members(_: dict = Depends(require_roster_access)):
     """Return the full member roster for the Control Panel Members page.
 
-    This endpoint exposes every user's email (plus role/grade/year/names), so it
-    is gated on ``control_panel.members`` — a capability only Captains and Mentors
-    hold. The gate is the real enforcement: the frontend section visibility is
-    only cosmetic. ``grade``/``team_year`` are null for roles without school info
-    (mentor/alumni) and for anyone who hasn't finished onboarding.
+    This endpoint exposes every user's email (plus role/grade/year/names). It is
+    gated on :func:`require_roster_access` — Captains and Mentors (who fully manage
+    members) plus Leads (who moderate their own subteam). All of them see the whole
+    roster; scope only limits *which rows they can act on*, enforced per action.
+    The gate is the real enforcement; frontend section visibility is cosmetic.
+    ``grade``/``team_year`` are null for roles without school info (mentor/alumni)
+    and for anyone who hasn't finished onboarding.
 
     :param _: The authenticated, authorized user (enforces access; value unused).
     :returns: A list of member rows with id, email, name, display_name, role,
@@ -104,19 +154,19 @@ async def update_members(
 
 
 @router.post("/{user_id}/approve")
-async def approve_member(user_id: str, user: dict = Depends(require_members)):
+async def approve_member(user_id: str, user: dict = Depends(require_roster_access)):
     """Sign off on a member's identity and self-selected role.
 
     The approver is taken from the authenticated session (never the request
     body), so approval can't be forged as someone else. A member can't approve
-    themselves.
+    themselves, and the target must be within the approver's moderation scope
+    (Captains/Mentors: anyone; Leads: their own subteam's members + alumni).
 
     :param user_id: The member being approved.
-    :param user: The authenticated, authorized approver.
+    :param user: The authenticated approver.
     :returns: ``{"id", "approved_by"}``.
     """
-    if user_id == user["sub"]:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot approve yourself")
+    await _authorize_moderation(user, user_id, self_error="You cannot approve yourself")
     row = await db.approve_user(user_id, user["sub"])
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
@@ -124,13 +174,17 @@ async def approve_member(user_id: str, user: dict = Depends(require_members)):
 
 
 @router.delete("/{user_id}/approve")
-async def unapprove_member(user_id: str, _: dict = Depends(require_members)):
+async def unapprove_member(user_id: str, user: dict = Depends(require_roster_access)):
     """Clear a member's approval.
 
+    Same moderation scope as approving — a Lead can only unapprove within their
+    own subteam.
+
     :param user_id: The member to unapprove.
-    :param _: The authenticated, authorized user (enforces access; value unused).
+    :param user: The authenticated user (must have the target in scope).
     :returns: ``{"id", "approved_by"}`` (``approved_by`` is always ``None``).
     """
+    await _authorize_moderation(user, user_id)
     row = await db.unapprove_user(user_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
@@ -138,20 +192,20 @@ async def unapprove_member(user_id: str, _: dict = Depends(require_members)):
 
 
 @router.post("/{user_id}/ban")
-async def ban_member(user_id: str, user: dict = Depends(require_members)):
+async def ban_member(user_id: str, user: dict = Depends(require_roster_access)):
     """Soft-ban a member: their row and role stay intact, only ``banned_at`` is set.
 
     Enforcement happens in ``/auth/me`` (the only endpoint that re-checks the DB
     on every call), so an already-open session isn't cut off mid-request; the ban
     takes effect the next time the client re-fetches the current user. A member
-    can't ban themselves.
+    can't ban themselves, and the target must be within the actor's moderation
+    scope (same rule as approving).
 
     :param user_id: The member being banned.
-    :param user: The authenticated, authorized user.
+    :param user: The authenticated actor.
     :returns: ``{"id", "banned_at"}``.
     """
-    if user_id == user["sub"]:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot ban yourself")
+    await _authorize_moderation(user, user_id, self_error="You cannot ban yourself")
     row = await db.ban_user(user_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
@@ -159,13 +213,16 @@ async def ban_member(user_id: str, user: dict = Depends(require_members)):
 
 
 @router.delete("/{user_id}/ban")
-async def unban_member(user_id: str, _: dict = Depends(require_members)):
+async def unban_member(user_id: str, user: dict = Depends(require_roster_access)):
     """Lift a member's ban.
 
+    Same moderation scope as banning.
+
     :param user_id: The member to unban.
-    :param _: The authenticated, authorized user (enforces access; value unused).
+    :param user: The authenticated actor (must have the target in scope).
     :returns: ``{"id", "banned_at"}`` (``banned_at`` is always ``None``).
     """
+    await _authorize_moderation(user, user_id)
     row = await db.unban_user(user_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")

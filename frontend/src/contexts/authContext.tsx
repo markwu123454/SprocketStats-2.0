@@ -63,6 +63,10 @@ interface AuthContextValue {
     // Set when the last /auth/me call came back 403 "banned" — the account is
     // real but has been banned, distinct from simply not being signed in.
     banned: boolean
+    // Set when the last /auth/me call came back 403 "pending approval" — the
+    // account onboarded into a privileged role but no captain/mentor has approved
+    // it yet, so it's bounced to login until then. Distinct from banned.
+    pendingApproval: boolean
     // Set when the last /auth/me call failed for a reason other than "not
     // signed in" or "banned" — network failure, 404, 500, 503, etc. Signing
     // in would just hit the same broken backend, so the login UI should
@@ -81,6 +85,7 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null)
     const [loading, setLoading] = useState(true)
     const [banned, setBanned] = useState(false)
+    const [pendingApproval, setPendingApproval] = useState(false)
     const [authError, setAuthError] = useState(false)
 
     const fetchUser = useCallback(async () => {
@@ -91,17 +96,22 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
             // Network failure / server unreachable — distinct from "not signed in".
             setAuthError(true)
             setBanned(false)
+            setPendingApproval(false)
             setUser(null)
             return
         }
 
         if (res.status === 403) {
-            // Banned accounts hold a technically-valid cookie, so clear it
-            // server-side too — otherwise every subsequent /auth/me repeats the 403
-            // and no other endpoint will ever notice they're banned.
+            // 403 means the account is real but blocked — either banned or awaiting
+            // approval. Both hold a technically-valid cookie, so clear it server-side
+            // too, else every subsequent /auth/me just repeats the 403. The `detail`
+            // string tells the two cases apart so login shows the right notice.
+            const detail = await res.json().then(d => d?.detail as string | undefined).catch(() => undefined)
             await fetch(`${API}/auth/logout`, {method: "POST", credentials: "include"})
+            const isPending = typeof detail === "string" && detail.toLowerCase().includes("pending")
             setAuthError(false)
-            setBanned(true)
+            setBanned(!isPending)
+            setPendingApproval(isPending)
             setUser(null)
             return
         }
@@ -112,12 +122,14 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
             // which would just redirect back to the same dead server.
             setAuthError(true)
             setBanned(false)
+            setPendingApproval(false)
             setUser(null)
             return
         }
 
         setAuthError(false)
         setBanned(false)
+        setPendingApproval(false)
         setUser(res.ok ? (await res.json()) as User : null)
     }, [])
 
@@ -133,6 +145,7 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
         await fetch(`${API}/auth/logout`, {method: "POST", credentials: "include"})
         setUser(null)
         setBanned(false)
+        setPendingApproval(false)
     }, [])
 
     const refreshUser = useCallback(async () => {
@@ -140,7 +153,7 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
     }, [fetchUser])
 
     return (
-        <AuthContext.Provider value={{user, loading, banned, authError, signInWithGoogle, logout, refreshUser}}>
+        <AuthContext.Provider value={{user, loading, banned, pendingApproval, authError, signInWithGoogle, logout, refreshUser}}>
             {children}
         </AuthContext.Provider>
     )

@@ -73,6 +73,23 @@ async def update_user_onboarding(
             raise HTTPException(status_code=500, detail="Failed to update user onboarding")
 
 
+async def load_all_account_state() -> list[asyncpg.Record]:
+    """Return the ban/approval state of every user, for the in-memory cache.
+
+    Selects only the columns ``account_state`` needs to decide whether a session
+    is active (banned or pending approval) -- deliberately not the full profile,
+    since this is reloaded on a timer for every user (see ``account_state``).
+    """
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetch(
+                "SELECT id, banned_at, role, approved_by, onboarding_complete FROM users"
+            )
+        except Exception as e:
+            logger.error("load_all_account_state failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to load account state")
+
+
 async def get_users_by_fields(
     email: list[str] | None = None,
     display_name: list[str] | None = None,
@@ -228,6 +245,7 @@ __all__ = [
     "upsert_user",
     "get_user",
     "update_user_onboarding",
+    "load_all_account_state",
     "get_users_by_fields",
     "list_all_users",
     "update_users",

@@ -19,7 +19,7 @@ const EXPAND_HEIGHT  = 320;
 /* ════════════════════════════════════════════════════════════════
    LoginPageMobile — hero + draggable bottom sheet
    ════════════════════════════════════════════════════════════════ */
-export default function LoginPageMobile({ season, timeInfo, loading, banned, authError, signInWithGoogle }: LoginPageProps) {
+export default function LoginPageMobile({ season, timeInfo, loading, banned, pendingApproval, authError, signInWithGoogle }: LoginPageProps) {
     useScrollLock();
 
     const sheetRef  = useRef<HTMLElement>(null);
@@ -229,6 +229,11 @@ export default function LoginPageMobile({ season, timeInfo, loading, banned, aut
                             {banned && (
                                 <LoginErrorNotice>
                                     This account has been banned. Contact a captain or mentor if you think that's a mistake.
+                                </LoginErrorNotice>
+                            )}
+                            {pendingApproval && (
+                                <LoginErrorNotice>
+                                    Your account is awaiting approval. Ask a captain or mentor to approve you, then sign in again.
                                 </LoginErrorNotice>
                             )}
                             {authError && (

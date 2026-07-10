@@ -15,7 +15,7 @@
 // enforces each action on the real endpoints.
 
 import { Bell, CalendarClock, CalendarPlus, Send, Users, type LucideIcon } from "lucide-react"
-import { can, type PermPolicy } from "./permissions"
+import { can, getPerm, type PermPolicy } from "./permissions"
 
 /** Convenience: dotted capability paths all live under `control_panel.`. */
 const CP = "control_panel."
@@ -47,8 +47,11 @@ export const CONTROL_SECTIONS: ControlSection[] = [
         to: "members",
         label: "Members",
         icon: Users,
-        // Full member roster (includes emails); Captains and Mentors only.
-        visible: p => can(p, CP + "members"),
+        // Full member roster (includes emails). Captains/Mentors (who manage
+        // members) plus Leads (who moderate their own subteam, hence carry a
+        // `can_moderate` spec) can open it; the roster itself scopes who each
+        // viewer may act on.
+        visible: p => can(p, CP + "members") || getPerm(p, "can_moderate") != null,
     },
     {
         to: "notifications",

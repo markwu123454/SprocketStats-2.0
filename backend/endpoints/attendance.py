@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, model_validator
 
 import db
-from .auth import get_current_user
+from .auth import get_current_user, require_active
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +93,6 @@ class ClockEntry(BaseModel):
 
 
 @router.post("")
-async def submit_attendance(entry: ClockEntry, user: dict = Depends(get_current_user)):
+async def submit_attendance(entry: ClockEntry, user: dict = Depends(require_active)):
     row = await db.create_attendance_entry(user["sub"], entry.source, entry.checkin_time, entry.checkout_time)
     return {"id": row["id"], "checkin_time": row["checkin_time"], "checkout_time": row["checkout_time"]}

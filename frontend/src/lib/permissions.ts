@@ -17,11 +17,26 @@ export interface PermPolicy {
     [key: string]: PermValue
 }
 
-/** One entry in the onboarding role catalog returned by `GET /roles`. */
+/** One entry in the role catalog returned by `GET /roles`. Used by the onboarding
+ *  picker and by the Members roster to place a row (`level`/`subteam`) when
+ *  deciding whether the current user may moderate it. */
 export interface RoleCatalogEntry {
     value: string
     label: string
     school_info_required: boolean
+    level: string
+    subteam: string | null
+    requires_approval: boolean
+}
+
+/** The `can_moderate` spec carried on a role policy (see backend permissions.py).
+ *  `scope: "all"` clears any target; `scope: "subteam"` clears targets whose
+ *  `level` is in `target_levels` and whose subteam matches the actor's, plus any
+ *  role in `extra_roles`. Absent on roles with no moderation authority. */
+interface ModerateSpec {
+    scope?: string
+    target_levels?: string[]
+    extra_roles?: string[]
 }
 
 /**
@@ -59,4 +74,34 @@ export function getPerm(perms: PermPolicy | null | undefined, path: string): Per
  */
 export function can(perms: PermPolicy | null | undefined, path: string): boolean {
     return Boolean(getPerm(perms, path))
+}
+
+/**
+ * Return whether the current user (with policy `myPolicy`) may moderate a member
+ * holding `targetRole` — the same approve/ban scope the backend enforces in
+ * `can_role_moderate`. This is cosmetic (it only enables/disables roster buttons);
+ * the endpoints re-check it. `catalog` supplies the target role's `level`/`subteam`.
+ *
+ * @param myPolicy The acting user's resolved policy (`user.permissions`).
+ * @param targetRole The role slug of the member being acted on.
+ * @param catalog The role catalog from `GET /roles`.
+ * @returns `true` if the action is within the user's scope, else `false`.
+ */
+export function canModerate(
+    myPolicy: PermPolicy | null | undefined,
+    targetRole: string | null | undefined,
+    catalog: RoleCatalogEntry[],
+): boolean {
+    const raw = getPerm(myPolicy, "can_moderate")
+    if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return false
+    const spec = raw as unknown as ModerateSpec
+    if (spec.scope === "all") return true
+    if (spec.scope === "subteam") {
+        if (targetRole != null && spec.extra_roles?.includes(targetRole)) return true
+        const target = catalog.find(r => r.value === targetRole)
+        if (!target || target.subteam == null) return false
+        const mySubteam = getPerm(myPolicy, "subteam")
+        return (spec.target_levels?.includes(target.level) ?? false) && target.subteam === mySubteam
+    }
+    return false
 }

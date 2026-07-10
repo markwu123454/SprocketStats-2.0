@@ -11,6 +11,7 @@ import type {
     ValueFormatterParams,
 } from "ag-grid-community"
 import { useAuth } from "@/contexts/authContext"
+import { can, canModerate, type RoleCatalogEntry } from "@/lib/permissions"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -36,6 +37,9 @@ interface MemberRow {
 /** Extra data ag-grid cell renderers need but that isn't part of a row. */
 interface GridContext {
     currentUserId: string
+    /** Whether this member's role is within the current user's approve/ban scope
+     *  (Captains/Mentors: everyone; Leads: their own subteam's members + alumni). */
+    canModerateRole: (role: string | null) => boolean
     onApprove: (id: string) => void
     onBan: (id: string) => void
     onUnban: (id: string) => void
@@ -110,11 +114,17 @@ function ApprovedCellRenderer(p: ICellRendererParams<MemberRowState, string | nu
     }
     const isSelf = data.id === ctx.currentUserId
     const notOnboarded = !data.display_name
+    const inScope = ctx.canModerateRole(data.role)
     return (
         <button
             className={actionBtn}
-            disabled={isSelf || notOnboarded}
-            title={isSelf ? "You cannot approve yourself" : notOnboarded ? "Member hasn't finished onboarding" : "Approve this member"}
+            disabled={isSelf || notOnboarded || !inScope}
+            title={
+                isSelf ? "You cannot approve yourself"
+                : notOnboarded ? "Member hasn't finished onboarding"
+                : !inScope ? "This member is outside your approval scope"
+                : "Approve this member"
+            }
             onClick={() => ctx.onApprove(data.id)}
         >
             Approve
@@ -130,6 +140,7 @@ function BannedCellRenderer(p: ICellRendererParams<MemberRowState, string | null
     const data = p.data
     if (!data) return null
     const isSelf = data.id === ctx.currentUserId
+    const inScope = ctx.canModerateRole(data.role)
 
     if (data.banned_at) {
         const pending = norm(data._orig.banned_at) !== norm(data.banned_at)
@@ -137,8 +148,8 @@ function BannedCellRenderer(p: ICellRendererParams<MemberRowState, string | null
             <button
                 className={actionBtn}
                 style={pending ? undefined : { color: "#dc2626", borderColor: "color-mix(in oklch, #dc2626 50%, transparent)" }}
-                disabled={isSelf}
-                title={isSelf ? "You cannot unban yourself" : "Click to unban"}
+                disabled={isSelf || !inScope}
+                title={isSelf ? "You cannot unban yourself" : !inScope ? "This member is outside your moderation scope" : "Click to unban"}
                 onClick={() => ctx.onUnban(data.id)}
             >
                 Banned
@@ -148,8 +159,8 @@ function BannedCellRenderer(p: ICellRendererParams<MemberRowState, string | null
     return (
         <button
             className={actionBtn}
-            disabled={isSelf}
-            title={isSelf ? "You cannot ban yourself" : "Ban this member"}
+            disabled={isSelf || !inScope}
+            title={isSelf ? "You cannot ban yourself" : !inScope ? "This member is outside your moderation scope" : "Ban this member"}
             onClick={() => ctx.onBan(data.id)}
         >
             Ban
@@ -170,8 +181,13 @@ export default function MembersPage() {
     const { user } = useAuth()
     const gridRef = useRef<AgGridReact<MemberRowState>>(null)
     const [rows, setRows]                 = useState<MemberRowState[]>([])
+    const [catalog, setCatalog]           = useState<RoleCatalogEntry[]>([])
     const [roleOptions, setRoleOptions]   = useState<string[]>([])
     const [roleLabels, setRoleLabels]     = useState<Record<string, string>>({})
+
+    // Full management (inline profile/role editing) is Captains/Mentors only;
+    // Leads reach this page to moderate their subteam but see it read-only.
+    const canManage = can(user?.permissions, "control_panel.members")
     const [loading, setLoading]           = useState(true)
     const [saving, setSaving]             = useState(false)
     const [hasChanges, setHasChanges]     = useState(false)
@@ -188,9 +204,10 @@ export default function MembersPage() {
             if (!mRes.ok) throw new Error("members")
             const members = await mRes.json() as MemberRow[]
             if (rRes.ok) {
-                const catalog = await rRes.json() as { value: string, label: string }[]
-                setRoleOptions(catalog.map(c => c.value))
-                setRoleLabels(Object.fromEntries(catalog.map(c => [c.value, c.label])))
+                const cat = await rRes.json() as RoleCatalogEntry[]
+                setCatalog(cat)
+                setRoleOptions(cat.map(c => c.value))
+                setRoleLabels(Object.fromEntries(cat.map(c => [c.value, c.label])))
             }
             setRows(members.map(m => ({ ...m, _orig: snapshot(m) })))
             setHasChanges(false)
@@ -244,10 +261,11 @@ export default function MembersPage() {
 
     const gridContext = useMemo<GridContext>(() => ({
         currentUserId: user?.id ?? "",
+        canModerateRole: (role: string | null) => canModerate(user?.permissions, role, catalog),
         onApprove: handleApprove,
         onBan: handleBan,
         onUnban: handleUnban,
-    }), [user?.id, handleApprove, handleBan, handleUnban])
+    }), [user?.id, user?.permissions, catalog, handleApprove, handleBan, handleUnban])
 
     const roleFormatter = useCallback(
         (p: ValueFormatterParams<MemberRowState, string | null>): string =>
@@ -256,21 +274,21 @@ export default function MembersPage() {
     )
 
     const columnDefs = useMemo<ColDef<MemberRowState>[]>(() => [
-        { field: "name",         headerName: "Name",         editable: true, cellEditor: "agTextCellEditor", flex: 1.5, minWidth: 140, cellClassRules: DIRTY_RULES },
-        { field: "display_name", headerName: "Display Name", editable: true, cellEditor: "agTextCellEditor", flex: 1.5, minWidth: 140, cellClassRules: DIRTY_RULES },
+        { field: "name",         headerName: "Name",         editable: canManage, cellEditor: "agTextCellEditor", flex: 1.5, minWidth: 140, cellClassRules: DIRTY_RULES },
+        { field: "display_name", headerName: "Display Name", editable: canManage, cellEditor: "agTextCellEditor", flex: 1.5, minWidth: 140, cellClassRules: DIRTY_RULES },
         { field: "email",        headerName: "Email",        editable: false, flex: 2, minWidth: 220, cellStyle: { opacity: 0.65 } },
         {
-            field: "role", headerName: "Role", editable: true,
+            field: "role", headerName: "Role", editable: canManage,
             cellEditor: "agSelectCellEditor", cellEditorParams: { values: roleOptions },
             valueFormatter: roleFormatter, flex: 1.3, minWidth: 150, cellClassRules: DIRTY_RULES,
         },
         {
-            field: "grade", headerName: "Grade", editable: true,
+            field: "grade", headerName: "Grade", editable: canManage,
             cellEditor: "agSelectCellEditor", cellEditorParams: { values: GRADE_OPTIONS },
             valueFormatter: enumFormatter, flex: 1, minWidth: 120, cellClassRules: DIRTY_RULES,
         },
         {
-            field: "team_year", headerName: "Year", editable: true,
+            field: "team_year", headerName: "Year", editable: canManage,
             cellEditor: "agSelectCellEditor", cellEditorParams: { values: YEAR_OPTIONS },
             valueFormatter: enumFormatter, flex: 1, minWidth: 110, cellClassRules: DIRTY_RULES,
         },
@@ -282,7 +300,7 @@ export default function MembersPage() {
             field: "banned_at", headerName: "Banned", editable: false,
             cellRenderer: BannedCellRenderer, flex: 1, minWidth: 110, cellClassRules: DIRTY_RULES,
         },
-    ], [roleOptions, roleFormatter])
+    ], [roleOptions, roleFormatter, canManage])
 
     const handleReset = useCallback(() => {
         const api = gridRef.current?.api
