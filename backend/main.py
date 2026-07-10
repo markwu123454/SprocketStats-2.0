@@ -41,6 +41,10 @@ logger = logging.getLogger(__name__)
 # how long a ban/approval change takes to propagate across server processes.
 ACCOUNT_STATE_REFRESH_SECONDS = 30
 
+# How often each process sweeps push_delivery_logs for rows stuck in 'sent'
+# past their 10-minute timeout (see db.expire_stale_deliveries).
+PUSH_DELIVERY_SWEEP_SECONDS = 60
+
 
 async def _account_state_refresh_loop():
     """Reload the account-state cache every ACCOUNT_STATE_REFRESH_SECONDS.
@@ -57,6 +61,24 @@ async def _account_state_refresh_loop():
             logger.error("account_state refresh failed, keeping previous snapshot: %s", e)
 
 
+async def _push_delivery_sweep_loop():
+    """Fail any push delivery still stuck 'sent' past its timeout, every
+    PUSH_DELIVERY_SWEEP_SECONDS.
+
+    Runs for the life of the app, independent of the account-state refresh
+    loop above. A failed sweep is logged and retried on the next tick -- a
+    transient DB blip must not kill the loop.
+    """
+    while True:
+        await asyncio.sleep(PUSH_DELIVERY_SWEEP_SECONDS)
+        try:
+            expired = await db.expire_stale_deliveries()
+            if expired:
+                logger.info("push delivery sweep: expired %d stale delivery(ies)", expired)
+        except Exception as e:
+            logger.error("push delivery sweep failed: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await db.init_db()
@@ -64,8 +86,10 @@ async def lifespan(_: FastAPI):
     # Prime the cache before serving so the first request is a hit, not a miss.
     await account_state.refresh()
     refresh_task = asyncio.create_task(_account_state_refresh_loop())
+    push_sweep_task = asyncio.create_task(_push_delivery_sweep_loop())
     yield
     refresh_task.cancel()
+    push_sweep_task.cancel()
     await db.close_pool()
 
 app = FastAPI(lifespan=lifespan)

@@ -113,6 +113,33 @@ async def init_db():
                         created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
                     )
                 """)
+                # user_id and endpoint are snapshots, not live references -- they keep
+                # a delivery's history intact even after its push_subscriptions row is
+                # pruned as dead (see _prune_dead_endpoint in db/push.py, which deletes
+                # a subscription outright once the push service reports it 404/410).
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS push_delivery_logs (
+                        id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                        push_message_id      UUID        NOT NULL REFERENCES push_messages(id) ON DELETE CASCADE,
+                        push_subscription_id UUID        REFERENCES push_subscriptions(id) ON DELETE SET NULL,
+                        user_id              TEXT        REFERENCES users(id) ON DELETE SET NULL,
+                        endpoint             TEXT        NOT NULL,
+                        status               TEXT        NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'delivered', 'failed')),
+                        created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """)
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS push_delivery_logs_message_idx "
+                    "ON push_delivery_logs (push_message_id)"
+                )
+                # Powers the timeout sweep (db.expire_stale_deliveries), which only
+                # ever scans rows still in 'sent' -- the partial index keeps that scan
+                # small regardless of how many delivered/failed rows accumulate.
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS push_delivery_logs_sent_created_idx "
+                    "ON push_delivery_logs (created_at) WHERE status = 'sent'"
+                )
         except Exception as e:
             logger.error("Failed to initialize schema: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to initialize schema: {e}")

@@ -3,6 +3,8 @@ import {clientsClaim} from "workbox-core";
 import {registerRoute} from "workbox-routing";
 import {NetworkFirst} from "workbox-strategies";
 
+const API = import.meta.env.VITE_BACKEND_URL;
+
 self.skipWaiting();
 clientsClaim();
 
@@ -17,8 +19,9 @@ registerRoute(
     })
 );
 
-// Web Push: the backend sends a JSON payload ({ title, body }) for every push
-// message sent via /push. This runs even when no tab is open.
+// Web Push: the backend sends a JSON payload ({ title, body, delivery_id }) for
+// every push message sent via /push. This runs even when no tab is open.
+// `delivery_id` may be absent on old/legacy pushes.
 self.addEventListener("push", (event) => {
     let data = {};
     try {
@@ -34,7 +37,26 @@ self.addEventListener("push", (event) => {
         badge: "/pwa/sprocket_logo_128.png",
     };
 
-    event.waitUntil(self.registration.showNotification(title, options));
+    const showNotificationPromise = self.registration.showNotification(title, options);
+
+    // Delivery receipt for the delivery-tracking feature: best-effort report to
+    // the backend that this push actually reached the device. This must never
+    // hold up or break the notification itself, so it's run alongside
+    // showNotification (not awaited before it) and every failure is swallowed.
+    const receiptPromise = data.delivery_id
+        ? self.registration.pushManager.getSubscription()
+            .then((subscription) => {
+                if (!subscription) return;
+                return fetch(`${API}/push/delivered`, {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({delivery_id: data.delivery_id, endpoint: subscription.endpoint}),
+                });
+            })
+            .catch(() => {})
+        : Promise.resolve();
+
+    event.waitUntil(Promise.all([showNotificationPromise, receiptPromise]));
 });
 
 // Clicking the notification focuses an existing tab (or opens one) on the
