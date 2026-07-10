@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "react-router-dom"
-import { ChevronLeft, Send } from "lucide-react"
+import { ChevronLeft, Send, X, CheckCircle2, AlertCircle, XCircle, Clock } from "lucide-react"
 import { AgGridReact } from "ag-grid-react"
-import type { ColDef, ValueFormatterParams } from "ag-grid-community"
+import type { ColDef, ICellRendererParams, ValueFormatterParams } from "ag-grid-community"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -12,8 +12,244 @@ interface PushMessage {
     body: string
     target_roles: string[]
     sent_count: number
+    delivered_count: number
+    failed_count: number
     created_by_name: string | null
     created_at: string
+}
+
+/** Extra data the Devices cell renderer needs but that isn't part of a row. */
+interface GridContext {
+    onOpenDeliveries: (message: PushMessage) => void
+}
+
+interface DeliveryRow {
+    id: string
+    user_name: string | null
+    status: "sent" | "delivered" | "partial" | "failed"
+    updated_at: string
+}
+
+interface DeliveryDetails {
+    summary: { delivered: number, partial: number, failed: number, pending: number }
+    deliveries: DeliveryRow[]
+}
+
+/** "sent" means still pending within the receipt window; "partial" means
+ *  some but not all of a user's devices got it; only "failed" is a true
+ *  failure. */
+function statusBadge(status: DeliveryRow["status"]) {
+    if (status === "delivered") {
+        return (
+            <span
+                className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium theme-border shrink-0"
+                style={{ color: "#16a34a", borderColor: "color-mix(in oklch, #16a34a 50%, transparent)" }}
+            >
+                <CheckCircle2 size={12} /> Delivered
+            </span>
+        )
+    }
+    if (status === "partial") {
+        return (
+            <span
+                className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium theme-border shrink-0"
+                style={{ color: "#d97706", borderColor: "color-mix(in oklch, #d97706 50%, transparent)" }}
+            >
+                <AlertCircle size={12} /> Partial
+            </span>
+        )
+    }
+    if (status === "failed") {
+        return (
+            <span
+                className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium theme-border shrink-0"
+                style={{ color: "#dc2626", borderColor: "color-mix(in oklch, #dc2626 50%, transparent)" }}
+            >
+                <XCircle size={12} /> Failed
+            </span>
+        )
+    }
+    return (
+        <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium theme-border theme-subtext-color shrink-0">
+            <Clock size={12} /> Pending
+        </span>
+    )
+}
+
+/** Devices column cell -- a clickable "delivered / sent" pill that opens the
+ *  delivery-details modal for that message. Nothing to inspect at 0 sends. */
+function DevicesCellRenderer(p: ICellRendererParams<PushMessage, number>) {
+    const data = p.data
+    if (!data) return null
+    if (data.sent_count === 0) return <span className="theme-subtext-color">0</span>
+
+    const ctx = p.context as GridContext
+    return (
+        <button
+            onClick={() => ctx.onOpenDeliveries(data)}
+            className="rounded-full border px-2.5 py-0.5 text-xs font-medium theme-border theme-text transition-opacity hover:opacity-80"
+        >
+            {data.delivered_count} / {data.sent_count}
+        </button>
+    )
+}
+
+/**
+ * Delivery-details modal for one push message -- fetches per-user receipt
+ * status on open (a user with several devices is one row, "delivered" if any
+ * of them got it). Follows `NotificationGate`'s overlay pattern (dark
+ * backdrop, centered rounded panel) but is dismissible via the X button or
+ * backdrop click, since this is informational rather than something the user
+ * must respond to.
+ */
+function DeliveryDetailsModal({ message, onClose }: { message: PushMessage, onClose: () => void }) {
+    const [data, setData] = useState<DeliveryDetails | null>(null)
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState<string | null>(null)
+    const [search, setSearch] = useState("")
+
+    const load = useCallback(async () => {
+        setLoading(true)
+        setError(null)
+        try {
+            const res = await fetch(`${API}/push/${message.id}/deliveries`, { credentials: "include" })
+            if (!res.ok) throw new Error("deliveries")
+            setData(await res.json() as DeliveryDetails)
+        } catch {
+            setError("Failed to load delivery details")
+        } finally {
+            setLoading(false)
+        }
+    }, [message.id])
+
+    useEffect(() => { void load() }, [load])
+
+    // Substring, case-insensitive match on name -- same quick-filter behavior
+    // as the responses grid's search box on the notice detail page.
+    const q = search.trim().toLowerCase()
+    const matches = (d: DeliveryRow) => !q || (d.user_name ?? "Unknown user").toLowerCase().includes(q)
+    const delivered = data?.deliveries.filter(d => d.status === "delivered").filter(matches) ?? []
+    const partial = data?.deliveries.filter(d => d.status === "partial").filter(matches) ?? []
+    const notDelivered = data?.deliveries.filter(d => d.status === "sent" || d.status === "failed").filter(matches) ?? []
+
+    return (
+        <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.6)" }}
+            onClick={onClose}
+        >
+            <div
+                className="w-full max-w-md max-h-[85vh] rounded-2xl border p-6 flex flex-col gap-4 backdrop-blur-sm theme-bg theme-border"
+                onClick={e => e.stopPropagation()}
+            >
+                <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-col gap-1 min-w-0">
+                        <h2 className="text-lg font-semibold theme-text-contrast truncate">{message.title}</h2>
+                        {data && (
+                            <p className="text-sm theme-subtext-color">
+                                {data.summary.delivered} delivered · {data.summary.partial} partial · {data.summary.failed} failed · {data.summary.pending} pending
+                            </p>
+                        )}
+                    </div>
+                    <button
+                        onClick={onClose}
+                        aria-label="Close"
+                        className="shrink-0 theme-subtext-color transition-opacity hover:opacity-70"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
+
+                {loading && <p className="text-sm theme-subtext-color">Loading…</p>}
+
+                {error && (
+                    <div className="flex flex-col gap-2">
+                        <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
+                           style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
+                            {error}
+                        </p>
+                        <button
+                            onClick={() => void load()}
+                            className="self-start rounded-lg border px-3 py-1.5 text-sm font-medium theme-text theme-border transition-opacity hover:opacity-80"
+                        >
+                            Retry
+                        </button>
+                    </div>
+                )}
+
+                {data && (
+                    <div className="flex flex-col gap-4 overflow-y-auto">
+                        <input
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            placeholder="Search by name…"
+                            className="rounded-lg border px-3 py-1.5 text-sm theme-border theme-bg theme-text"
+                        />
+
+                        <div className="flex flex-col gap-2">
+                            <h3 className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">
+                                Delivered ({delivered.length})
+                            </h3>
+                            {delivered.length === 0 ? (
+                                <p className="text-sm theme-subtext-color">None yet</p>
+                            ) : (
+                                <div className="flex flex-col gap-2">
+                                    {delivered.map(d => (
+                                        <div key={d.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 theme-border">
+                                            <span className="text-sm theme-text truncate">{d.user_name ?? "Unknown user"}</span>
+                                            <div className="flex flex-col items-end gap-1 shrink-0">
+                                                {statusBadge(d.status)}
+                                                <span className="text-xs theme-subtext-color">{new Date(d.updated_at).toLocaleString()}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                            <h3 className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">
+                                Partially Delivered ({partial.length})
+                            </h3>
+                            {partial.length === 0 ? (
+                                <p className="text-sm theme-subtext-color">None</p>
+                            ) : (
+                                <div className="flex flex-col gap-2">
+                                    {partial.map(d => (
+                                        <div key={d.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 theme-border">
+                                            <span className="text-sm theme-text truncate">{d.user_name ?? "Unknown user"}</span>
+                                            <div className="flex flex-col items-end gap-1 shrink-0">
+                                                {statusBadge(d.status)}
+                                                <span className="text-xs theme-subtext-color">{new Date(d.updated_at).toLocaleString()}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                            <h3 className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">
+                                Not Delivered ({notDelivered.length})
+                            </h3>
+                            {notDelivered.length === 0 ? (
+                                <p className="text-sm theme-subtext-color">None</p>
+                            ) : (
+                                <div className="flex flex-col gap-2">
+                                    {notDelivered.map(d => (
+                                        <div key={d.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 theme-border">
+                                            <span className="text-sm theme-text truncate">{d.user_name ?? "Unknown user"}</span>
+                                            {statusBadge(d.status)}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    )
 }
 
 interface FormState {
@@ -55,6 +291,11 @@ export default function PushNotificationsPage() {
     const [sending, setSending] = useState(false)
     const [sendError, setSendError] = useState<string | null>(null)
     const [sendSuccess, setSendSuccess] = useState<string | null>(null)
+
+    const [deliveryModalMessage, setDeliveryModalMessage] = useState<PushMessage | null>(null)
+    const gridContext = useMemo<GridContext>(() => ({
+        onOpenDeliveries: setDeliveryModalMessage,
+    }), [])
 
     const load = useCallback(async () => {
         setLoading(true)
@@ -133,7 +374,10 @@ export default function PushNotificationsPage() {
             field: "target_roles", headerName: "Roles", flex: 1.6, minWidth: 160, cellDataType: "text",
             valueFormatter: (p: ValueFormatterParams<PushMessage, string[]>) => formatRoles(p.value ?? [], roleLabels),
         },
-        { field: "sent_count", headerName: "Devices", flex: 0.8, minWidth: 90, type: "numericColumn" },
+        {
+            field: "sent_count", headerName: "Devices", flex: 0.8, minWidth: 90, type: "numericColumn",
+            cellRenderer: DevicesCellRenderer,
+        },
         {
             field: "created_by_name", headerName: "Sent By", flex: 1.1, minWidth: 130, cellDataType: "text",
             valueFormatter: (p: ValueFormatterParams<PushMessage, string | null>) => p.value ?? "—",
@@ -235,12 +479,20 @@ export default function PushNotificationsPage() {
                         ref={gridRef}
                         rowData={messages}
                         columnDefs={columnDefs}
+                        context={gridContext}
                         loading={loading}
                         getRowId={({ data }) => data.id}
                         defaultColDef={{ sortable: true, resizable: true, filter: true }}
                     />
                 </div>
             </div>
+
+            {deliveryModalMessage && (
+                <DeliveryDetailsModal
+                    message={deliveryModalMessage}
+                    onClose={() => setDeliveryModalMessage(null)}
+                />
+            )}
         </div>
     )
 }
