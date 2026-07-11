@@ -255,4 +255,8 @@ def _row_to_notification(r, viewer: dict) -> dict:
 
 
 def _row_to_summary(r, viewer: dict) -> dict:
-    return {**_row_to_notification(r, viewer), "response_count": r["response_count"]}
+    return {
+        **_row_to_notification(r, viewer),
+        "response_count": r["response_count"],
+        "eligible_count": r["eligible_count"],
+    }

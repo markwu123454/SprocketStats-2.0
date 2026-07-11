@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
-import { ChevronLeft, Send, X, CheckCircle2, AlertCircle, XCircle, Clock } from "lucide-react"
-import { AgGridReact } from "ag-grid-react"
-import type { ColDef, ICellRendererParams, ValueFormatterParams } from "ag-grid-community"
+import {
+    ChevronLeft, ChevronRight, ChevronDown, Send, Search,
+    CheckCircle2, AlertCircle, XCircle, Clock,
+} from "lucide-react"
+import { useIsMobile } from "../../lib/useIsMobile"
+import RoleAudienceSelect, { type RoleMeta } from "@/components/RoleAudienceSelect"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -16,11 +19,6 @@ interface PushMessage {
     failed_count: number
     created_by_name: string | null
     created_at: string
-}
-
-/** Extra data the Devices cell renderer needs but that isn't part of a row. */
-interface GridContext {
-    onOpenDeliveries: (message: PushMessage) => void
 }
 
 interface DeliveryRow {
@@ -76,33 +74,90 @@ function statusBadge(status: DeliveryRow["status"]) {
     )
 }
 
-/** Devices column cell -- a clickable "delivered / sent" pill that opens the
- *  delivery-details modal for that message. Nothing to inspect at 0 sends. */
-function DevicesCellRenderer(p: ICellRendererParams<PushMessage, number>) {
-    const data = p.data
-    if (!data) return null
-    if (data.sent_count === 0) return <span className="theme-subtext-color">0</span>
+/** Small at-a-glance pill for a message row in the history list. Surfaces the
+ *  worst outcome first so failures are visible before you open anything. */
+function listBadge(m: PushMessage) {
+    if (m.failed_count > 0) {
+        return { label: `${m.failed_count} failed`, color: "#dc2626" }
+    }
+    const pending = Math.max(0, m.sent_count - m.delivered_count)
+    if (pending > 0) {
+        return { label: `${pending} pending`, color: "#d97706" }
+    }
+    return { label: "All delivered", color: "#16a34a" }
+}
 
-    const ctx = p.context as GridContext
+interface FormState {
+    title: string
+    body: string
+    target_roles: string[]
+}
+
+const EMPTY_FORM: FormState = { title: "", body: "", target_roles: [] }
+
+/** "scouting_lead" → "Scouting Lead" */
+function pretty(v: string): string {
+    return v.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+}
+
+function formatRoles(roles: string[], roleLabels: Record<string, string>): string {
+    if (roles.length === 0) return "Everyone"
+    return roles.map(r => roleLabels[r] ?? pretty(r)).join(", ")
+}
+
+/** One collapsible bucket of recipients (Not delivered / Partial / Delivered).
+ *  Collapsible everywhere; callers set `defaultOpen` so mobile can start with
+ *  Delivered folded away and the failures on top. */
+function DeliverySection(
+    { label, rows, defaultOpen }: { label: string, rows: DeliveryRow[], defaultOpen: boolean },
+) {
+    const [open, setOpen] = useState(defaultOpen)
     return (
-        <button
-            onClick={() => ctx.onOpenDeliveries(data)}
-            className="rounded-full border px-2.5 py-0.5 text-xs font-medium theme-border theme-text transition-opacity hover:opacity-80"
-        >
-            {data.delivered_count} / {data.sent_count}
-        </button>
+        <div className="flex flex-col">
+            <button
+                onClick={() => setOpen(o => !o)}
+                className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 theme-border theme-button-bg"
+            >
+                <span className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">
+                    {label} ({rows.length})
+                </span>
+                <ChevronDown
+                    size={15}
+                    className="theme-subtext-color transition-transform"
+                    style={{ transform: open ? "rotate(180deg)" : "none" }}
+                />
+            </button>
+            {open && rows.length > 0 && (
+                <div className="flex flex-col">
+                    {rows.map(d => (
+                        <div
+                            key={d.id}
+                            className="flex items-center justify-between gap-3 border-x border-b px-3 py-2 theme-border last:rounded-b-lg"
+                        >
+                            <span className="text-sm theme-text truncate">{d.user_name ?? "Unknown user"}</span>
+                            <div className="flex items-center gap-2 shrink-0">
+                                {statusBadge(d.status)}
+                                <span className="text-xs theme-subtext-color hidden sm:inline">
+                                    {new Date(d.updated_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                                </span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
     )
 }
 
 /**
- * Delivery-details modal for one push message -- fetches per-user receipt
- * status on open (a user with several devices is one row, "delivered" if any
- * of them got it). Follows `NotificationGate`'s overlay pattern (dark
- * backdrop, centered rounded panel) but is dismissible via the X button or
- * backdrop click, since this is informational rather than something the user
- * must respond to.
+ * The right-hand (desktop) / drilled-in (mobile) delivery view for a single
+ * push. Fetches per-user receipts on mount — remount by keying on the message
+ * id when the selection changes. Buckets are ordered failures-first, since the
+ * whole reason to open a send is to find who didn't get it.
  */
-function DeliveryDetailsModal({ message, onClose }: { message: PushMessage, onClose: () => void }) {
+function DeliveryDetail(
+    { message, roleLabels }: { message: PushMessage, roleLabels: Record<string, string> },
+) {
     const [data, setData] = useState<DeliveryDetails | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -124,178 +179,155 @@ function DeliveryDetailsModal({ message, onClose }: { message: PushMessage, onCl
 
     useEffect(() => { void load() }, [load])
 
-    // Substring, case-insensitive match on name -- same quick-filter behavior
-    // as the responses grid's search box on the notice detail page.
     const q = search.trim().toLowerCase()
     const matches = (d: DeliveryRow) => !q || (d.user_name ?? "Unknown user").toLowerCase().includes(q)
-    const delivered = data?.deliveries.filter(d => d.status === "delivered").filter(matches) ?? []
-    const partial = data?.deliveries.filter(d => d.status === "partial").filter(matches) ?? []
     const notDelivered = data?.deliveries.filter(d => d.status === "sent" || d.status === "failed").filter(matches) ?? []
+    const partial = data?.deliveries.filter(d => d.status === "partial").filter(matches) ?? []
+    const delivered = data?.deliveries.filter(d => d.status === "delivered").filter(matches) ?? []
 
     return (
-        <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-            style={{ background: "rgba(0,0,0,0.6)" }}
-            onClick={onClose}
-        >
-            <div
-                className="w-full max-w-md max-h-[85vh] rounded-2xl border p-6 flex flex-col gap-4 backdrop-blur-sm theme-bg theme-border"
-                onClick={e => e.stopPropagation()}
-            >
-                <div className="flex items-start justify-between gap-3">
-                    <div className="flex flex-col gap-1 min-w-0">
-                        <h2 className="text-lg font-semibold theme-text-contrast truncate">{message.title}</h2>
-                        {data && (
-                            <p className="text-sm theme-subtext-color">
-                                {data.summary.delivered} delivered · {data.summary.partial} partial · {data.summary.failed} failed · {data.summary.pending} pending
-                            </p>
+        <div className="flex flex-col gap-4 h-full overflow-y-auto theme-scrollbar">
+            {/* header */}
+            <div className="flex flex-col gap-2">
+                <h2 className="text-lg font-semibold theme-h1-color">{message.title}</h2>
+                <p className="text-sm theme-text whitespace-pre-wrap">{message.body}</p>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                    <span className="rounded-full border px-2.5 py-0.5 text-xs theme-border theme-subtext-color">
+                        {formatRoles(message.target_roles, roleLabels)}
+                    </span>
+                    <span className="rounded-full border px-2.5 py-0.5 text-xs theme-border theme-subtext-color">
+                        {message.created_by_name ?? "—"}
+                    </span>
+                    <span className="rounded-full border px-2.5 py-0.5 text-xs theme-border theme-subtext-color">
+                        {new Date(message.created_at).toLocaleString()}
+                    </span>
+                </div>
+                {data && (
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm pt-1">
+                        <span className="font-medium" style={{ color: "#16a34a" }}>{data.summary.delivered} delivered</span>
+                        <span className="theme-subtext-color">·</span>
+                        <span className="font-medium" style={{ color: "#d97706" }}>{data.summary.partial} partial</span>
+                        <span className="theme-subtext-color">·</span>
+                        <span className="font-medium" style={{ color: "#dc2626" }}>{data.summary.failed} failed</span>
+                        {data.summary.pending > 0 && (
+                            <>
+                                <span className="theme-subtext-color">·</span>
+                                <span className="theme-subtext-color">{data.summary.pending} pending</span>
+                            </>
                         )}
                     </div>
+                )}
+            </div>
+
+            {loading && <p className="text-sm theme-subtext-color">Loading…</p>}
+
+            {error && (
+                <div className="flex flex-col gap-2">
+                    <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
+                       style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
+                        {error}
+                    </p>
                     <button
-                        onClick={onClose}
-                        aria-label="Close"
-                        className="shrink-0 theme-subtext-color transition-opacity hover:opacity-70"
+                        onClick={() => void load()}
+                        className="self-start rounded-lg border px-3 py-1.5 text-sm font-medium theme-text theme-border transition-opacity hover:opacity-80"
                     >
-                        <X size={18} />
+                        Retry
                     </button>
                 </div>
+            )}
 
-                {loading && <p className="text-sm theme-subtext-color">Loading…</p>}
-
-                {error && (
-                    <div className="flex flex-col gap-2">
-                        <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
-                           style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
-                            {error}
-                        </p>
-                        <button
-                            onClick={() => void load()}
-                            className="self-start rounded-lg border px-3 py-1.5 text-sm font-medium theme-text theme-border transition-opacity hover:opacity-80"
-                        >
-                            Retry
-                        </button>
-                    </div>
-                )}
-
-                {data && (
-                    <div className="flex flex-col gap-4 overflow-y-auto">
+            {data && (
+                <>
+                    <div className="flex items-center gap-2 rounded-lg border px-3 py-1.5 theme-border theme-bg">
+                        <Search size={15} className="theme-subtext-color shrink-0" />
                         <input
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                             placeholder="Search by name…"
-                            className="rounded-lg border px-3 py-1.5 text-sm theme-border theme-bg theme-text"
+                            className="w-full bg-transparent text-sm theme-text outline-none"
                         />
-
-                        <div className="flex flex-col gap-2">
-                            <h3 className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">
-                                Delivered ({delivered.length})
-                            </h3>
-                            {delivered.length === 0 ? (
-                                <p className="text-sm theme-subtext-color">None yet</p>
-                            ) : (
-                                <div className="flex flex-col gap-2">
-                                    {delivered.map(d => (
-                                        <div key={d.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 theme-border">
-                                            <span className="text-sm theme-text truncate">{d.user_name ?? "Unknown user"}</span>
-                                            <div className="flex flex-col items-end gap-1 shrink-0">
-                                                {statusBadge(d.status)}
-                                                <span className="text-xs theme-subtext-color">{new Date(d.updated_at).toLocaleString()}</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="flex flex-col gap-2">
-                            <h3 className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">
-                                Partially Delivered ({partial.length})
-                            </h3>
-                            {partial.length === 0 ? (
-                                <p className="text-sm theme-subtext-color">None</p>
-                            ) : (
-                                <div className="flex flex-col gap-2">
-                                    {partial.map(d => (
-                                        <div key={d.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 theme-border">
-                                            <span className="text-sm theme-text truncate">{d.user_name ?? "Unknown user"}</span>
-                                            <div className="flex flex-col items-end gap-1 shrink-0">
-                                                {statusBadge(d.status)}
-                                                <span className="text-xs theme-subtext-color">{new Date(d.updated_at).toLocaleString()}</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="flex flex-col gap-2">
-                            <h3 className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">
-                                Not Delivered ({notDelivered.length})
-                            </h3>
-                            {notDelivered.length === 0 ? (
-                                <p className="text-sm theme-subtext-color">None</p>
-                            ) : (
-                                <div className="flex flex-col gap-2">
-                                    {notDelivered.map(d => (
-                                        <div key={d.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 theme-border">
-                                            <span className="text-sm theme-text truncate">{d.user_name ?? "Unknown user"}</span>
-                                            {statusBadge(d.status)}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
                     </div>
-                )}
-            </div>
+                    <div className="flex flex-col gap-3">
+                        <DeliverySection label="Not delivered" rows={notDelivered} defaultOpen />
+                        <DeliverySection label="Partial" rows={partial} defaultOpen />
+                        <DeliverySection label="Delivered" rows={delivered} defaultOpen={false} />
+                    </div>
+                </>
+            )}
         </div>
     )
 }
 
-interface FormState {
-    title: string
-    body: string
-    target_roles: string[]
-}
-
-const EMPTY_FORM: FormState = { title: "", body: "", target_roles: [] }
-
-/** "scouting_lead" → "Scouting Lead" */
-function pretty(v: string): string {
-    return v.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
-}
-
-function formatRoles(roles: string[], roleLabels: Record<string, string>): string {
-    if (roles.length === 0) return "Everyone"
-    return roles.map(r => roleLabels[r] ?? pretty(r)).join(", ")
+/** A single row in the history list — shared by desktop rail and mobile list. */
+function HistoryRow(
+    { m, roleLabels, selected, onClick }:
+    { m: PushMessage, roleLabels: Record<string, string>, selected: boolean, onClick: () => void },
+) {
+    const badge = listBadge(m)
+    return (
+        <button
+            onClick={onClick}
+            className="w-full text-left flex flex-col gap-1.5 px-4 py-3 border-b theme-border transition-colors"
+            style={{
+                borderLeft: selected ? "2px solid var(--theme-text-contrast)" : "2px solid transparent",
+                background: selected ? "color-mix(in oklch, var(--theme-text-contrast) 8%, transparent)" : "transparent",
+            }}
+        >
+            <div className="flex items-start justify-between gap-2.5">
+                <span className="text-sm font-medium theme-text leading-snug">{m.title}</span>
+                <span
+                    className="shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                    style={{
+                        color: badge.color,
+                        borderColor: `color-mix(in oklch, ${badge.color} 45%, transparent)`,
+                        background: `color-mix(in oklch, ${badge.color} 10%, transparent)`,
+                    }}
+                >
+                    {badge.label}
+                </span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+                <span className="text-xs theme-subtext-color truncate">
+                    {formatRoles(m.target_roles, roleLabels)} · {new Date(m.created_at).toLocaleDateString([], { month: "short", day: "numeric" })}
+                </span>
+                <ChevronRight size={16} className="theme-subtext-color shrink-0 md:hidden" />
+            </div>
+        </button>
+    )
 }
 
 /**
- * Compose + send a one-off OS push notification, with a history of past sends.
+ * Compose + send a one-off OS push notification, with a delivery-focused
+ * history.
  *
- * Deliberately a standalone page hitting `/push`, not `/notifications` -- this
- * never creates a dashboard notice (no `NotificationGate` modal), and creating
- * a dashboard notice on the Notifications page never sends a push. The two
- * features share only the device-level subscription (opted into once, in
- * Settings), not each other's content or delivery path.
+ * Compose and History are tabs so the history gets the full page height. The
+ * history is a master–detail split on desktop (message list on the left,
+ * per-recipient delivery status on the right) and a drill-down on mobile
+ * (list → tap → detail with a back button). Both surface who *didn't* get a
+ * push without an overlay covering the workspace — buckets are ordered
+ * Not-delivered → Partial → Delivered.
+ *
+ * Deliberately a standalone page hitting `/push`, not `/notifications`.
  */
 export default function PushNotificationsPage() {
-    const gridRef = useRef<AgGridReact<PushMessage>>(null)
+    const isMobile = useIsMobile()
+
     const [messages, setMessages] = useState<PushMessage[]>([])
-    const [roleOptions, setRoleOptions] = useState<string[]>([])
+    const [catalog, setCatalog] = useState<RoleMeta[]>([])
     const [roleLabels, setRoleLabels] = useState<Record<string, string>>({})
     const [loading, setLoading] = useState(true)
     const [loadError, setLoadError] = useState<string | null>(null)
+
+    const [tab, setTab] = useState<"compose" | "history">("compose")
 
     const [form, setForm] = useState<FormState>(EMPTY_FORM)
     const [sending, setSending] = useState(false)
     const [sendError, setSendError] = useState<string | null>(null)
     const [sendSuccess, setSendSuccess] = useState<string | null>(null)
 
-    const [deliveryModalMessage, setDeliveryModalMessage] = useState<PushMessage | null>(null)
-    const gridContext = useMemo<GridContext>(() => ({
-        onOpenDeliveries: setDeliveryModalMessage,
-    }), [])
+    // Selected message in the history split. On mobile a non-null selection is
+    // the "drilled-in" detail screen; on desktop it's the right-hand pane.
+    const [selectedId, setSelectedId] = useState<string | null>(null)
 
     const load = useCallback(async () => {
         setLoading(true)
@@ -308,9 +340,9 @@ export default function PushNotificationsPage() {
             if (!mRes.ok) throw new Error("push")
             setMessages(await mRes.json() as PushMessage[])
             if (rRes.ok) {
-                const catalog = await rRes.json() as { value: string, label: string }[]
-                setRoleOptions(catalog.map(c => c.value))
-                setRoleLabels(Object.fromEntries(catalog.map(c => [c.value, c.label])))
+                const cat = await rRes.json() as RoleMeta[]
+                setCatalog(cat)
+                setRoleLabels(Object.fromEntries(cat.map(c => [c.value, c.label])))
             }
         } catch {
             setLoadError("Failed to load push history")
@@ -321,22 +353,19 @@ export default function PushNotificationsPage() {
 
     useEffect(() => { void load() }, [load])
 
-    // Empty target_roles means "everyone"; a role is checked when the set is
-    // empty (nothing excluded yet) or explicitly listed.
-    const roleChecked = useMemo(() => {
-        if (form.target_roles.length === 0) return new Set(roleOptions)
-        return new Set(form.target_roles)
-    }, [form.target_roles, roleOptions])
+    const sortedMessages = useMemo(
+        () => [...messages].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)),
+        [messages],
+    )
 
-    function toggleRole(role: string) {
-        setForm(prev => {
-            const current = prev.target_roles.length === 0 ? new Set(roleOptions) : new Set(prev.target_roles)
-            if (current.has(role)) current.delete(role)
-            else current.add(role)
-            const allChecked = roleOptions.every(r => current.has(r))
-            return { ...prev, target_roles: allChecked ? [] : [...current] }
-        })
-    }
+    // Keep a valid desktop selection; mobile starts on the list (null).
+    useEffect(() => {
+        if (isMobile) return
+        if (tab !== "history") return
+        if (!selectedId && sortedMessages.length > 0) setSelectedId(sortedMessages[0].id)
+    }, [isMobile, tab, selectedId, sortedMessages])
+
+    const selectedMessage = sortedMessages.find(m => m.id === selectedId) ?? null
 
     async function handleSend() {
         setSending(true)
@@ -361,6 +390,9 @@ export default function PushNotificationsPage() {
             setSendSuccess(`Sent to ${sent.sent_count} device${sent.sent_count === 1 ? "" : "s"}`)
             setForm(EMPTY_FORM)
             await load()
+            // Jump to the fresh send in the history so its delivery can be watched.
+            setSelectedId(sent.id)
+            setTab("history")
         } catch (e) {
             setSendError(e instanceof Error ? e.message : "Failed to send push")
         } finally {
@@ -368,29 +400,26 @@ export default function PushNotificationsPage() {
         }
     }
 
-    const columnDefs = useMemo<ColDef<PushMessage>[]>(() => [
-        { field: "title", headerName: "Title", flex: 1.6, minWidth: 160 },
-        {
-            field: "target_roles", headerName: "Roles", flex: 1.6, minWidth: 160, cellDataType: "text",
-            valueFormatter: (p: ValueFormatterParams<PushMessage, string[]>) => formatRoles(p.value ?? [], roleLabels),
-        },
-        {
-            field: "sent_count", headerName: "Devices", flex: 0.8, minWidth: 90, type: "numericColumn",
-            cellRenderer: DevicesCellRenderer,
-        },
-        {
-            field: "created_by_name", headerName: "Sent By", flex: 1.1, minWidth: 130, cellDataType: "text",
-            valueFormatter: (p: ValueFormatterParams<PushMessage, string | null>) => p.value ?? "—",
-        },
-        {
-            field: "created_at", headerName: "Sent At", flex: 1.2, minWidth: 140,
-            valueFormatter: (p: ValueFormatterParams<PushMessage, string>) =>
-                p.value ? new Date(p.value).toLocaleString() : "",
-        },
-    ], [roleLabels])
+    const tabButton = (key: "compose" | "history", label: string) => {
+        const active = tab === key
+        return (
+            <button
+                onClick={() => setTab(key)}
+                className="pb-2.5 text-sm transition-colors"
+                style={{
+                    fontWeight: active ? 700 : 500,
+                    color: active ? "var(--theme-text-contrast)" : "var(--theme-subtext-color)",
+                    borderBottom: active ? "2px solid var(--theme-text-contrast)" : "2px solid transparent",
+                    marginBottom: -1,
+                }}
+            >
+                {label}
+            </button>
+        )
+    }
 
     return (
-        <div className="px-4 py-6 flex flex-col gap-6 h-full">
+        <div className="px-4 py-6 flex flex-col gap-5 h-full">
             <div className="flex items-center gap-2">
                 <Link
                     to="/control"
@@ -402,96 +431,133 @@ export default function PushNotificationsPage() {
                 <h1 className="text-2xl font-bold theme-h1-color">Push Notifications</h1>
             </div>
 
-            {/* Compose */}
-            <div className="flex flex-col gap-3 max-w-2xl">
-                <label className="flex flex-col gap-1 text-sm theme-text">
-                    Title
-                    <input
-                        value={form.title}
-                        onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}
-                        className="rounded-lg border px-3 py-2 text-sm theme-border theme-bg theme-text"
-                    />
-                </label>
-                <label className="flex flex-col gap-1 text-sm theme-text">
-                    Body
-                    <textarea
-                        value={form.body}
-                        onChange={e => setForm(prev => ({ ...prev, body: e.target.value }))}
-                        rows={3}
-                        className="rounded-lg border px-3 py-2 text-sm theme-border theme-bg theme-text resize-none"
-                    />
-                </label>
-                <div className="flex flex-col gap-1.5">
-                    <p className="text-sm theme-text">Send to</p>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                        {roleOptions.map(role => (
-                            <label key={role} className="flex items-center gap-1.5 text-xs theme-subtext-color cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={roleChecked.has(role)}
-                                    onChange={() => toggleRole(role)}
-                                    className="h-3.5 w-3.5 accent-(--theme-text-contrast)"
-                                />
-                                {roleLabels[role] ?? pretty(role)}
-                            </label>
-                        ))}
+            {/* Tabs */}
+            <div className="flex gap-6 border-b theme-border">
+                {tabButton("compose", "Compose")}
+                {tabButton("history", `History${messages.length ? ` · ${messages.length}` : ""}`)}
+            </div>
+
+            {/* ---------- COMPOSE ---------- */}
+            {tab === "compose" && (
+                <div className="flex flex-col gap-3 max-w-2xl">
+                    <label className="flex flex-col gap-1 text-sm theme-text">
+                        Title
+                        <input
+                            value={form.title}
+                            onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}
+                            className="rounded-lg border px-3 py-2 text-sm theme-border theme-bg theme-text"
+                        />
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm theme-text">
+                        Body
+                        <textarea
+                            value={form.body}
+                            onChange={e => setForm(prev => ({ ...prev, body: e.target.value }))}
+                            rows={3}
+                            className="rounded-lg border px-3 py-2 text-sm theme-border theme-bg theme-text resize-none"
+                        />
+                    </label>
+                    <div className="flex flex-col gap-1.5">
+                        <p className="text-sm theme-text">Send to</p>
+                        <RoleAudienceSelect
+                            catalog={catalog}
+                            selected={form.target_roles}
+                            onChange={roles => setForm(prev => ({ ...prev, target_roles: roles }))}
+                        />
+                    </div>
+
+                    {sendError && (
+                        <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
+                           style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
+                            {sendError}
+                        </p>
+                    )}
+                    {sendSuccess && (
+                        <p className="text-sm px-3 py-2 rounded-lg border theme-text-contrast theme-border">
+                            {sendSuccess}
+                        </p>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-3 pt-1">
+                        <p className="text-sm theme-subtext-color min-w-0">
+                            Sending to <span className="font-semibold theme-text-contrast">{formatRoles(form.target_roles, roleLabels)}</span>
+                        </p>
+                        <button
+                            onClick={() => void handleSend()}
+                            disabled={sending || !form.title.trim() || !form.body.trim()}
+                            className="ml-auto flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                            style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
+                        >
+                            <Send size={16} />
+                            {sending ? "Sending…" : "Send Push"}
+                        </button>
                     </div>
                 </div>
+            )}
 
-                {sendError && (
-                    <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
-                       style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
-                        {sendError}
-                    </p>
-                )}
-                {sendSuccess && (
-                    <p className="text-sm px-3 py-2 rounded-lg border theme-text-contrast theme-border">
-                        {sendSuccess}
-                    </p>
-                )}
+            {/* ---------- HISTORY ---------- */}
+            {tab === "history" && (
+                <div className="flex flex-col flex-1 min-h-0">
+                    {loadError && (
+                        <p className="text-sm px-3 py-2 mb-3 rounded-lg border theme-subtext-color theme-border"
+                           style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
+                            {loadError}
+                        </p>
+                    )}
 
-                <div className="flex gap-2 pt-1">
-                    <button
-                        onClick={() => void handleSend()}
-                        disabled={sending || !form.title.trim() || !form.body.trim()}
-                        className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-                        style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
-                    >
-                        <Send size={16} />
-                        {sending ? "Sending…" : "Send Push"}
-                    </button>
+                    {loading ? (
+                        <p className="text-sm theme-subtext-color px-1">Loading…</p>
+                    ) : sortedMessages.length === 0 ? (
+                        <p className="text-sm theme-subtext-color px-1">No pushes sent yet.</p>
+                    ) : isMobile ? (
+                        /* ---- Mobile: drill-down ---- */
+                        selectedMessage ? (
+                            <div className="flex flex-col flex-1 min-h-0 gap-3">
+                                <button
+                                    onClick={() => setSelectedId(null)}
+                                    className="flex items-center gap-1 self-start text-sm font-medium theme-text-contrast"
+                                >
+                                    <ChevronLeft size={20} /> History
+                                </button>
+                                <div className="flex-1 min-h-0 rounded-xl border p-4 theme-border backdrop-blur-sm" style={{ background: "var(--theme-bg)" }}>
+                                    <DeliveryDetail key={selectedMessage.id} message={selectedMessage} roleLabels={roleLabels} />
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col flex-1 min-h-0 overflow-y-auto rounded-xl border theme-border theme-scrollbar backdrop-blur-sm" style={{ background: "var(--theme-bg)" }}>
+                                {sortedMessages.map(m => (
+                                    <HistoryRow
+                                        key={m.id}
+                                        m={m}
+                                        roleLabels={roleLabels}
+                                        selected={false}
+                                        onClick={() => setSelectedId(m.id)}
+                                    />
+                                ))}
+                            </div>
+                        )
+                    ) : (
+                        /* ---- Desktop: master–detail split ---- */
+                        <div className="flex flex-1 min-h-0 rounded-xl border overflow-hidden theme-border backdrop-blur-sm" style={{ background: "var(--theme-bg)" }}>
+                            <div className="w-[340px] shrink-0 border-r overflow-y-auto theme-border theme-scrollbar">
+                                {sortedMessages.map(m => (
+                                    <HistoryRow
+                                        key={m.id}
+                                        m={m}
+                                        roleLabels={roleLabels}
+                                        selected={m.id === selectedId}
+                                        onClick={() => setSelectedId(m.id)}
+                                    />
+                                ))}
+                            </div>
+                            <div className="flex-1 min-w-0 p-6">
+                                {selectedMessage
+                                    ? <DeliveryDetail key={selectedMessage.id} message={selectedMessage} roleLabels={roleLabels} />
+                                    : <p className="text-sm theme-subtext-color">Select a push to see delivery details.</p>}
+                            </div>
+                        </div>
+                    )}
                 </div>
-            </div>
-
-            {/* History */}
-            <div className="flex flex-col gap-3 flex-1 min-h-0">
-                <h2 className="text-xs font-semibold uppercase tracking-widest theme-subtext-color px-1">History</h2>
-
-                {loadError && (
-                    <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
-                       style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
-                        {loadError}
-                    </p>
-                )}
-
-                <div className="rounded-xl border overflow-hidden theme-border flex-1 min-h-48">
-                    <AgGridReact<PushMessage>
-                        ref={gridRef}
-                        rowData={messages}
-                        columnDefs={columnDefs}
-                        context={gridContext}
-                        loading={loading}
-                        getRowId={({ data }) => data.id}
-                        defaultColDef={{ sortable: true, resizable: true, filter: true }}
-                    />
-                </div>
-            </div>
-
-            {deliveryModalMessage && (
-                <DeliveryDetailsModal
-                    message={deliveryModalMessage}
-                    onClose={() => setDeliveryModalMessage(null)}
-                />
             )}
         </div>
     )

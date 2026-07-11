@@ -42,8 +42,10 @@ async def create_notification(
 async def list_notifications() -> list[asyncpg.Record]:
     """Return every notice for the Control Panel list, newest first.
 
-    Joins a live response count and the author's display name so the list grid
-    doesn't need a round-trip per row.
+    Joins a live response count, the eligible-audience size, and the author's
+    display name so the list grid doesn't need a round-trip per row. Eligible
+    size is computed the same way as the detail view (`get_notification_detail`):
+    active users whose role is targeted, or everyone when `target_roles` is empty.
     """
     async with db_connection(DB_NAME) as conn:
         try:
@@ -51,7 +53,12 @@ async def list_notifications() -> list[asyncpg.Record]:
                 """
                 SELECT n.*,
                        COUNT(r.id)      AS response_count,
-                       u.display_name   AS created_by_name
+                       u.display_name   AS created_by_name,
+                       (
+                           SELECT COUNT(*) FROM users us
+                           WHERE us.banned_at IS NULL
+                             AND (n.target_roles = '{}' OR us.role = ANY(n.target_roles))
+                       )                AS eligible_count
                 FROM notifications n
                 LEFT JOIN notification_responses r ON r.notification_id = n.id
                 LEFT JOIN users u ON u.id = n.created_by
