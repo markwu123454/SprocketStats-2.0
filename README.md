@@ -20,7 +20,7 @@ This repository is published for **reference and transparency only**.
 
 However, I look forward to any teams or individuals who want to use SprocketStats or contribute to it. **Want to use or contribute to SprocketStats?** All inquiries regarding usage, licensing, collaboration, or adaptation should be directed to the author at [me@markwu.org](mailto:me@markwu.org)
 
-See [LICENSE.md](LICENSE.md) for full legal terms.
+See [LICENSE](LICENSE) for full legal terms.
 
 ---
 
@@ -105,4 +105,4 @@ If you have been granted permission to use this software, you must provide attri
 Copyright © 2025–2026 Mark Wu (Mai Wu)
 
 All rights reserved. No use, reproduction, modification, or distribution is permitted without explicit written permission from the author. 
-See [LICENSE.md](LICENSE.md) for complete terms.
+See [LICENSE](LICENSE) for complete terms.
