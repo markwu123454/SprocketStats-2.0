@@ -53,7 +53,7 @@ async def refresh() -> None:
         }
         for r in rows
     }
-    logger.info("account_state refreshed: %d users", len(_state))
+    #logger.info("account_state refreshed: %d users", len(_state))
 
 
 def _assert_entry_active(entry: dict) -> None:
