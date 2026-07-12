@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from "react"
 import { Outlet, Link, useLocation } from "react-router-dom"
 import { useAuth, useOnboardedUser } from "@/contexts/authContext.tsx"
 import {
-    LayoutDashboard, CalendarCheck, Trophy, ClipboardList, Settings,
-    LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen, SlidersHorizontal,
+    LayoutDashboard, CalendarCheck, ClipboardList, Settings,
+    LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Milestone,
 } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
 import NotificationGate from "@/components/NotificationGate.tsx"
@@ -32,7 +32,7 @@ interface NavTab {
 const CORE_TABS: NavTab[] = [
     { to: "/dashboard",   label: "Dashboard",   icon: LayoutDashboard },
     { to: "/attendance",  label: "Attendance",  icon: CalendarCheck, visible: p => can(p, "attendance.view") },
-    { to: "/competition", label: "Competition", icon: Trophy          },
+    { to: "/events", label: "Events", icon: Milestone          },
     { to: "/scouting",    label: "Scouting",    icon: ClipboardList   },
 ]
 

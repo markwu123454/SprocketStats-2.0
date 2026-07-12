@@ -14,7 +14,7 @@ const OnboardingPageRouter = lazy(() => import("@/pages/OnboardingPageRouter.tsx
 const AppShell       = lazy(() => import("@/layouts/AppShell.tsx"))
 const DashboardPage  = lazy(() => import("@/pages/DashboardPage.tsx"))
 const AttendancePage    = lazy(() => import("@/pages/AttendancePage"))
-const CompetitionPage    = lazy(() => import("@/pages/CompetitionPage"))
+const EventsPage    = lazy(() => import("@/pages/EventsPage"))
 const ScoutingPage    = lazy(() => import("@/pages/ScoutingPage"))
 const ControlPanelHub  = lazy(() => import("@/pages/control/ControlPanelHub"))
 const MeetingPage       = lazy(() => import("@/pages/control/MeetingPage"))
@@ -24,6 +24,7 @@ const NotificationsPage = lazy(() => import("@/pages/control/NotificationsPage")
 const NotificationDetailPage = lazy(() => import("@/pages/control/NotificationDetailPage"))
 const PushNotificationsPage = lazy(() => import("@/pages/control/PushNotificationsPage"))
 const SettingPage    = lazy(() => import("@/pages/SettingPage"))
+const NotFoundPage   = lazy(() => import("@/pages/NotFoundPage"))
 
 function Protected({children}: {children: ReactNode}) {
     return <AuthWrapper>{children}</AuthWrapper>
@@ -61,7 +62,7 @@ export default function App() {
                                     <Route element={<Protected><AppShell/></Protected>}>
                                         <Route path="/dashboard"   element={<DashboardPage/>}/>
                                         <Route path="/attendance"  element={<PermGuard perm="attendance.view"><AttendancePage/></PermGuard>}/>
-                                        <Route path="/competition" element={<CompetitionPage/>}/>
+                                        <Route path="/events" element={<EventsPage/>}/>
                                         <Route path="/scouting"    element={<ScoutingPage/>}/>
                                         <Route path="/control"     element={<ControlPanelHub/>}/>
                                         <Route path="/control/meeting"        element={<ControlGuard section="meeting"><MeetingPage/></ControlGuard>}/>
@@ -73,6 +74,8 @@ export default function App() {
                                         <Route path="/control/push"           element={<ControlGuard section="push"><PushNotificationsPage/></ControlGuard>}/>
                                         <Route path="/settings"    element={<SettingPage/>}/>
                                     </Route>
+
+                                    <Route path="*" element={<NotFoundPage/>}/>
                                 </Routes>
                             </Suspense>
                         </div>
