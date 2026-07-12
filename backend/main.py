@@ -19,6 +19,7 @@ REQUIRED_ENV_VARS = [
     "GOOGLE_CLIENT_SECRET",
     "LABEL_STUDIO_URL",
     "LABEL_STUDIO_TOKEN",
+    "LABEL_STUDIO_PROJECT_ID",
     "DATABASE_URL",
     #"DATABASE_URL_LABEL_STUDIO",
     "VAPID_PUBLIC_KEY",
@@ -34,6 +35,7 @@ if missing_env_vars:
 import account_state
 import db
 from endpoints import router
+from endpoints import label_studio_client
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +92,7 @@ async def lifespan(_: FastAPI):
     yield
     refresh_task.cancel()
     push_sweep_task.cancel()
+    await label_studio_client.aclose()
     await db.close_pool()
 
 app = FastAPI(lifespan=lifespan)
