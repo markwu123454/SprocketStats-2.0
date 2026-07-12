@@ -19,4 +19,3 @@ primary_region = 'lax'
 [[vm]]
   memory = '512mb'
   cpus = 1
-  memory_mb = 1024
