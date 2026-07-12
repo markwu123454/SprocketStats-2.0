@@ -32,8 +32,8 @@ missing_env_vars = [var for var in REQUIRED_ENV_VARS if not os.environ.get(var)]
 if missing_env_vars:
     print(f"Missing required environment variables: {', '.join(missing_env_vars)}")
 
-import account_state
 import db
+from core import account_state
 from endpoints import router
 from endpoints import label_studio_client
 

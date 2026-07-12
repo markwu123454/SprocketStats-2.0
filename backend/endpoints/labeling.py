@@ -5,7 +5,7 @@ import time
 from fastapi import APIRouter, Depends
 
 import db
-from .auth import get_current_user
+from core.security import get_current_user
 from .label_studio_client import (
     LABEL_STUDIO_PROJECT_ID,
     get_contributions,

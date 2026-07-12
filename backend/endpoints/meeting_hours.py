@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator, model_validator
 
 import db
-from .auth import require_access
+from core.security import require_access
 
 logger = logging.getLogger(__name__)
 

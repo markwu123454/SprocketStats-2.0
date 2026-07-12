@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator
 
 import db
-from .auth import VALID_ROLES, require_access, require_active
+from core.security import VALID_ROLES, require_access, require_active
 
 router = APIRouter()
 

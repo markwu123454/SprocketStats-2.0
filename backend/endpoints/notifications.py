@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, field_validator
 
-import account_state
 import db
-from permissions import can_edit_authored
-from .auth import VALID_ROLES, require_access, require_active
+from core import account_state
+from core.permissions import can_edit_authored
+from core.security import VALID_ROLES, require_access, require_active
 
 router = APIRouter()
 

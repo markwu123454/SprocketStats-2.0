@@ -15,7 +15,7 @@ without changing the shape of callers.
 
 This module is deliberately pure: it has no FastAPI / request dependencies so it
 stays trivially testable. The request-time enforcement dependency
-(``require_access``) lives in ``endpoints.auth`` where ``get_current_user``
+(``require_access``) lives in ``core.security`` where ``get_current_user``
 is available, to avoid a circular import.
 """
 

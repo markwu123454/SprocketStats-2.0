@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, model_validator
 
 import db
-from .auth import get_current_user, require_active
+from core.security import get_current_user, require_active
 
 logger = logging.getLogger(__name__)
 

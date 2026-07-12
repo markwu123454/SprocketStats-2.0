@@ -24,7 +24,7 @@ import logging
 from fastapi import HTTPException, status
 
 import db
-from permissions import role_requires_approval
+from core.permissions import role_requires_approval
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ def role_of(sub: str) -> str | None:
     """Return the cached role for ``sub``, or ``None`` if not in the cache.
 
     Used for coarse content-authority comparisons (see
-    ``permissions.can_edit_authored``), where a cache miss safely degrades to
+    ``core.permissions.can_edit_authored``), where a cache miss safely degrades to
     "no authority" (rank 0). Never hits the DB -- callers tolerate ``None``.
     """
     entry = _state.get(sub)
