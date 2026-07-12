@@ -65,7 +65,7 @@ export default function OnboardingPageRouter() {
         selectedRole !== null &&
         (roleCatalog.find(r => r.value === selectedRole)?.school_info_required ?? true)
 
-    useEffect(() => { markReady() }, [])
+    useEffect(() => { markReady() }, [markReady])
 
     useEffect(() => {
         if (!loading) {
@@ -77,7 +77,7 @@ export default function OnboardingPageRouter() {
                 setDisplayName(user.given_name)
             }
         }
-    }, [user, loading])
+    }, [user, loading, displayName, navigate])
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault()

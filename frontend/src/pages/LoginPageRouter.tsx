@@ -58,7 +58,7 @@ export default function LoginPageRouter() {
     useEffect(() => {
         const t = setTimeout(() => markReady(), 500);
         return () => clearTimeout(t);
-    }, []);
+    }, [markReady]);
 
     useEffect(() => {
         if (!loading && user) navigate("/dashboard", { replace: true });

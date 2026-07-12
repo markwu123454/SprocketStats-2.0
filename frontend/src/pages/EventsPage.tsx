@@ -89,7 +89,7 @@ export default function EventsPage() {
     return (
         <div className="mx-auto px-4 py-8 flex flex-col gap-1">
             <h1 className="text-2xl font-bold theme-h1-color">Events</h1>
-            <p className="text-sm theme-subtext-color mb-6">Season schedule — kickoff through champs.</p>
+            <p className="text-sm theme-subtext-color mb-6">Season schedule</p>
 
             <div className="flex flex-col">
                 {events.map((event, i) => {

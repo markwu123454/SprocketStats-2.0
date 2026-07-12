@@ -7,6 +7,7 @@ __pycache__/
 env/
 venv/
 *.log
+*.egg-info/
 
 # --- FastAPI backend ---
 backend/.env
@@ -16,17 +17,29 @@ backend/.env.*
 node_modules/
 frontend/node_modules/
 frontend/dist/
+frontend/dist-ssr/
 frontend/dev-dist/
 frontend/.env
 frontend/.env.*
+frontend/*.local
+frontend/.vercel
+
+# --- Node logs ---
+logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
 # --- IDEs and OS ---
 .idea/
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 .DS_Store
 Thumbs.db
-
-# --- Lock files (optional) ---
-frontend/package-lock.json
-/analysis/.env
-kiosk/kiosk-wpf-python/kiosk-wpf-python.App/.env
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

@@ -9,7 +9,7 @@ import {useEffect} from "react";
 export default function NotFoundPage() {
     const markReady = useAppReady()
 
-    useEffect(() => { markReady() }, [])
+    useEffect(() => { markReady() }, [markReady])
 
     return (
         <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-16 text-center theme-bg-page">

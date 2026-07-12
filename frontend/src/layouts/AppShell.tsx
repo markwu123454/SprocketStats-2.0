@@ -68,7 +68,7 @@ export default function AppShell() {
         return () => window.removeEventListener("nav-prefs-change", onNavPrefsChange)
     }, [])
 
-    useEffect(() => { markReady() }, [])
+    useEffect(() => { markReady() }, [markReady])
 
     useEffect(() => {
         function onClickOutside(e: MouseEvent) {
