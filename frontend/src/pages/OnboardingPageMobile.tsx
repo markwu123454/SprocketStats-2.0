@@ -3,8 +3,8 @@ import {
     BrandLockup,
     OnboardingForm,
     OnboardingHero,
-    useScrollLock,
 } from "@/components/OnboardingShared"
+import { useScrollLock } from "@/lib/useScrollLock"
 
 /* ════════════════════════════════════════════════════════════════
    OnboardingPageMobile

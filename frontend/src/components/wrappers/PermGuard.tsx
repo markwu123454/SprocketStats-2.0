@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import { Navigate } from "react-router-dom"
-import { useOnboardedUser } from "@/contexts/authContext.tsx"
+import { useOnboardedUser } from "@/contexts/authContext"
 import { can } from "@/lib/permissions"
 
 /**

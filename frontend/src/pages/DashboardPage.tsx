@@ -1,4 +1,4 @@
-import { useOnboardedUser } from "@/contexts/authContext.tsx"
+import { useOnboardedUser } from "@/contexts/authContext"
 import { BarChart3, Users, Trophy, Activity } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
 

@@ -1,6 +1,6 @@
 import { Link, Navigate } from "react-router-dom"
 import { ChevronRight, ShieldAlert } from "lucide-react"
-import { useOnboardedUser } from "@/contexts/authContext.tsx"
+import { useOnboardedUser } from "@/contexts/authContext"
 import { visibleSections } from "@/lib/controlSections"
 import { useIsMobile } from "@/lib/useIsMobile"
 

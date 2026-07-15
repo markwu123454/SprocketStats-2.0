@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { ChevronRight, ChevronDown, Check } from "lucide-react"
 import { GRADE_OPTIONS, TEAM_YEAR_OPTIONS } from "@/lib/Roles"
 import type { OnboardingPageProps, SeasonInfo } from "@/pages/OnboardingPageRouter"
-import { SeasonWordmark, BrandLockup, useScrollLock } from "./LoginShared"
+import { SeasonWordmark, BrandLockup } from "./LoginShared"
 
 /* ════════════════════════════════════════════════════════════════
    Shared onboarding building blocks
@@ -11,12 +11,13 @@ import { SeasonWordmark, BrandLockup, useScrollLock } from "./LoginShared"
    page files own only their layout; the pieces below own the actual
    content so the two surfaces can never drift apart.
 
-   SeasonWordmark / BrandLockup / useScrollLock are byte-identical to
-   their login counterparts, so they're reused from LoginShared and
-   re-exported here to give the pages a single import source.
+   SeasonWordmark / BrandLockup are byte-identical to their login
+   counterparts, so they're reused from LoginShared and re-exported here
+   to give the pages a single import source. (useScrollLock now lives in
+   @/lib/useScrollLock — import it from there directly.)
    ════════════════════════════════════════════════════════════════ */
 
-export { BrandLockup, useScrollLock }
+export { BrandLockup }
 
 /* ── SimpleDropdown ──────────────────────────────────────────── */
 /**
