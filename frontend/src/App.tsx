@@ -2,8 +2,8 @@ import {lazy, type ReactNode, Suspense, useLayoutEffect} from "react"
 import {BrowserRouter, Routes, Route} from "react-router-dom"
 import "./index.css"
 import ThemeProvider from "@/contexts/themeProvider.tsx"
-import {AuthProvider} from "@/contexts/authContext.tsx"
-import {AppReadyProvider} from "@/contexts/appReadyContext"
+import {AuthProvider} from "@/contexts/AuthProvider"
+import {AppReadyProvider} from "@/contexts/AppReadyProvider"
 
 import AuthWrapper from "@/components/wrappers/AuthWrapper.tsx"
 import ControlGuard from "@/components/wrappers/ControlGuard.tsx"
@@ -15,6 +15,7 @@ const AppShell       = lazy(() => import("@/layouts/AppShell.tsx"))
 const DashboardPage  = lazy(() => import("@/pages/DashboardPage.tsx"))
 const AttendancePage    = lazy(() => import("@/pages/AttendancePage"))
 const EventsPage    = lazy(() => import("@/pages/EventsPage"))
+const EventComingSoonPage = lazy(() => import("@/pages/EventComingSoonPage"))
 const ScoutingPage    = lazy(() => import("@/pages/ScoutingPage"))
 const ControlPanelHub  = lazy(() => import("@/pages/control/ControlPanelHub"))
 const MeetingPage       = lazy(() => import("@/pages/control/MeetingPage"))
@@ -63,6 +64,7 @@ export default function App() {
                                         <Route path="/dashboard"   element={<DashboardPage/>}/>
                                         <Route path="/attendance"  element={<PermGuard perm="attendance.view"><AttendancePage/></PermGuard>}/>
                                         <Route path="/events" element={<EventsPage/>}/>
+                                        <Route path="/events/*" element={<EventComingSoonPage/>}/>
                                         <Route path="/scouting"    element={<ScoutingPage/>}/>
                                         <Route path="/control"     element={<ControlPanelHub/>}/>
                                         <Route path="/control/meeting"        element={<ControlGuard section="meeting"><MeetingPage/></ControlGuard>}/>
@@ -73,9 +75,12 @@ export default function App() {
                                         <Route path="/control/notifications/:id" element={<ControlGuard section="notifications"><NotificationDetailPage/></ControlGuard>}/>
                                         <Route path="/control/push"           element={<ControlGuard section="push"><PushNotificationsPage/></ControlGuard>}/>
                                         <Route path="/settings"    element={<SettingPage/>}/>
-                                    </Route>
 
-                                    <Route path="*" element={<NotFoundPage/>}/>
+                                        {/* Catches any authenticated dead-end not matched above.
+                                            A logged-out visitor hitting the same URL never reaches
+                                            this — AuthWrapper redirects to "/" before it mounts. */}
+                                        <Route path="*" element={<NotFoundPage/>}/>
+                                    </Route>
                                 </Routes>
                             </Suspense>
                         </div>

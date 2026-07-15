@@ -1,12 +1,12 @@
 import { Link } from "react-router-dom"
-import { Compass } from "lucide-react"
+import { CalendarClock } from "lucide-react"
 import {useAppReady} from "@/contexts/appReadyContext";
 import {useEffect} from "react";
 
-// Nested catch-all inside the Protected/AppShell route in App.tsx, so it only
-// ever renders for authenticated users (a logged-out visitor hitting the same
-// splat gets redirected to login by AuthWrapper before this mounts).
-export default function NotFoundPage() {
+// Matches "/events/*" in App.tsx — catches event links from EventsPage (e.g.
+// /events/fll) that don't have a dedicated page built yet, so visitors get a
+// relevant message instead of a generic 404.
+export default function EventComingSoonPage() {
     const markReady = useAppReady()
 
     useEffect(() => { markReady() }, [markReady])
@@ -16,20 +16,19 @@ export default function NotFoundPage() {
             <div
                 className="flex items-center justify-center w-16 h-16 rounded-full border theme-border theme-bg"
             >
-                <Compass size={28} className="theme-text-contrast opacity-70" />
+                <CalendarClock size={28} className="theme-text-contrast opacity-70" />
             </div>
 
-            <h1 className="text-5xl font-bold theme-h1-color">404</h1>
-            <p className="text-base font-medium theme-text">Page not found</p>
+            <h1 className="text-base font-medium theme-text">This event doesn't have a page yet</h1>
             <p className="text-sm theme-subtext-color max-w-xs">
-                The page you're looking for doesn't exist or may have been moved.
+                Check back closer to the event, details will show up here once they're available.
             </p>
 
             <Link
-                to="/dashboard"
+                to="/events"
                 className="mt-2 inline-flex items-center theme-text-contrast theme-bg gap-1 font-bold rounded-lg px-4 py-2.5 text-sm transition-opacity hover:opacity-90"
             >
-                Back to dashboard
+                Back to events
             </Link>
         </div>
     )

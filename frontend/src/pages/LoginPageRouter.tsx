@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/contexts/authContext.tsx";
-import { useAppReady } from "@/contexts/appReadyContext.tsx";
+import { useAuth } from "@/contexts/authContext";
+import { useAppReady } from "@/contexts/appReadyContext";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { useThemeSeasonInfo, type SeasonInfo } from "@/lib/seasonTheme";
 import LoginPageDesktop from "./LoginPageDesktop";

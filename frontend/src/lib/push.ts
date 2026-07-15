@@ -1,3 +1,17 @@
+/**
+ * The ONLY module allowed to touch the notification / push platform APIs
+ * (`Notification`, `navigator.serviceWorker`, `PushManager`). Every page and
+ * component must go through the guarded helpers exported here — never call those
+ * globals directly.
+ *
+ * Why: those APIs return null / throw when the PWA isn't installed, permission
+ * isn't granted, or the browser doesn't support push. Funnelling all access
+ * through this one guarded surface is what stops "notification returned None"
+ * from crashing a page. An ESLint rule (see eslint.config.js) enforces this
+ * boundary so a new page physically can't reintroduce that crash, and push.test.ts
+ * pins the guard behaviour so a refactor can't quietly remove it.
+ */
+
 const API = import.meta.env.VITE_BACKEND_URL
 
 /** Decode a base64url (no padding) VAPID key into the raw bytes `applicationServerKey` expects. */
