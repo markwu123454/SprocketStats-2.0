@@ -1,0 +1,28 @@
+name: Prod Incident
+description: App went down after a prod push
+title: "[INCIDENT] "
+labels: ["incident"]
+body:
+  - type: input
+    id: pr
+    attributes:
+      label: Commit / PR that caused it
+      description: Commit SHA or PR number (auto-filed incidents already include this)
+      placeholder: "commit abc1234 or #482"
+  - type: textarea
+    id: cause
+    attributes:
+      label: Cause
+      description: What broke and why
+    validations:
+      required: true
+  - type: textarea
+    id: fix
+    attributes:
+      label: Fix
+      description: What was done to resolve it
+  - type: textarea
+    id: prevention
+    attributes:
+      label: Prevention (optional)
+      description: How to avoid this next time

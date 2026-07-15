@@ -1,8 +1,8 @@
-import { useAuth, useOnboardedUser } from "@/contexts/authContext.tsx"
+import { useAuth, useOnboardedUser } from "@/contexts/authContext"
 import { getPerm } from "@/lib/permissions"
 import { LogOut, Mail, ShieldCheck, Palette, Navigation, Bell } from "lucide-react"
 import { useEffect, useState } from "react"
-import { useTheme } from "@/contexts/themeProvider.tsx"
+import { useTheme } from "@/contexts/themeContext"
 import Avatar from "@/components/Avatar.tsx"
 import { getPushState, subscribeToPush, unsubscribeFromPush, type PushState } from "@/lib/push.ts"
 

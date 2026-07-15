@@ -6,8 +6,8 @@ import {
     LoginErrorNotice,
     SignInHeading,
     SponsorFooter,
-    useScrollLock,
 } from "@/components/LoginShared";
+import { useScrollLock } from "@/lib/useScrollLock";
 
 /* ════════════════════════════════════════════════════════════════
    LoginPageDesktop — split hero / form layout

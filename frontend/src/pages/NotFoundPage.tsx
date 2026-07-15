@@ -1,18 +1,18 @@
 import { Link } from "react-router-dom"
 import { Compass } from "lucide-react"
-import {useAppReady} from "@/contexts/appReadyContext.tsx";
+import {useAppReady} from "@/contexts/appReadyContext";
 import {useEffect} from "react";
 
-// Sits outside <Protected> in App.tsx (catch-all "*" route) so it renders
-// for logged-out visitors too — no auth/theme context assumed beyond the
-// global theme CSS vars, which are set at the document root.
+// Nested catch-all inside the Protected/AppShell route in App.tsx, so it only
+// ever renders for authenticated users (a logged-out visitor hitting the same
+// splat gets redirected to login by AuthWrapper before this mounts).
 export default function NotFoundPage() {
     const markReady = useAppReady()
 
     useEffect(() => { markReady() }, [markReady])
 
     return (
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-16 text-center theme-bg-page">
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4 py-16 text-center">
             <div
                 className="flex items-center justify-center w-16 h-16 rounded-full border theme-border theme-bg"
             >
@@ -26,10 +26,10 @@ export default function NotFoundPage() {
             </p>
 
             <Link
-                to="/"
+                to="/dashboard"
                 className="mt-2 inline-flex items-center theme-text-contrast theme-bg gap-1 font-bold rounded-lg px-4 py-2.5 text-sm transition-opacity hover:opacity-90"
             >
-                Back to safety
+                Back to dashboard
             </Link>
         </div>
     )

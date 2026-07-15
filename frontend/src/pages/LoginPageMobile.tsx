@@ -7,8 +7,8 @@ import {
     LoginErrorNotice,
     SignInHeading,
     SponsorFooter,
-    useScrollLock,
 } from "@/components/LoginShared";
+import { useScrollLock } from "@/lib/useScrollLock";
 
 /* ── Sheet geometry constants ────────────────────────────────── */
 const CLAMP_PEEK     = 34;

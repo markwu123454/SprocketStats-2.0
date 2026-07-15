@@ -1,4 +1,4 @@
-import { useOnboardedUser } from "@/contexts/authContext.tsx"
+import { useOnboardedUser } from "@/contexts/authContext"
 import { can } from "@/lib/permissions"
 import ControlSectionLayout from "./ControlSectionLayout"
 import MeetingHoursEditor from "./MeetingHoursEditor"

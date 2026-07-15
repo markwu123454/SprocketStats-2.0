@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { ExternalLink } from "lucide-react"
-import { useAuth, useOnboardedUser } from "@/contexts/authContext.tsx"
+import { useAuth, useOnboardedUser } from "@/contexts/authContext"
 
 const API = import.meta.env.VITE_BACKEND_URL
 

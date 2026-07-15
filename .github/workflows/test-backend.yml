@@ -1,0 +1,36 @@
+name: Test Backend
+
+# Runs on every PR and on pushes to main.
+#
+# Note: the PR trigger is intentionally NOT path-filtered. These jobs are
+# required status checks, and a required check that is skipped (because a PR
+# didn't touch its paths) never reports back — which would block the PR forever.
+# So both suites run on every PR; they're fast. The push trigger below IS
+# path-filtered since post-merge there's no required-check to satisfy.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+
+jobs:
+  backend-tests:
+    name: backend-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: pip install -e ".[test]"
+
+      - name: Run tests
+        working-directory: ./backend
+        run: pytest

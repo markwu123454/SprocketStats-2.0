@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import { Outlet, Link, useLocation } from "react-router-dom"
-import { useAuth, useOnboardedUser } from "@/contexts/authContext.tsx"
+import { useAuth, useOnboardedUser } from "@/contexts/authContext"
 import {
     LayoutDashboard, CalendarCheck, ClipboardList, Settings,
     LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Milestone,
@@ -10,7 +10,7 @@ import NotificationGate from "@/components/NotificationGate.tsx"
 import { can, getPerm, type PermPolicy } from "@/lib/permissions"
 import { visibleSections, type ControlSection } from "@/lib/controlSections"
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community"
-import { useAppReady } from "@/contexts/appReadyContext.tsx"
+import { useAppReady } from "@/contexts/appReadyContext"
 
 ModuleRegistry.registerModules([AllCommunityModule])
 

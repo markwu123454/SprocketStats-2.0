@@ -1,6 +1,6 @@
 import {useEffect} from "react"
 import {useNavigate} from "react-router-dom"
-import {useAuth} from "@/contexts/authContext.tsx"
+import {useAuth} from "@/contexts/authContext"
 
 export default function AuthWrapper({children}: { children: React.ReactNode }) {
     const {user, loading} = useAuth()
