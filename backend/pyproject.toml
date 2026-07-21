@@ -1,11 +1,13 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+# >=77 for PEP 639 SPDX `license` support.
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "sprocketstats"
 version = "0.1.0"
 description = "SprocketStats"
+license = "AGPL-3.0-or-later"
 requires-python = ">=3.11"
 
 dependencies = [
