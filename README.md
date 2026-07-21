@@ -1,11 +1,12 @@
-# FRC Scouting App (SprocketStats)
+# SprocketStats — FRC Scouting & Team Operations
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.13-blue)
 ![Node.js](https://img.shields.io/badge/Node.js-24.12-brightgreen)
 
-SprocketStats is an ML-automated scouting system for **FIRST Robotics Competition (FRC)** teams.
-It is designed for fast, reliable match and team data collection, and seamless analysis and data interpretation.
+SprocketStats is an open source **scouting and team operations** platform for **FIRST Robotics Competition (FRC)** teams, built for fast and reliable match data collection and for running the team behind it.
+
+It is used in real competition by **Team 3473 (Team Sprocket)** and is free for any team to run: see [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ---
 
@@ -30,13 +31,17 @@ Other teams and individuals are genuinely welcome to use SprocketStats or contri
 
 ## Overview
 
-SprocketStats is an ML-automated scouting system: match and team data collection is driven by machine learning rather than manual entry, which changes what the rest of the app needs to do. The frontend and backend focus on the **team ops** side of the app, which is a significant part of the app:
+SprocketStats covers two halves of running a competitive FRC team.
+
+**Team operations**: the bulk of this repository, and what you get working on day one:
 
 - RBAC (Role Based Access Control)
 - Attendance and meeting management
 - Member and notification management
 - Analytics engine
 - Data presentation and sharing
+
+**Scouting**: match and team data collection, driven by machine learning rather than manual entry, which changes what the rest of the app needs to do. This half is season-specific and currently being rewritten for 2027.
 
 The system is built to persist across seasons with minimal rework, allowing teams to adapt quickly to annual game changes.
 
@@ -79,7 +84,7 @@ Public documentation may lag behind internal changes.
 
 ### Analysis Tooling
 
-- SThe scouting pipeline is currently being rewritten, more details will be avaliable once we start implementing and testing it.
+- The scouting pipeline is currently being rewritten. More details will be available once we start implementing and testing it.
 
 ---
 
