@@ -4,17 +4,24 @@ import {
     BrandLockup,
     GoogleButton,
     HeroContent,
+    LegalFooter,
+    LegalFooterCompact,
     LoginErrorNotice,
     SignInHeading,
     SponsorFooter,
 } from "@/components/LoginShared";
 import { useScrollLock } from "@/lib/useScrollLock";
 
-/* ── Sheet geometry constants ────────────────────────────────── */
+/* ── Sheet geometry constants ────────────────────────────────────
+   The peek state carries the compact legal line below the button, so
+   it is taller than the button alone needs. The expanded clamp has to
+   clear the full LegalFooter plus a sponsor line plus a possible error
+   notice, all of which stack upward from the bottom of .lpm-reveal-foot.
+   ──────────────────────────────────────────────────────────────── */
 const CLAMP_PEEK     = 34;
-const CLAMP_EXPANDED = 92;
-const PEEK_HEIGHT    = 132;
-const EXPAND_HEIGHT  = 320;
+const CLAMP_EXPANDED = 215;
+const PEEK_HEIGHT    = 155;
+const EXPAND_HEIGHT  = 465;
 
 /* ════════════════════════════════════════════════════════════════
    LoginPageMobile — hero + draggable bottom sheet
@@ -149,6 +156,22 @@ export default function LoginPageMobile({ season, timeInfo, loading, banned, pen
                     transform: translateY(calc((1 - var(--reveal, 0)) * 8px));
                     transition: none;
                 }
+                /* Inverse of .lpm-expand-only — the compact legal line shows
+                   at peek and hands off to the full footer on expand. It stays
+                   in flow either way so the button never shifts. */
+                .lpm-peek-only {
+                    opacity: 1;
+                    transition: opacity 0.34s ease;
+                    will-change: opacity;
+                }
+                .lpm-sheet[data-expanded="true"] .lpm-peek-only {
+                    opacity: 0;
+                    pointer-events: none;
+                }
+                .lpm-sheet.lpm-dragging .lpm-peek-only {
+                    opacity: calc(1 - var(--reveal, 0));
+                    transition: none;
+                }
                 .lpm-divider {
                     display: flex;
                     align-items: center;
@@ -223,6 +246,12 @@ export default function LoginPageMobile({ season, timeInfo, loading, banned, pen
                         {/* Google button — always visible */}
                         <GoogleButton loading={loading} disabled={authError} onClick={signInWithGoogle} />
 
+                        {/* Compact legal line — visible at peek, fades out as the
+                            full footer below takes over */}
+                        <div className="mt-3.5 lpm-peek-only">
+                            <LegalFooterCompact />
+                        </div>
+
                         {/* Footer — fades in below the button as sheet expands, banned/
                             error notice (if any) fades in alongside it */}
                         <div className="lpm-reveal-foot lpm-expand-only">
@@ -241,6 +270,7 @@ export default function LoginPageMobile({ season, timeInfo, loading, banned, pen
                                     Can't reach the server right now. Try again in a moment.
                                 </LoginErrorNotice>
                             )}
+                            <LegalFooter />
                             <SponsorFooter />
                         </div>
                     </div>
