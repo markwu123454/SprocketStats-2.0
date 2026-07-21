@@ -1,0 +1,90 @@
+SprocketStats
+Copyright (C) 2025-2026 Mark Wu (legal name: Mai Wu)
+and the SprocketStats contributors
+
+Developed by the Team Sprocket (FRC 3473) Scouting Subteam.
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version. See the LICENSE file for the full text.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details.
+
+
+ADDITIONAL TERMS UNDER SECTION 7 OF THE GNU AGPL VERSION 3
+==========================================================
+
+The following additional terms apply to SprocketStats, as permitted by
+Section 7 of the GNU Affero General Public License version 3.
+
+They are stated in this file rather than in LICENSE because the text of
+the GNU AGPL may not itself be modified. This file forms part of the
+licensing terms of SprocketStats and must accompany it.
+
+
+1. Preservation of author attribution  --  AGPL section 7(b)
+
+   You must preserve the following attribution notice in all copies and
+   modified versions of this software, in any source distribution of it,
+   and in any Appropriate Legal Notices displayed by works containing it:
+
+       SprocketStats
+       Copyright (C) 2025-2026 Mark Wu and the SprocketStats contributors
+       Developed by the Team Sprocket (FRC 3473) Scouting Subteam
+       https://github.com/markwu123454/SprocketStats-2.0
+
+   The line naming the Team Sprocket (FRC 3473) Scouting Subteam is a
+   statement of authorship history. It must be preserved as written, and
+   it remains true of the original work regardless of who later modifies
+   it.
+
+   Where this software provides an interactive user interface, that
+   notice must remain reachable from the interface, together with the
+   statement of license, the notice of absence of warranty, and the offer
+   of Corresponding Source required by sections 5 and 13 of the GNU AGPL.
+
+
+2. Marking of modified versions  --  AGPL section 7(c)
+
+   You must not misrepresent the origin of this software. Modified
+   versions must be marked, in a reasonable and clearly visible way, as
+   different from the original -- for example, by stating that the
+   version is a modified version of SprocketStats.
+
+   This does not restrict your freedom to modify the software. It
+   requires only that recipients can tell your version from the original.
+
+
+3. Endorsement and publicity  --  AGPL sections 7(d) and 7(e)
+
+   Neither the name "SprocketStats", nor the names of its authors, nor
+   the name of FIRST Robotics Competition Team 3473 (Team Sprocket) or
+   its Scouting Subteam, may be used to advertise or promote a modified
+   version, or to imply that a modified version is endorsed by or
+   affiliated with them, without prior written permission.
+
+   Preserving the attribution required by term 1 does not violate this
+   term. Term 1 requires you to carry a factual credit for the original
+   work; this term forbids you from presenting your modified version as
+   endorsed by, or the work of, those named. Term 2 requires you to mark
+   your version as modified, which keeps the distinction clear.
+
+   This license grants no rights under trademark law.
+
+
+These are non-permissive additional terms within the meaning of Section 7
+of the GNU AGPL. As required by Section 4 of that License, you must keep
+intact all notices stating that the License and these additional terms
+apply to the code. If you convey this software, you must include this
+file with it.
+
+Nothing in these terms restricts the rights granted by the GNU AGPL to
+run, study, modify, and redistribute this software, or to receive the
+Corresponding Source of a version made available to you over a network.
+
+Questions, or a licensing arrangement other than the AGPL:
+Mark Wu -- me@markwu.org
