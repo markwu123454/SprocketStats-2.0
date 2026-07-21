@@ -1,20 +1,36 @@
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { LoginPageProps } from "./LoginPageRouter";
 import {
     BrandLockup,
     GoogleButton,
     HeroContent,
+    LegalFooter,
+    LegalFooterCompact,
     LoginErrorNotice,
     SignInHeading,
     SponsorFooter,
 } from "@/components/LoginShared";
 import { useScrollLock } from "@/lib/useScrollLock";
 
-/* ── Sheet geometry constants ────────────────────────────────── */
+/* ── Sheet geometry constants ────────────────────────────────────
+   Baselines for a sheet showing no error notice. The peek state carries
+   the compact legal line below the button, so it is taller than the
+   button alone needs.
+
+   An error notice sits in normal flow rather than in the expand-only
+   reveal, so a rejected sign-in explains itself without the user having
+   to discover the drag. Its height depends on how the message wraps, so
+   it is measured at runtime and added to both baselines.
+
+   The expanded clamp has to keep the in-flow stack clear of
+   .lpm-reveal-foot, which is absolutely positioned and grows upward from
+   the bottom. Worst case there is *no* error notice — that is when the
+   button sits lowest relative to the footer.
+   ──────────────────────────────────────────────────────────────── */
 const CLAMP_PEEK     = 34;
-const CLAMP_EXPANDED = 92;
-const PEEK_HEIGHT    = 132;
-const EXPAND_HEIGHT  = 320;
+const CLAMP_EXPANDED = 175;
+const PEEK_HEIGHT    = 155;
+const EXPAND_HEIGHT  = 425;
 
 /* ════════════════════════════════════════════════════════════════
    LoginPageMobile — hero + draggable bottom sheet
@@ -23,11 +39,41 @@ export default function LoginPageMobile({ season, timeInfo, loading, banned, pen
     useScrollLock();
 
     const sheetRef  = useRef<HTMLElement>(null);
+    const errorRef  = useRef<HTMLDivElement>(null);
     const dragStart = useRef<{ y: number; h: number } | null>(null);
+    const [errorHeight, setErrorHeight] = useState(0);
     const [sheetHeight, setSheetHeight] = useState(PEEK_HEIGHT);
     const [dragging,    setDragging]    = useState(false);
 
+    /* ── Error notice measurement ────────────────────────────────
+       The notice slot is always mounted and collapses to zero height
+       when there is nothing to say, so measuring it covers a notice
+       appearing and clearing. Keyed on the flags rather than watched
+       with a ResizeObserver: the flags are what change, and the resize
+       listener picks up a re-wrap on rotation.
+       ────────────────────────────────────────────────────────────── */
+    useLayoutEffect(() => {
+        const measure = () => {
+            const el = errorRef.current;
+            if (el) setErrorHeight(el.offsetHeight);
+        };
+        measure();
+        window.addEventListener("resize", measure);
+        return () => window.removeEventListener("resize", measure);
+    }, [banned, pendingApproval, authError]);
+
+    const peekHeight   = PEEK_HEIGHT   + errorHeight;
+    const expandHeight = EXPAND_HEIGHT + errorHeight;
+    const midHeight    = (peekHeight + expandHeight) / 2;
+
     const snapTo = (h: number) => { setSheetHeight(h); setDragging(false); };
+
+    /* Re-settle the resting height when a notice appears or clears, so
+       the sheet grows to fit it rather than clipping it. */
+    useLayoutEffect(() => {
+        if (dragging || dragStart.current) return;
+        setSheetHeight(h => (h > midHeight ? expandHeight : peekHeight));
+    }, [peekHeight, expandHeight, midHeight, dragging]);
 
     /* ── Drag handlers ───────────────────────────────────────── */
     const onPointerDown = (e: React.PointerEvent) => {
@@ -39,30 +85,29 @@ export default function LoginPageMobile({ season, timeInfo, loading, banned, pen
     const onPointerMove = (e: React.PointerEvent) => {
         if (!dragStart.current) return;
         const delta = dragStart.current.y - e.clientY;
-        const next  = Math.max(PEEK_HEIGHT, Math.min(EXPAND_HEIGHT, dragStart.current.h + delta));
+        const next  = Math.max(peekHeight, Math.min(expandHeight, dragStart.current.h + delta));
         setSheetHeight(next);
     };
 
     const onPointerUp = (e: React.PointerEvent) => {
         if (!dragStart.current) return;
         const velocity = dragStart.current.y - e.clientY;
-        const mid      = (PEEK_HEIGHT + EXPAND_HEIGHT) / 2;
-        if (velocity > 50)       snapTo(EXPAND_HEIGHT);
-        else if (velocity < -50) snapTo(PEEK_HEIGHT);
-        else                     snapTo(sheetHeight > mid ? EXPAND_HEIGHT : PEEK_HEIGHT);
+        if (velocity > 50)       snapTo(expandHeight);
+        else if (velocity < -50) snapTo(peekHeight);
+        else                     snapTo(sheetHeight > midHeight ? expandHeight : peekHeight);
         dragStart.current = null;
     };
 
     /* ── Derived values ──────────────────────────────────────── */
     const dragProgress = Math.min(1, Math.max(0,
-        (sheetHeight - PEEK_HEIGHT) / (EXPAND_HEIGHT - PEEK_HEIGHT)
+        (sheetHeight - peekHeight) / (expandHeight - peekHeight)
     ));
     const reveal = dragProgress < 0.3
         ? 0
         : Math.pow((dragProgress - 0.3) / 0.7, 0.85);
 
     const btnClamp = CLAMP_PEEK + (CLAMP_EXPANDED - CLAMP_PEEK) * dragProgress;
-    const expanded = sheetHeight > (PEEK_HEIGHT + EXPAND_HEIGHT) / 2;
+    const expanded = sheetHeight > midHeight;
 
     return (
         <>
@@ -131,7 +176,7 @@ export default function LoginPageMobile({ season, timeInfo, loading, banned, pen
                     left: 0; right: 0;
                     bottom: 20px;
                 }
-                .lpm-reveal-foot > p { margin-top: 0; }
+                .lpm-reveal-foot > :first-child { margin-top: 0; }
                 .lpm-expand-only {
                     opacity: 0;
                     transform: translateY(8px);
@@ -147,6 +192,22 @@ export default function LoginPageMobile({ season, timeInfo, loading, banned, pen
                 .lpm-sheet.lpm-dragging .lpm-expand-only {
                     opacity: var(--reveal, 0);
                     transform: translateY(calc((1 - var(--reveal, 0)) * 8px));
+                    transition: none;
+                }
+                /* Inverse of .lpm-expand-only — the compact legal line shows
+                   at peek and hands off to the full footer on expand. It stays
+                   in flow either way so the button never shifts. */
+                .lpm-peek-only {
+                    opacity: 1;
+                    transition: opacity 0.34s ease;
+                    will-change: opacity;
+                }
+                .lpm-sheet[data-expanded="true"] .lpm-peek-only {
+                    opacity: 0;
+                    pointer-events: none;
+                }
+                .lpm-sheet.lpm-dragging .lpm-peek-only {
+                    opacity: calc(1 - var(--reveal, 0));
                     transition: none;
                 }
                 .lpm-divider {
@@ -223,9 +284,11 @@ export default function LoginPageMobile({ season, timeInfo, loading, banned, pen
                         {/* Google button — always visible */}
                         <GoogleButton loading={loading} disabled={authError} onClick={signInWithGoogle} />
 
-                        {/* Footer — fades in below the button as sheet expands, banned/
-                            error notice (if any) fades in alongside it */}
-                        <div className="lpm-reveal-foot lpm-expand-only">
+                        {/* Error notice — in normal flow, so a rejected sign-in is
+                            visible in the peek state without discovering the drag.
+                            flex-col keeps the notice margins out of the parent's
+                            collapse, so the measured height is the real one. */}
+                        <div ref={errorRef} className="flex flex-col">
                             {banned && (
                                 <LoginErrorNotice>
                                     This account has been banned. Contact a captain or mentor if you think that's a mistake.
@@ -241,6 +304,17 @@ export default function LoginPageMobile({ season, timeInfo, loading, banned, pen
                                     Can't reach the server right now. Try again in a moment.
                                 </LoginErrorNotice>
                             )}
+                        </div>
+
+                        {/* Compact legal line — visible at peek, fades out as the
+                            full footer below takes over */}
+                        <div className="mt-3.5 lpm-peek-only">
+                            <LegalFooterCompact />
+                        </div>
+
+                        {/* Footer — fades in below the button as sheet expands */}
+                        <div className="lpm-reveal-foot lpm-expand-only">
+                            <LegalFooter />
                             <SponsorFooter />
                         </div>
                     </div>

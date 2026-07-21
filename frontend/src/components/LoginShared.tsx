@@ -141,6 +141,68 @@ export function SponsorFooter() {
     );
 }
 
+/* ── Legal footer ────────────────────────────────────────────────
+   Carries the notice required by NOTICE term 1 / AGPL sections 5 and
+   13: attribution, the Team Sprocket credit (preserved as written),
+   the statement of license, absence of warranty, and the offer of
+   Corresponding Source. It leads with what SprocketStats *is* so the
+   block reads as an introduction rather than boilerplate.
+
+   LegalFooterCompact is the peek-state stand-in on mobile, where the
+   full block does not fit — the source offer stays one tap away on
+   every surface.
+   ──────────────────────────────────────────────────────────────── */
+const REPO_URL      = "https://github.com/markwu123454/SprocketStats-2.0";
+const LICENSE_URL   = `${REPO_URL}/blob/main/LICENSE`;
+const SELF_HOST_URL = `${REPO_URL}/blob/main/SELF_HOSTING.md`;
+
+function FooterLink({ href, children }: { href: string; children: React.ReactNode }) {
+    return (
+        <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="theme-h1-color font-medium hover:underline"
+        >
+            {children}
+        </a>
+    );
+}
+
+export function LegalFooter() {
+    return (
+        <div className="text-[12px] leading-[1.6] theme-subtext-color text-center">
+            <p className="m-0 theme-h1-color opacity-90">
+                <span className="font-semibold">SprocketStats</span> — open source scouting and
+                team operations for FRC teams.
+            </p>
+            <p className="m-0 mt-1">
+                <FooterLink href={SELF_HOST_URL}>Run your own →</FooterLink>
+                <span className="mx-2 opacity-40">·</span>
+                <FooterLink href={REPO_URL}>Source →</FooterLink>
+            </p>
+            <p className="m-0 mt-2 opacity-70">
+                © 2025–2026 Mark Wu · Developed by the Team Sprocket (FRC 3473) Scouting Subteam
+            </p>
+            <p className="m-0 opacity-70">
+                Free software under AGPL-3.0-or-later, with no warranty.
+            </p>
+        </div>
+    );
+}
+
+export function LegalFooterCompact() {
+    return (
+        <p className="m-0 text-[11px] leading-none theme-subtext-color opacity-70 text-center">
+            <FooterLink href={LICENSE_URL}>AGPL-3.0</FooterLink>
+            <span className="mx-1.5 opacity-40">·</span>
+            <FooterLink href={REPO_URL}>Source</FooterLink>
+            <span className="mx-1.5 opacity-40">·</span>
+            <FooterLink href={SELF_HOST_URL}>Run your own</FooterLink>
+        </p>
+    );
+}
+
 /* ── Login error notice — banned account, unreachable backend, etc ── */
 export function LoginErrorNotice({ children }: { children: React.ReactNode }) {
     return (

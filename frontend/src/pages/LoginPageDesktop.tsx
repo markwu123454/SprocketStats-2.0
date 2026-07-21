@@ -3,6 +3,7 @@ import {
     BrandLockup,
     GoogleButton,
     HeroContent,
+    LegalFooter,
     LoginErrorNotice,
     SignInHeading,
     SponsorFooter,
@@ -67,6 +68,10 @@ export default function LoginPageDesktop({ season, timeInfo, loading, banned, pe
                     )}
 
                     <SponsorFooter />
+                </div>
+
+                <div className="w-full max-w-[420px] mx-auto self-end">
+                    <LegalFooter />
                 </div>
             </section>
         </div>
