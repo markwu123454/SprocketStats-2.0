@@ -1,6 +1,5 @@
 # FRC Scouting App (SprocketStats)
 
-[![Version](https://img.shields.io/github/v/release/markwu123454/SprocketStats-2.0?sort=semver)](https://github.com/markwu123454/SprocketStats-2.0/releases)
 [![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.13-blue)
 ![Node.js](https://img.shields.io/badge/Node.js-24.12-brightgreen)
@@ -17,11 +16,13 @@ It is designed for fast, reliable match and team data collection, and seamless a
 - You MAY use, run, study, modify, and distribute this software
 - If you distribute a modified version, it must also be licensed under the AGPL
 - **If you run a modified version as a network service, you must offer its complete source code to the users of that service** (AGPL §13)
-- **You must preserve author attribution and mark modified versions as modified** — required additional terms under AGPL §7, see [NOTICE](NOTICE) and [Attribution](#attribution)
+- **You must preserve author attribution and mark modified versions as modified**, required additional terms under AGPL §7, see [NOTICE](NOTICE) and [Attribution](#attribution)
 
 That last point is the whole reason for choosing the AGPL: other FRC teams are welcome to run SprocketStats and adapt it to their own workflows, and improvements made to a hosted deployment stay available to the community rather than disappearing behind a server.
 
-The software comes with **no warranty** — see sections 15–17 of the [LICENSE](LICENSE).
+**Running your own instance?** See [SELF_HOSTING.md](SELF_HOSTING.md),  fork to working deployment in about 90 minutes, entirely on free tiers.
+
+The software comes with **no warranty**, see sections 15–17 of the [LICENSE](LICENSE).
 
 Other teams and individuals are genuinely welcome to use SprocketStats or contribute to it. Questions, collaboration, or a commercial license that isn't the AGPL: [me@markwu.org](mailto:me@markwu.org).
 
@@ -101,7 +102,7 @@ Inquiries about collaboration, contributions, or alternative licensing terms:
 
 Attribution is a **required term**, not a courtesy. Under Section 7 of the AGPL, SprocketStats carries additional terms set out in [NOTICE](NOTICE):
 
-- **You must preserve the attribution notice** — project name, copyright line, the credit to the **Team Sprocket (FRC 3473) Scouting Subteam**, and a link to this repository — in copies, modified versions, source distributions, and any legal-notices screen your deployment shows
+- **You must preserve the attribution notice**, project name, copyright line, the credit to the **Team Sprocket (FRC 3473) Scouting Subteam**, and a link to this repository, in copies, modified versions, source distributions, and any legal-notices screen your deployment shows
 - **Modified versions must be clearly marked as modified**, so users can tell your version from the original
 - **You may not imply endorsement** by SprocketStats' authors or Team 3473
 
