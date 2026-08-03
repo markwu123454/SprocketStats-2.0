@@ -29,6 +29,11 @@ class VerifyIdResponse(BaseModel):
     status: Literal["checked_in", "checked_out"]
 
 
+class VerifyCheckinCodeRequest(BaseModel):
+    member_code: str = Field(min_length=1)
+    admin_code: str = Field(min_length=1)
+
+
 def _assert_active_user(user: dict) -> None:
     if not user["onboarding_complete"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Onboarding incomplete")
@@ -123,6 +128,32 @@ async def verify_id(
 
     return VerifyIdResponse(
         name=user["display_name"] or user["given_name"] or "Unknown User",
+        status=attendance_status,
+    )
+
+
+@router.post("/verify_checkin_code", response_model=VerifyIdResponse)
+async def verify_checkin_code(
+    body: VerifyCheckinCodeRequest,
+    _: dict = Depends(require_verified_kiosk),
+) -> VerifyIdResponse:
+    admin = await db.get_user_by_offline_code(body.admin_code)
+    if admin is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin code")
+    _assert_active_user(admin)
+    _assert_kiosk_role(admin)
+
+    member = await db.get_user_by_offline_code(body.member_code)
+    if member is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    _assert_active_user(member)
+
+    attendance_status = await db.toggle_kiosk_attendance(member["id"])
+    if attendance_status is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+
+    return VerifyIdResponse(
+        name=member["display_name"] or member["given_name"] or "Unknown User",
         status=attendance_status,
     )
 
