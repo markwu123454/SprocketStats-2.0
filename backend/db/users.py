@@ -41,6 +41,18 @@ async def get_user(user_id: str) -> asyncpg.Record | None:
             raise HTTPException(status_code=500, detail="Failed to fetch user")
 
 
+async def get_user_by_offline_code(offline_code: str) -> asyncpg.Record | None:
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow(
+                "SELECT * FROM users WHERE offline_code = $1",
+                offline_code,
+            )
+        except Exception as e:
+            logger.error("get_user_by_offline_code failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to fetch user")
+
+
 async def update_user_onboarding(
     user_id: str, display_name: str, role: str, grade: str | None, team_year: str | None
 ) -> asyncpg.Record:
@@ -244,6 +256,7 @@ async def unban_user(user_id: str) -> asyncpg.Record | None:
 __all__ = [
     "upsert_user",
     "get_user",
+    "get_user_by_offline_code",
     "update_user_onboarding",
     "load_all_account_state",
     "get_users_by_fields",

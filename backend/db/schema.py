@@ -5,10 +5,130 @@ from .connection import DB_NAME, db_connection
 logger = logging.getLogger(__name__)
 
 
+async def _create_offline_code_functions(conn) -> None:
+    """Install the checksum helpers required by ``users.offline_code``."""
+    await conn.execute("""
+        CREATE OR REPLACE FUNCTION public.damm_check(digits TEXT)
+        RETURNS INTEGER
+        LANGUAGE plpgsql
+        IMMUTABLE STRICT
+        AS $function$
+        DECLARE
+            m INTEGER[][] := ARRAY[
+                [0,3,1,7,5,9,8,6,4,2],
+                [7,0,9,2,1,5,4,8,6,3],
+                [4,2,0,6,8,7,1,3,5,9],
+                [1,7,5,0,9,8,3,4,2,6],
+                [6,1,2,3,0,4,5,9,7,8],
+                [3,6,7,4,2,0,9,5,8,1],
+                [5,8,6,9,7,2,0,1,3,4],
+                [8,9,4,5,3,6,2,0,1,7],
+                [9,4,3,8,6,1,7,2,0,5],
+                [2,5,8,1,4,3,6,7,9,0]
+            ];
+            interim INTEGER := 0;
+            i INTEGER;
+        BEGIN
+            FOR i IN 1..length(digits) LOOP
+                interim := m[interim + 1][substr(digits, i, 1)::INTEGER + 1];
+            END LOOP;
+            RETURN interim;
+        END
+        $function$
+    """)
+    await conn.execute("""
+        CREATE OR REPLACE FUNCTION public.is_valid_offline_code(code TEXT)
+        RETURNS BOOLEAN
+        LANGUAGE plpgsql
+        IMMUTABLE
+        AS $function$
+        DECLARE
+            id_str TEXT;
+            r0 TEXT;
+            r1 TEXT;
+            r2 TEXT;
+            c0 INTEGER;
+            c1 INTEGER;
+            c2 INTEGER;
+        BEGIN
+            IF code !~ '^[0-9]{6}$' THEN
+                RETURN false;
+            END IF;
+
+            id_str := substr(code, 1, 3);
+            c0 := substr(code, 4, 1)::INTEGER;
+            c1 := substr(code, 5, 1)::INTEGER;
+            c2 := substr(code, 6, 1)::INTEGER;
+
+            r0 := substr(id_str, 1, 1) || substr(id_str, 2, 1) || substr(id_str, 3, 1);
+            r1 := substr(id_str, 2, 1) || substr(id_str, 3, 1) || substr(id_str, 1, 1);
+            r2 := substr(id_str, 3, 1) || substr(id_str, 1, 1) || substr(id_str, 2, 1);
+
+            RETURN damm_check(r0) = c0
+                AND damm_check(r1) = c1
+                AND damm_check(r2) = c2;
+        END
+        $function$
+    """)
+    await conn.execute("""
+        CREATE OR REPLACE FUNCTION public.gen_offline_code()
+        RETURNS TEXT
+        LANGUAGE plpgsql
+        AS $function$
+        DECLARE
+            id_str TEXT;
+            r0 TEXT;
+            r1 TEXT;
+            r2 TEXT;
+            code TEXT;
+            exists_already BOOLEAN;
+        BEGIN
+            LOOP
+                id_str := lpad(floor(random() * 1000)::INTEGER::TEXT, 3, '0');
+                r0 := substr(id_str, 1, 1) || substr(id_str, 2, 1) || substr(id_str, 3, 1);
+                r1 := substr(id_str, 2, 1) || substr(id_str, 3, 1) || substr(id_str, 1, 1);
+                r2 := substr(id_str, 3, 1) || substr(id_str, 1, 1) || substr(id_str, 2, 1);
+
+                code := id_str
+                    || damm_check(r0)::TEXT
+                    || damm_check(r1)::TEXT
+                    || damm_check(r2)::TEXT;
+
+                SELECT EXISTS(SELECT 1 FROM users WHERE offline_code = code)
+                INTO exists_already;
+
+                EXIT WHEN NOT exists_already;
+            END LOOP;
+
+            RETURN code;
+        END
+        $function$
+    """)
+
+
+async def _add_users_constraint(conn, name: str, definition: str) -> None:
+    """Add a named users constraint when an older database does not have it."""
+    await conn.execute(f"""
+        DO $migration$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conrelid = 'public.users'::regclass
+                  AND conname = '{name}'
+            ) THEN
+                ALTER TABLE users ADD CONSTRAINT {name} {definition};
+            END IF;
+        END
+        $migration$
+    """)
+
+
 async def init_db():
     async with db_connection(DB_NAME) as conn:
         try:
             async with conn.transaction():
+                await _create_offline_code_functions(conn)
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         id                  TEXT        PRIMARY KEY,
@@ -16,15 +136,29 @@ async def init_db():
                         name                TEXT,
                         given_name          TEXT,
                         picture             TEXT,
+                        created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        last_login          TIMESTAMPTZ NOT NULL DEFAULT now(),
                         display_name        TEXT,
                         role                TEXT,
+                        onboarding_complete BOOLEAN     NOT NULL DEFAULT false,
                         grade               TEXT,
                         team_year           TEXT,
-                        onboarding_complete BOOLEAN     NOT NULL DEFAULT false,
                         approved_by         TEXT        REFERENCES users(id),
                         banned_at           TIMESTAMPTZ,
-                        created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-                        last_login          TIMESTAMPTZ NOT NULL DEFAULT now()
+                        offline_code        TEXT        NOT NULL UNIQUE DEFAULT gen_offline_code(),
+                        CONSTRAINT onboarded_fields_present CHECK (
+                            NOT onboarding_complete
+                            OR (
+                                name IS NOT NULL
+                                AND given_name IS NOT NULL
+                                AND display_name IS NOT NULL
+                                AND role IS NOT NULL
+                            )
+                        ),
+                        CONSTRAINT users_offline_code_format CHECK (
+                            offline_code ~ '^[0-9]{6}$'
+                            AND is_valid_offline_code(offline_code)
+                        )
                     )
                 """)
                 await conn.execute("""
@@ -44,7 +178,7 @@ async def init_db():
                         checkin_time  TIMESTAMPTZ NOT NULL DEFAULT now(),
                         source        TEXT,
                         created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-                        checkout_time TIMESTAMPTZ NOT NULL DEFAULT now()
+                        checkout_time TIMESTAMPTZ
                     )
                 """)
                 await conn.execute("CREATE INDEX IF NOT EXISTS attendance_user_id_idx ON attendance (user_id)")
@@ -53,6 +187,10 @@ async def init_db():
                 )
                 await conn.execute(
                     "CREATE INDEX IF NOT EXISTS attendance_timestamp_pst_idx ON attendance (checkin_time, checkout_time)"
+                )
+                await conn.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS attendance_one_open_session_idx "
+                    "ON attendance (user_id) WHERE checkout_time IS NULL"
                 )
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS notifications (
@@ -149,6 +287,7 @@ async def run_migrations():
     """Lightweight migrations that run on every startup, independent of init_db()."""
     async with db_connection(DB_NAME) as conn:
         try:
+            await _create_offline_code_functions(conn)
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS given_name TEXT")
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT")
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT")
@@ -157,8 +296,49 @@ async def run_migrations():
             await conn.execute(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN NOT NULL DEFAULT false"
             )
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS offline_code TEXT")
+            await conn.execute("ALTER TABLE users ALTER COLUMN offline_code SET DEFAULT gen_offline_code()")
+            # Backfill one row per statement so gen_offline_code() sees every code
+            # assigned earlier in the loop before choosing the next value.
+            await conn.execute("""
+                DO $migration$
+                DECLARE
+                    user_row RECORD;
+                BEGIN
+                    FOR user_row IN SELECT id FROM users WHERE offline_code IS NULL LOOP
+                        UPDATE users
+                        SET offline_code = gen_offline_code()
+                        WHERE id = user_row.id;
+                    END LOOP;
+                END
+                $migration$
+            """)
+            await conn.execute("ALTER TABLE users ALTER COLUMN offline_code SET NOT NULL")
+            await _add_users_constraint(conn, "users_offline_code_key", "UNIQUE (offline_code)")
+            # Remove the earlier nullable-column implementation after the full
+            # UNIQUE constraint is in place; otherwise upgraded databases carry
+            # two indexes enforcing the same values.
+            await conn.execute("DROP INDEX IF EXISTS users_offline_code_unique_idx")
+            await _add_users_constraint(
+                conn,
+                "onboarded_fields_present",
+                "CHECK (NOT onboarding_complete OR "
+                "(name IS NOT NULL AND given_name IS NOT NULL "
+                "AND display_name IS NOT NULL AND role IS NOT NULL))",
+            )
+            await _add_users_constraint(
+                conn,
+                "users_offline_code_format",
+                "CHECK (offline_code ~ '^[0-9]{6}$' AND is_valid_offline_code(offline_code))",
+            )
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_by TEXT REFERENCES users(id)")
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_at TIMESTAMPTZ")
+            await conn.execute("ALTER TABLE attendance ALTER COLUMN checkout_time DROP NOT NULL")
+            await conn.execute("ALTER TABLE attendance ALTER COLUMN checkout_time DROP DEFAULT")
+            await conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS attendance_one_open_session_idx "
+                "ON attendance (user_id) WHERE checkout_time IS NULL"
+            )
             # Link functionality was removed from push notifications -- drop the
             # now-unused column from any table created before this change.
             await conn.execute("ALTER TABLE push_messages DROP COLUMN IF EXISTS link")
