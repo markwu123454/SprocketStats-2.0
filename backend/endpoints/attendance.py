@@ -33,6 +33,7 @@ async def get_leaderboard(user: dict = Depends(get_current_user)):
     # entries for the same user are merged with a single sweep to avoid
     # double-counting time that was logged more than once.
     rows = await db.list_all_attendance()
+    now = datetime.now(timezone.utc)
 
     names: dict[str, str] = {}
     totals: dict[str, float] = {}
@@ -45,7 +46,8 @@ async def get_leaderboard(user: dict = Depends(get_current_user)):
     for row in rows:
         uid = row["user_id"]
         names[uid] = row["display_name"] or row["given_name"] or "Unknown User"
-        start, end = row["checkin_time"], row["checkout_time"]
+        start = row["checkin_time"]
+        end = row["checkout_time"] or now
 
         current = open_interval.get(uid)
         if current is None:
