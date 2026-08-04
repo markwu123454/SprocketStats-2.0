@@ -105,9 +105,18 @@ app.add_middleware(
     same_site="lax",
 )
 
+if os.environ.get("ENV") == "development":
+    cors_origins = ["*"]
+else:
+    cors_origins = [
+        origin.strip()
+        for origin in os.environ["CORS_ORIGINS"].split(",")
+        if origin.strip()
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if os.environ.get("ENV") == "development" else [os.environ["CORS_ORIGIN"]],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
