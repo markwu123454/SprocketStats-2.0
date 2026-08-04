@@ -105,8 +105,9 @@ async def verify_code(body: VerifyCodeRequest, response: Response) -> bool:
         key=KIOSK_COOKIE_NAME,
         value=_issue_kiosk_token(user["id"]),
         httponly=True,
-        secure=os.environ.get("ENV") == "production",
-        samesite="lax",
+        secure=True,
+        samesite="none",
+        max_age=60 * 60 * 24 * 360,
         path="/",
     )
     return True
