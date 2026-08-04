@@ -60,7 +60,7 @@ def _issue_kiosk_token(user_id: str) -> str:
 
 
 async def require_verified_kiosk(
-    kiosk_auth: str | None = Cookie(default=None),
+        kiosk_auth: str | None = Cookie(default=None),
 ) -> dict:
     if kiosk_auth is None:
         raise HTTPException(
@@ -112,10 +112,22 @@ async def verify_code(body: VerifyCodeRequest, response: Response) -> bool:
     return True
 
 
+@router.post("/lookup_member")
+async def lookup_member(
+        body: VerifyCodeRequest,
+        _: dict = Depends(require_verified_kiosk),
+) -> dict:
+    user = await db.get_user_by_offline_code(body.code)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    _assert_active_user(user)
+    return {"name": user["display_name"] or user["given_name"] or "Unknown User"}
+
+
 @router.post("/verify_id", response_model=VerifyIdResponse)
 async def verify_id(
-    body: VerifyIdRequest,
-    _: dict = Depends(require_verified_kiosk),
+        body: VerifyIdRequest,
+        _: dict = Depends(require_verified_kiosk),
 ) -> VerifyIdResponse:
     user = await db.get_user(body.id)
     if user is None:
@@ -134,8 +146,8 @@ async def verify_id(
 
 @router.post("/verify_checkin_code", response_model=VerifyIdResponse)
 async def verify_checkin_code(
-    body: VerifyCheckinCodeRequest,
-    _: dict = Depends(require_verified_kiosk),
+        body: VerifyCheckinCodeRequest,
+        _: dict = Depends(require_verified_kiosk),
 ) -> VerifyIdResponse:
     admin = await db.get_user_by_offline_code(body.admin_code)
     if admin is None:
