@@ -47,26 +47,31 @@ async def _create_offline_code_functions(conn) -> None:
             r0 TEXT;
             r1 TEXT;
             r2 TEXT;
+            r3 TEXT;
             c0 INTEGER;
             c1 INTEGER;
             c2 INTEGER;
+            c3 INTEGER;
         BEGIN
-            IF code !~ '^[0-9]{6}$' THEN
+            IF code !~ '^[0-9]{8}$' THEN
                 RETURN false;
             END IF;
 
-            id_str := substr(code, 1, 3);
-            c0 := substr(code, 4, 1)::INTEGER;
-            c1 := substr(code, 5, 1)::INTEGER;
-            c2 := substr(code, 6, 1)::INTEGER;
+            id_str := substr(code, 1, 4);
+            c0 := substr(code, 5, 1)::INTEGER;
+            c1 := substr(code, 6, 1)::INTEGER;
+            c2 := substr(code, 7, 1)::INTEGER;
+            c3 := substr(code, 8, 1)::INTEGER;
 
-            r0 := substr(id_str, 1, 1) || substr(id_str, 2, 1) || substr(id_str, 3, 1);
-            r1 := substr(id_str, 2, 1) || substr(id_str, 3, 1) || substr(id_str, 1, 1);
-            r2 := substr(id_str, 3, 1) || substr(id_str, 1, 1) || substr(id_str, 2, 1);
+            r0 := substr(id_str, 1, 1) || substr(id_str, 2, 1) || substr(id_str, 3, 1) || substr(id_str, 4, 1);
+            r1 := substr(id_str, 2, 1) || substr(id_str, 3, 1) || substr(id_str, 4, 1) || substr(id_str, 1, 1);
+            r2 := substr(id_str, 3, 1) || substr(id_str, 4, 1) || substr(id_str, 1, 1) || substr(id_str, 2, 1);
+            r3 := substr(id_str, 4, 1) || substr(id_str, 1, 1) || substr(id_str, 2, 1) || substr(id_str, 3, 1);
 
             RETURN damm_check(r0) = c0
                 AND damm_check(r1) = c1
-                AND damm_check(r2) = c2;
+                AND damm_check(r2) = c2
+                AND damm_check(r3) = c3;
         END
         $function$
     """)
@@ -80,19 +85,22 @@ async def _create_offline_code_functions(conn) -> None:
             r0 TEXT;
             r1 TEXT;
             r2 TEXT;
+            r3 TEXT;
             code TEXT;
             exists_already BOOLEAN;
         BEGIN
             LOOP
-                id_str := lpad(floor(random() * 1000)::INTEGER::TEXT, 3, '0');
-                r0 := substr(id_str, 1, 1) || substr(id_str, 2, 1) || substr(id_str, 3, 1);
-                r1 := substr(id_str, 2, 1) || substr(id_str, 3, 1) || substr(id_str, 1, 1);
-                r2 := substr(id_str, 3, 1) || substr(id_str, 1, 1) || substr(id_str, 2, 1);
+                id_str := lpad(floor(random() * 10000)::INTEGER::TEXT, 4, '0');
+                r0 := substr(id_str, 1, 1) || substr(id_str, 2, 1) || substr(id_str, 3, 1) || substr(id_str, 4, 1);
+                r1 := substr(id_str, 2, 1) || substr(id_str, 3, 1) || substr(id_str, 4, 1) || substr(id_str, 1, 1);
+                r2 := substr(id_str, 3, 1) || substr(id_str, 4, 1) || substr(id_str, 1, 1) || substr(id_str, 2, 1);
+                r3 := substr(id_str, 4, 1) || substr(id_str, 1, 1) || substr(id_str, 2, 1) || substr(id_str, 3, 1);
 
                 code := id_str
                     || damm_check(r0)::TEXT
                     || damm_check(r1)::TEXT
-                    || damm_check(r2)::TEXT;
+                    || damm_check(r2)::TEXT
+                    || damm_check(r3)::TEXT;
 
                 SELECT EXISTS(SELECT 1 FROM users WHERE offline_code = code)
                 INTO exists_already;
@@ -156,7 +164,7 @@ async def init_db():
                             )
                         ),
                         CONSTRAINT users_offline_code_format CHECK (
-                            offline_code ~ '^[0-9]{6}$'
+                            offline_code ~ '^[0-9]{8}$'
                             AND is_valid_offline_code(offline_code)
                         )
                     )
@@ -298,6 +306,7 @@ async def run_migrations():
             )
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS offline_code TEXT")
             await conn.execute("ALTER TABLE users ALTER COLUMN offline_code SET DEFAULT gen_offline_code()")
+            await conn.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_offline_code_format")
             # Backfill one row per statement so gen_offline_code() sees every code
             # assigned earlier in the loop before choosing the next value.
             await conn.execute("""
@@ -305,7 +314,12 @@ async def run_migrations():
                 DECLARE
                     user_row RECORD;
                 BEGIN
-                    FOR user_row IN SELECT id FROM users WHERE offline_code IS NULL LOOP
+                    FOR user_row IN
+                        SELECT id
+                        FROM users
+                        WHERE offline_code IS NULL
+                           OR NOT is_valid_offline_code(offline_code)
+                    LOOP
                         UPDATE users
                         SET offline_code = gen_offline_code()
                         WHERE id = user_row.id;
@@ -329,7 +343,7 @@ async def run_migrations():
             await _add_users_constraint(
                 conn,
                 "users_offline_code_format",
-                "CHECK (offline_code ~ '^[0-9]{6}$' AND is_valid_offline_code(offline_code))",
+                "CHECK (offline_code ~ '^[0-9]{8}$' AND is_valid_offline_code(offline_code))",
             )
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_by TEXT REFERENCES users(id)")
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_at TIMESTAMPTZ")

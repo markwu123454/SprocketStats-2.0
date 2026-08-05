@@ -156,3 +156,101 @@
         content: var(--theme-season-tag);
     }
 }
+
+@layer components {
+    .legal-copy {
+        color: var(--theme-subtext-color);
+        font-size: 0.9375rem;
+        line-height: 1.75;
+    }
+
+    .legal-copy > * + * {
+        margin-top: 1rem;
+    }
+
+    .legal-copy ul {
+        list-style: none;
+        margin-top: 1rem;
+        padding-left: 0;
+    }
+
+    .legal-copy li {
+        position: relative;
+        padding-left: 1.25rem;
+    }
+
+    .legal-copy li + li {
+        margin-top: 0.7rem;
+    }
+
+    .legal-copy li::before {
+        background: var(--theme-text-contrast);
+        border-radius: 9999px;
+        content: "";
+        height: 0.35rem;
+        left: 0;
+        position: absolute;
+        top: 0.7rem;
+        width: 0.35rem;
+    }
+
+    .legal-copy strong {
+        color: var(--theme-h1-color);
+        font-weight: 650;
+    }
+
+    .legal-copy a {
+        color: var(--theme-text-contrast);
+        font-weight: 600;
+        text-decoration: underline;
+        text-decoration-color: color-mix(in srgb, var(--theme-text-contrast) 35%, transparent);
+        text-underline-offset: 0.2rem;
+    }
+
+    .legal-copy a:hover {
+        text-decoration-color: currentColor;
+    }
+
+    .legal-table-wrap {
+        border: 1px solid var(--theme-border);
+        border-radius: 0.75rem;
+        margin-top: 1.25rem;
+        overflow-x: auto;
+    }
+
+    .legal-copy table {
+        border-collapse: collapse;
+        min-width: 36rem;
+        width: 100%;
+    }
+
+    .legal-copy th,
+    .legal-copy td {
+        padding: 0.85rem 1rem;
+        text-align: left;
+        vertical-align: top;
+    }
+
+    .legal-copy th {
+        background: color-mix(in srgb, var(--theme-bg) 70%, transparent);
+        color: var(--theme-h1-color);
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .legal-copy th:first-child,
+    .legal-copy td:first-child {
+        width: 12rem;
+    }
+
+    .legal-copy tbody tr + tr {
+        border-top: 1px solid var(--theme-border);
+    }
+
+    .legal-copy td:first-child {
+        color: var(--theme-h1-color);
+        font-weight: 600;
+    }
+}
