@@ -26,8 +26,8 @@ const NotificationDetailPage = lazy(() => import("@/pages/control/NotificationDe
 const PushNotificationsPage = lazy(() => import("@/pages/control/PushNotificationsPage"))
 const SettingPage    = lazy(() => import("@/pages/SettingPage"))
 const NotFoundPage   = lazy(() => import("@/pages/NotFoundPage"))
-const PrivacyPage    = lazy(() => import("@/pages/Privacy"))
-const TermsPage      = lazy(() => import("@/pages/Terms"))
+const PrivacyPage    = lazy(() => import("@/pages/PrivacyPage"))
+const TermsPage      = lazy(() => import("@/pages/TermsPage"))
 
 function Protected({children}: {children: ReactNode}) {
     return <AuthWrapper>{children}</AuthWrapper>
