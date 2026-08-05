@@ -115,8 +115,7 @@ const sections: LegalSection[] = [
                 <p>
                     TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE TEAM, ITS MEMBERS, MENTORS, PARENT VOLUNTEERS, SPONSORS, AND AFFILIATED
                     SCHOOLS AND ORGANIZATIONS WILL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE
-                    DAMAGES, OR FOR ANY LOSS OF DATA, COMPETITIVE ADVANTAGE, OR MATCH OUTCOME, ARISING FROM YOUR USE OF THE SERVICE. Our
-                    total aggregate liability for any claim relating to the Service will not exceed one hundred U.S. dollars (US $100.00).
+                    DAMAGES, OR FOR ANY LOSS OF DATA, COMPETITIVE ADVANTAGE, OR MATCH OUTCOME, ARISING FROM YOUR USE OF THE SERVICE.
                 </p>
                 <p>Some jurisdictions do not allow certain limitations, so parts of this section may not apply to you.</p>
             </>
