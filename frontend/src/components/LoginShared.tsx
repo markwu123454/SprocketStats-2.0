@@ -157,11 +157,12 @@ const LICENSE_URL   = `${REPO_URL}/blob/main/LICENSE`;
 const SELF_HOST_URL = `${REPO_URL}/blob/main/SELF_HOSTING.md`;
 
 function FooterLink({ href, children }: { href: string; children: React.ReactNode }) {
+    const opensNewTab = href.startsWith("http")
     return (
         <a
             href={href}
-            target="_blank"
-            rel="noopener noreferrer"
+            target={opensNewTab ? "_blank" : undefined}
+            rel={opensNewTab ? "noopener noreferrer" : undefined}
             className="theme-h1-color font-medium hover:underline"
         >
             {children}
@@ -187,6 +188,11 @@ export function LegalFooter() {
             <p className="m-0 opacity-70">
                 Free software under AGPL-3.0-or-later, with no warranty.
             </p>
+            <p className="m-0 mt-1">
+                <FooterLink href="/privacy">Privacy</FooterLink>
+                <span className="mx-2 opacity-40">·</span>
+                <FooterLink href="/terms">Terms</FooterLink>
+            </p>
         </div>
     );
 }
@@ -194,11 +200,11 @@ export function LegalFooter() {
 export function LegalFooterCompact() {
     return (
         <p className="m-0 text-[11px] leading-none theme-subtext-color opacity-70 text-center">
+            <FooterLink href="/privacy">Privacy</FooterLink>
+            <span className="mx-1.5 opacity-40">·</span>
+            <FooterLink href="/terms">Terms</FooterLink>
+            <span className="mx-1.5 opacity-40">·</span>
             <FooterLink href={LICENSE_URL}>AGPL-3.0</FooterLink>
-            <span className="mx-1.5 opacity-40">·</span>
-            <FooterLink href={REPO_URL}>Source</FooterLink>
-            <span className="mx-1.5 opacity-40">·</span>
-            <FooterLink href={SELF_HOST_URL}>Run your own</FooterLink>
         </p>
     );
 }

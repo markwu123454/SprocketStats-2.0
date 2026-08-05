@@ -26,6 +26,8 @@ const NotificationDetailPage = lazy(() => import("@/pages/control/NotificationDe
 const PushNotificationsPage = lazy(() => import("@/pages/control/PushNotificationsPage"))
 const SettingPage    = lazy(() => import("@/pages/SettingPage"))
 const NotFoundPage   = lazy(() => import("@/pages/NotFoundPage"))
+const PrivacyPage    = lazy(() => import("@/pages/Privacy"))
+const TermsPage      = lazy(() => import("@/pages/Terms"))
 
 function Protected({children}: {children: ReactNode}) {
     return <AuthWrapper>{children}</AuthWrapper>
@@ -56,6 +58,8 @@ export default function App() {
                                 <Routes>
                                     <Route path="/" element={<LoginPageRouter/>}/>
                                     <Route path="/onboarding" element={<OnboardingPageRouter/>}/>
+                                    <Route path="/privacy" element={<PrivacyPage/>}/>
+                                    <Route path="/terms" element={<TermsPage/>}/>
 
                                     {/* One guard for the whole shell: AuthWrapper gates
                                         AppShell + every child page, so all of them are
