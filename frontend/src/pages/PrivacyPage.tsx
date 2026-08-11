@@ -25,11 +25,12 @@ const sections: LegalSection[] = [
         title: "Information we collect",
         content: (
             <>
-                <p><strong>2.1 Account information.</strong> When Team leadership creates your account, we store an identifier such as your name or initials, a username, a Team-issued or personal email address, your role (scout, lead, mentor, admin), and a third-party sign-in identifier.</p>
+                <p><strong>2.1 Account information.</strong> When Team leadership creates your account, we store your name, a Team-issued or personal email address, your Google account profile picture, your grade level, your role (scout, lead, mentor, admin), and a third-party sign-in identifier.</p>
                 <p><strong>2.2 Content you submit.</strong> Scouting entries, match observations, notes, pick-list rankings, and any images you upload — along with a timestamp and the account that submitted them.</p>
                 <p><strong>2.3 Technical and usage data.</strong> Log data such as IP address, browser and device type, operating system, pages viewed, and time of access. This is used for security, debugging, and load management.</p>
                 <p><strong>2.4 Data stored on your device.</strong> SprocketStats is a Progressive Web App. It uses browser storage (IndexedDB, localStorage, cache storage, and session cookies) to keep you signed in, cache the app for offline use, and hold scouting entries locally until they sync. This data lives on your device and is under your control — clearing site data removes it.</p>
                 <p><strong>2.5 Third-party competition data.</strong> We import public match and team data from sources such as FIRST, The Blue Alliance, and Statbotics. This is public competition data, not personal information you provide to us.</p>
+                <p><strong>2.6 AI training data.</strong> To improve automated scouting tools, we use competition images of robots for training computer-vision models. As of the date of this policy, these images are drawn from match footage FIRST itself publishes publicly on its own channels, not footage captured by the Team. These images may incidentally show people in the background, but we do not identify, label, or attempt to identify any person in them. We plan to begin using footage captured directly by the Team in a future season, and will update this section to describe how that footage is handled before that happens. Images are stored in our own cloud storage and made available to our labeling vendor for annotation. Labeling records are linked to the account of the student who performed the labeling, including that account's email address, to help us identify low-quality data and underperforming labelers.</p>
             </>
         ),
     },
@@ -43,6 +44,9 @@ const sections: LegalSection[] = [
                     <li>Authenticate you and keep your session secure.</li>
                     <li>Store, sync, and display scouting and match data.</li>
                     <li>Generate statistics, rankings, and strategy analysis for the Team.</li>
+                    <li>Assign roles and responsibilities within the Team, including competition rosters, based in part on your grade level.</li>
+                    <li>Train and improve computer-vision models used to support scouting, using labeled competition imagery linked to the contributing account to help us identify low-quality data and underperforming labelers.</li>
+                    <li>Display your profile picture back to you within the Service; your profile picture is not shown to other users.</li>
                     <li>Diagnose bugs, monitor performance, and investigate abuse or unauthorized access.</li>
                     <li>Communicate with you about the Service.</li>
                 </ul>
@@ -74,6 +78,10 @@ const sections: LegalSection[] = [
                         <tbody>
                             <tr><td>Team members and mentors</td><td>Scouting entries are visible to other authorized users, including who submitted them</td></tr>
                             <tr><td>Service providers</td><td>Hosting, database, and authentication vendors — currently NeonDB, Fly.io, and Vercel — who process data on our instructions</td></tr>
+                            <tr><td>Cloudflare (R2)</td><td>Stores images and other large files — including uploaded scouting images, competition footage, and training/labeling images — in our own cloud storage</td></tr>
+                            <tr><td>Google (Sign-In)</td><td>Authenticates you when you sign in with your school email; Google processes your basic profile information (name, email address) to verify your identity</td></tr>
+                            <tr><td>HumanSignal</td><td>Provides our Label Studio annotation tool, used to label competition images for AI training; processes the labeling student's email as part of that tooling</td></tr>
+                            <tr><td>Google Cloud</td><td>Processes labeled training images to train computer-vision models; the associated account email is included with this data to help identify low-quality labels or underperforming labelers. We do not configure Google Cloud to retain this data after processing.</td></tr>
                             <tr><td>Diamond Bar High School</td><td>Where required by school or district policy, or as part of Team supervision</td></tr>
                             <tr><td>Legal</td><td>When required by law, subpoena, or to protect the rights and safety of users</td></tr>
                         </tbody>
@@ -88,7 +96,8 @@ const sections: LegalSection[] = [
         title: "Data retention",
         content: (
             <ul>
-                <li><strong>Scouting and match data:</strong> retained for the current season and archived for historical comparison across seasons. Archived data may be retained indefinitely; where practical, we de-identify it first.</li>
+                <li><strong>Scouting and match data:</strong> retained for the current season and archived for historical comparison across seasons. Archived data may be retained indefinitely, subject to the operational limits described in our Terms of Service — data may be deleted between seasons or at other times, and retention is not guaranteed; where practical, we de-identify archived data first.</li>
+                <li><strong>AI training and labeling data:</strong> images are retained indefinitely in our own cloud storage; we periodically delete older data at our discretion, without a fixed schedule. Our labeling vendor accesses this data to provide annotation tooling, and we do not have a contractual guarantee governing what it separately retains beyond that access. We do not configure or instruct our cloud compute provider to retain this data after it is used to train a model, though we do not have a contractual guarantee governing that provider's own retention practices either.</li>
                 <li><strong>Account records:</strong> retained while you are an active member.</li>
                 <li><strong>Server logs:</strong> retained for approximately 30–90 days.</li>
             </ul>
@@ -101,7 +110,7 @@ const sections: LegalSection[] = [
             <>
                 <p>Most SprocketStats users are between 13 and 18 years old and use the Service as part of a school-affiliated robotics team.</p>
                 <p><strong>Under 13.</strong> SprocketStats is not directed to children under 13, and we do not knowingly create accounts for them. If a member under 13 needs access, we require verifiable parental consent before an account is issued, consistent with the Children's Online Privacy Protection Act (COPPA). If we learn we have collected personal information from a child under 13 without that consent, we will delete it promptly.</p>
-                <p><strong>13–17.</strong> Accounts are created by Team leadership with parental awareness through the Team's standard registration and consent process. Parents or guardians may contact us at <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> to review, correct, or request their student's information.</p>
+                <p><strong>13–17.</strong> Team membership is understood to include parental permission for use of Team tools, including SprocketStats, given as part of joining Team Sprocket. Team leadership then creates your account. Parents or guardians may contact us at <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> to review, correct, or ask about their student's information.</p>
                 <p><strong>No advertising or sale.</strong> We do not sell student information, use it for targeted advertising, or build profiles for non-educational purposes.</p>
             </>
         ),
@@ -127,8 +136,8 @@ const sections: LegalSection[] = [
                 <ul>
                     <li>Access the information associated with your account.</li>
                     <li>Correct inaccurate account information.</li>
-                    <li>Delete your account and associated personal information, subject to our need to retain aggregate scouting data for Team use (we will de-identify your submissions where deletion is not practical).</li>
-                    <li>Clear local data by clearing site data in your browser or uninstalling the PWA.</li>
+                    <li>Delete your account and associated personal information. We will make reasonable efforts to delete or de-identify your submissions and labeling records across the systems we directly control, subject to our need to retain aggregate scouting data for Team use. Because some data may persist in backups, logs, or copies already synced to a device before deletion, we cannot guarantee complete removal from every system.</li>
+                    <li>Clear local data on any device by clearing site data in your browser or uninstalling the PWA — deleting your account does not automatically clear data already synced to a device.</li>
                     <li>Object or restrict certain processing, and request a copy of your data in a portable format, where those rights apply to you.</li>
                 </ul>
                 <p>
@@ -191,8 +200,8 @@ export default function PrivacyPage() {
             eyebrow="Team Sprocket · FRC 3473"
             title="Privacy Policy"
             summary="SprocketStats — sprocketstats.com"
-            effectiveDate="8/4/2026"
-            lastUpdated="8/4/2026"
+            effectiveDate="8/10/2026"
+            lastUpdated="8/10/2026"
             contactEmail={CONTACT_EMAIL}
             sections={sections}
         />
