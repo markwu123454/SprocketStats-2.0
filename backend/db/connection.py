@@ -43,7 +43,7 @@ async def _get_pool(db: str) -> asyncpg.Pool:
 
         pool = await asyncpg.create_pool(
             dsn=dsn,
-            min_size=1,
+            min_size=0,
             max_size=20,
             init=_setup_codecs,
             ssl=ssl.create_default_context(cafile=certifi.where()),
