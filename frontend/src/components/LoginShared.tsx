@@ -142,14 +142,15 @@ export function SponsorFooter() {
 }
 
 /* ── Legal footer ────────────────────────────────────────────────
-   Carries the notice required by NOTICE term 1 / AGPL sections 5 and
-   13: attribution, the Team Sprocket credit (preserved as written),
-   the statement of license, absence of warranty, and the offer of
-   Corresponding Source. It leads with what SprocketStats *is* so the
-   block reads as an introduction rather than boilerplate.
+   Short form: attribution + offer of Corresponding Source on line
+   one, license + privacy/terms on line two. The GitHub link is the
+   reachable home for the full NOTICE (Team Sprocket credit, license
+   statement, no-warranty notice) required by NOTICE term 1 / AGPL
+   sections 5 and 13 — it doesn't need to be re-stated verbatim here
+   as long as it stays reachable from the interface.
 
-   LegalFooterCompact is the peek-state stand-in on mobile, where the
-   full block does not fit — the source offer stays one tap away on
+   LegalFooterCompact is the peek-state stand-in on mobile, where even
+   this block does not fit — the source offer stays one tap away on
    every surface.
    ──────────────────────────────────────────────────────────────── */
 const REPO_URL      = "https://github.com/markwu123454/SprocketStats-2.0";
@@ -174,21 +175,14 @@ export function LegalFooter() {
     return (
         <div className="text-[12px] leading-[1.6] theme-subtext-color text-center">
             <p className="m-0 theme-h1-color opacity-90">
-                <span className="font-semibold">SprocketStats</span> — open source scouting and
-                team operations for FRC teams.
-            </p>
-            <p className="m-0 mt-1">
-                <FooterLink href={SELF_HOST_URL}>Run your own →</FooterLink>
+                <span className="font-semibold">SprocketStats</span> —{" "}
+                <FooterLink href={REPO_URL}>GitHub</FooterLink>
                 <span className="mx-2 opacity-40">·</span>
-                <FooterLink href={REPO_URL}>Source →</FooterLink>
+                <FooterLink href={SELF_HOST_URL}>Self-host</FooterLink>
             </p>
-            <p className="m-0 mt-2 opacity-70">
-                © 2025–2026 Mark Wu · Developed by the Team Sprocket (FRC 3473) Scouting Subteam
-            </p>
-            <p className="m-0 opacity-70">
-                Free software under AGPL-3.0-or-later, with no warranty.
-            </p>
-            <p className="m-0 mt-1">
+            <p className="m-0 mt-1 opacity-70">
+                © 2025 Mark Wu · AGPL-3.0
+                <span className="mx-2 opacity-40">·</span>
                 <FooterLink href="/privacy">Privacy</FooterLink>
                 <span className="mx-2 opacity-40">·</span>
                 <FooterLink href="/terms">Terms</FooterLink>
