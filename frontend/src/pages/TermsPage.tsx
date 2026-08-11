@@ -14,9 +14,13 @@ const sections: LegalSection[] = [
                     authorized guests.
                 </p>
                 <p>
-                    SprocketStats is a student-run, non-commercial project. It is <strong>not</strong> affiliated with, endorsed by, or
-                    sponsored by <em>FIRST</em>®, FIRST Robotics Competition, The Blue Alliance, Statbotics, or any other third party
-                    whose data or trademarks may appear on the Site, with the exception of Human Signal.
+                    SprocketStats is a student-run, non-commercial project affiliated with Team 3473. It is <strong>not</strong> affiliated
+                    with, endorsed by, or sponsored by <em>FIRST</em>®, FIRST Robotics Competition, The Blue Alliance, or Statbotics.
+                </p>
+                <p>
+                    SprocketStats is sponsored by HumanSignal, which supports our scouting operation by providing services in kind. That
+                    sponsorship does not give HumanSignal any control over, or role in operating, the Service, and does not make the
+                    Service a commercial offering.
                 </p>
                 <p>
                     Questions about these Terms: <strong><a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a></strong>
@@ -34,8 +38,9 @@ const sections: LegalSection[] = [
                     <a href="/privacy">Privacy Policy</a>. If you do not agree, do not use the Service.
                 </p>
                 <p>
-                    If you are under 18, you may use the Service only with the permission of a parent or legal guardian, and only as
-                    part of your participation in the Team. By using the Service, you confirm you have that permission.
+                    If you are under 18, you may use the Service as part of your participation in Team Sprocket. Joining the Team is
+                    understood to include permission from a parent or legal guardian for your use of Team tools, including
+                    SprocketStats. By using the Service, you confirm that this permission has been given.
                 </p>
             </>
         ),
@@ -78,9 +83,9 @@ const sections: LegalSection[] = [
         title: "Content and data",
         content: (
             <>
-                <p><strong>5.1 Your submissions.</strong> You retain whatever rights you have in the scouting entries, notes, images, and other content you submit ("Submissions"). By submitting, you grant the Team a non-exclusive, worldwide, royalty-free license to store, reproduce, modify, display, and use your Submissions for the purposes of operating the Service and supporting the Team's competition, training, outreach, and archival activities.</p>
+                <p><strong>5.1 Your submissions.</strong> You retain whatever rights you have in the scouting entries, notes, images, and other content you submit ("Submissions"). By submitting, you grant the Team a non-exclusive, worldwide, royalty-free license to store, reproduce, modify, display, and use your Submissions for the purposes of operating the Service and supporting the Team's competition, training, outreach, archival, and machine-learning model training activities. Where we delete or de-identify your Submissions following an account deletion request, this license continues to apply to any copies that persist in backups, logs, or systems outside our direct control.</p>
                 <p><strong>5.2 Team data.</strong> Aggregated scouting data, analyses, rankings, pick lists, and other outputs generated on the Service belong to the Team and are treated as internal Team information.</p>
-                <p><strong>5.3 The Service itself.</strong> The SprocketStats software, design, and branding are owned by the Team or its contributors and are made available to you under a limited, revocable, non-transferable license to use the Service as intended.</p>
+                <p><strong>5.3 The Service itself.</strong> The SprocketStats software, design, and branding are owned by the Team or its contributors. The source code is separately available as open-source software under the license and NOTICE terms published in its repository; those terms govern the code itself. Your access to and use of the hosted Service at sprocketstats.com is governed solely by these Terms, under a limited, revocable, non-transferable license to use the Service as intended.</p>
                 <p><strong>5.4 Third-party data.</strong> The Service may display or incorporate data from <em>FIRST</em>, The Blue Alliance, Statbotics, or similar sources. That data remains subject to its owners' terms and licenses. We make no claim of ownership over it.</p>
             </>
         ),
@@ -92,7 +97,7 @@ const sections: LegalSection[] = [
             <p>
                 The Service is provided on a best-effort basis by student volunteers. We may change, suspend, limit, or discontinue
                 any part of it at any time, including during competition, and we may delete data between seasons. There is no
-                guarantee of uptime, data retention, or backup.
+                guarantee of uptime, data retention, or backup — see our Privacy Policy for the retention periods we generally aim to follow.
             </p>
         ),
     },
@@ -183,8 +188,8 @@ export default function TermsPage() {
             eyebrow="Team Sprocket · FRC 3473"
             title="Terms of Service"
             summary="SprocketStats — sprocketstats.com"
-            effectiveDate="8/4/2026"
-            lastUpdated="8/4/2026"
+            effectiveDate="8/10/2026"
+            lastUpdated="8/10/2026"
             contactEmail={CONTACT_EMAIL}
             sections={sections}
         />
