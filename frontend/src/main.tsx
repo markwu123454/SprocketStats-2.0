@@ -9,9 +9,10 @@ if (missingEnvVars.length > 0) {
   throw new Error(`Missing required environment variables: ${missingEnvVars.join(", ")}`);
 }
 
-navigator.serviceWorker?.addEventListener('controllerchange', () => {
-  window.location.reload();
-});
+// No forced reload here: sw.js doesn't call self.skipWaiting(), so a new
+// service worker stays in "waiting" and never takes control of a tab that's
+// already open. It only takes over on the user's next natural navigation or
+// tab reopen -- updates apply seamlessly, never mid-session.
 
 const root = createRoot(document.getElementById("root")!);
 root.render(<App/>);
