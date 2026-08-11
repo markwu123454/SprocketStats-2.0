@@ -5,7 +5,12 @@ import {NetworkFirst} from "workbox-strategies";
 
 const API = import.meta.env.VITE_BACKEND_URL;
 
-self.skipWaiting();
+// Deliberately no self.skipWaiting() here: a newly-installed worker sits in
+// "waiting" instead of yanking control away from tabs that are mid-session.
+// It only activates once every tab from the previous version has been closed
+// or navigated away -- i.e. on the user's next natural navigation/unload --
+// at which point clientsClaim() lets it take over the incoming page right
+// away instead of needing yet another reload.
 clientsClaim();
 
 precacheAndRoute(self.__WB_MANIFEST);

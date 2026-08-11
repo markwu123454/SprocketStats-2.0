@@ -33,7 +33,8 @@ pnpm-debug.log*
 lerna-debug.log*
 
 # --- IDEs and OS ---
-.idea/
+.idea/*
+!.idea/.name
 .vscode/*
 !.vscode/extensions.json
 .DS_Store
