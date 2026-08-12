@@ -22,7 +22,12 @@ async def get_meetings(_: dict = Depends(get_current_user)):
     start, end = _week_bounds(datetime.now(timezone.utc))
     rows = await db.list_meeting_hours(start, end)
     return [
-        {"id": str(r["id"]), "start_time": r["start_time"], "end_time": r["end_time"]}
+        {
+            "id": str(r["id"]),
+            "start_time": r["start_time"],
+            "end_time": r["end_time"],
+            "meeting_purpose": r["meeting_purpose"],
+        }
         for r in rows
     ]
 

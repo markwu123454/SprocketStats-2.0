@@ -5,7 +5,8 @@ import { useAppReady } from "@/contexts/appReadyContext"
 import type { RoleCatalogEntry } from "@/lib/permissions"
 import { useIsMobile } from "@/lib/useIsMobile"
 import { useThemeSeasonInfo, type SeasonInfo } from "@/lib/seasonTheme"
-import { subscribeToPush } from "@/lib/push.ts"
+// Temporarily unused -- subscribeToPush() call below is disabled.
+// import { subscribeToPush } from "@/lib/push.ts"
 import OnboardingPageDesktop from "./OnboardingPageDesktop"
 import OnboardingPageMobile from "./OnboardingPageMobile"
 
@@ -96,11 +97,12 @@ export default function OnboardingPageRouter() {
         // onboarding: unsupported browsers, a denied prompt, or any subscribe
         // failure are swallowed, since the user can still enable push later
         // from Settings.
-        try {
-            await subscribeToPush()
-        } catch {
-            // ignore
-        }
+        // Temporarily disabled -- button now just says "Continue".
+        // try {
+        //     await subscribeToPush()
+        // } catch {
+        //     // ignore
+        // }
 
         try {
             const res = await fetch(`${API}/auth/onboarding`, {

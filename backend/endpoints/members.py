@@ -21,8 +21,8 @@ async def require_roster_access(user: dict = Depends(get_current_user)) -> dict:
     ``can_moderate`` spec). This only decides who may reach the roster at all —
     the per-target scope (who may approve/ban whom) is enforced separately in each
     handler through :func:`_authorize_moderation`. Leads get the full roster read
-    (including emails) but a Save/edit that they attempt is still rejected by
-    ``require_members`` on the write endpoint.
+    (Mentor emails masked — see :func:`list_members`) but a Save/edit that they
+    attempt is still rejected by ``require_members`` on the write endpoint.
 
     Unlike the capability-gated routes (which flow through ``require_access``),
     this guard is built directly on ``get_current_user``, so it re-checks
@@ -59,7 +59,7 @@ async def _authorize_moderation(actor: dict, user_id: str, *, self_error: str | 
 
 
 @router.get("")
-async def list_members(_: dict = Depends(require_roster_access)):
+async def list_members(user: dict = Depends(require_roster_access)):
     """Return the full member roster for the Control Panel Members page.
 
     This endpoint exposes every user's email (plus role/grade/year/names). It is
@@ -70,12 +70,19 @@ async def list_members(_: dict = Depends(require_roster_access)):
     ``grade``/``team_year`` are null for roles without school info (mentor/alumni)
     and for anyone who hasn't finished onboarding.
 
-    :param _: The authenticated, authorized user (enforces access; value unused).
+    One exception: a Mentor's email is masked (``null``) for viewers who aren't
+    themselves Captain/Mentor — i.e. Leads. Mentors are often adult volunteers
+    reachable at a personal (non-org) address, so it isn't shared as widely as
+    everyone else's org email; Captains still see it since they may legitimately
+    need to reach their Mentor directly.
+
+    :param user: The authenticated, authorized user (used to decide email masking).
     :returns: A list of member rows with id, email, name, display_name, role,
         grade, and team_year.
     """
     rows = await db.list_all_users()
-    return [_row_to_member(r) for r in rows]
+    can_see_mentor_email = can(get_permissions_for_role(user.get("role")), "control_panel.members")
+    return [_row_to_member(r, mask_email=(r["role"] == "mentor" and not can_see_mentor_email)) for r in rows]
 
 
 class MemberUpdate(BaseModel):
@@ -229,11 +236,16 @@ async def unban_member(user_id: str, user: dict = Depends(require_roster_access)
     return {"id": row["id"], "banned_at": None}
 
 
-def _row_to_member(r) -> dict:
-    """Shape a DB user record into the member row the grid consumes."""
+def _row_to_member(r, *, mask_email: bool = False) -> dict:
+    """Shape a DB user record into the member row the grid consumes.
+
+    :param mask_email: When true, return ``None`` for email instead of the real
+        address (used to hide a Mentor's email from viewers who aren't
+        Captain/Mentor themselves).
+    """
     return {
         "id": r["id"],
-        "email": r["email"],
+        "email": None if mask_email else r["email"],
         "name": r["name"],
         "display_name": r["display_name"],
         "role": r["role"],
