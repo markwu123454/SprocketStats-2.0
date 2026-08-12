@@ -16,6 +16,7 @@ const DashboardPage  = lazy(() => import("@/pages/DashboardPage.tsx"))
 const AttendancePage    = lazy(() => import("@/pages/AttendancePage"))
 const EventsPage    = lazy(() => import("@/pages/EventsPage"))
 const EventComingSoonPage = lazy(() => import("@/pages/EventComingSoonPage"))
+const Socal2026Page = lazy(() => import("@/pages/events/Socal2026Page"))
 const ScoutingPage    = lazy(() => import("@/pages/ScoutingPage"))
 const ControlPanelHub  = lazy(() => import("@/pages/control/ControlPanelHub"))
 const MeetingPage       = lazy(() => import("@/pages/control/MeetingPage"))
@@ -68,6 +69,7 @@ export default function App() {
                                         <Route path="/dashboard"   element={<DashboardPage/>}/>
                                         <Route path="/attendance"  element={<PermGuard perm="attendance.view"><AttendancePage/></PermGuard>}/>
                                         <Route path="/events" element={<EventsPage/>}/>
+                                        <Route path="/events/2026cass" element={<Socal2026Page/>}/>
                                         <Route path="/events/*" element={<EventComingSoonPage/>}/>
                                         <Route path="/scouting"    element={<ScoutingPage/>}/>
                                         <Route path="/control"     element={<ControlPanelHub/>}/>
