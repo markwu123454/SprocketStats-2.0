@@ -94,6 +94,10 @@ async def me(user: dict = Depends(get_current_user)):
     await account_state.assert_active(user["sub"])
 
     pending = await db.get_pending_notifications_for_user(user["sub"], user.get("role"))
+    # Not on the JWT (kept out of the signed, decodable-by-anyone-with-the-cookie
+    # token since it's a standalone credential -- see endpoints.kiosk), so it's
+    # fetched fresh here instead.
+    row = await db.get_user(user["sub"])
 
     return {
         "id": user["sub"],
@@ -106,6 +110,7 @@ async def me(user: dict = Depends(get_current_user)):
         "grade": user.get("grade"),
         "team_year": user.get("team_year"),
         "onboarding_complete": user.get("onboarding_complete", False),
+        "offline_code": row["offline_code"] if row else None,
         "permissions": get_permissions_for_role(user.get("role")),
         "pending_notifications": [
             {

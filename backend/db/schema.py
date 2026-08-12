@@ -356,6 +356,7 @@ async def run_migrations():
             # Link functionality was removed from push notifications -- drop the
             # now-unused column from any table created before this change.
             await conn.execute("ALTER TABLE push_messages DROP COLUMN IF EXISTS link")
+            await conn.execute("ALTER TABLE meeting_hours ADD COLUMN IF NOT EXISTS meeting_purpose TEXT")
         except Exception as e:
             logger.warning("Migration warning: %s", e)
 

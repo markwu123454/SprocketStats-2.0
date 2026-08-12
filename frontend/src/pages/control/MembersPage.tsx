@@ -17,7 +17,9 @@ const API = import.meta.env.VITE_BACKEND_URL
 
 interface MemberRow {
     id: string
-    email: string
+    // Null when the server masks it — currently only a Mentor's email, hidden
+    // from viewers who aren't Captain/Mentor themselves (Leads).
+    email: string | null
     name: string | null
     display_name: string | null
     role: string | null
@@ -276,7 +278,10 @@ export default function MembersPage() {
     const columnDefs = useMemo<ColDef<MemberRowState>[]>(() => [
         { field: "name",         headerName: "Name",         editable: canManage, cellEditor: "agTextCellEditor", flex: 1.5, minWidth: 140, cellClassRules: DIRTY_RULES },
         { field: "display_name", headerName: "Display Name", editable: canManage, cellEditor: "agTextCellEditor", flex: 1.5, minWidth: 140, cellClassRules: DIRTY_RULES },
-        { field: "email",        headerName: "Email",        editable: false, flex: 2, minWidth: 220, cellStyle: { opacity: 0.65 } },
+        {
+            field: "email", headerName: "Email", editable: false, flex: 2, minWidth: 220, cellStyle: { opacity: 0.65 },
+            valueFormatter: (p: ValueFormatterParams<MemberRowState, string | null>) => p.value ?? "Hidden",
+        },
         {
             field: "role", headerName: "Role", editable: canManage,
             cellEditor: "agSelectCellEditor", cellEditorParams: { values: roleOptions },
