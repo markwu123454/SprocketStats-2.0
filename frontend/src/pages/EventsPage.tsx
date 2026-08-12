@@ -1,12 +1,6 @@
 import {ChevronRight} from "lucide-react"
 import {Link} from "react-router-dom";
-import {type EventStatus, resolveEvents} from "@/lib/events.ts"
-
-const STATUS_META: Record<EventStatus, { label: string; dotFilled: boolean; color: string }> = {
-    done: {label: "Completed", dotFilled: true, color: "var(--theme-subtext-color)"},
-    current: {label: "Happening now", dotFilled: true, color: "var(--theme-text-contrast)"},
-    upcoming: {label: "Upcoming", dotFilled: false, color: "var(--theme-subtext-color)"},
-}
+import {resolveEvents, STATUS_META} from "@/lib/events.ts"
 
 const cardStyle = {background: "var(--theme-bg)", borderColor: "var(--theme-border)"}
 

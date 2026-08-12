@@ -14,11 +14,28 @@ export interface ResolvedEvent extends EventEntry {
     status: EventStatus
 }
 
+// Shared status → label/color mapping. Used by EventsPage (the list) and
+// EventDetailLayout (individual event pages) so both agree on what "done" /
+// "current" / "upcoming" looks like.
+export const STATUS_META: Record<EventStatus, { label: string; dotFilled: boolean; color: string }> = {
+    done: {label: "Completed", dotFilled: true, color: "var(--theme-subtext-color)"},
+    current: {label: "Happening now", dotFilled: true, color: "var(--theme-text-contrast)"},
+    upcoming: {label: "Upcoming", dotFilled: false, color: "var(--theme-subtext-color)"},
+}
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 // Season schedule, in display order. Edit this list directly to update the
 // schedule — order here is the order rendered, top to bottom.
 export const EVENTS: EventEntry[] = [
+    {
+        name: "2026 Socal Showdown",
+        start: "2026-10-09",
+        end: "2026-10-11",
+        location: "Da Vinci Schools",
+        type: "Off-Season Event",
+        url: "/events/2026cass"
+    },
     /*{
         name: "FLL Competition (details TBD)",
         start: "2026-12-12",
@@ -113,13 +130,22 @@ export const EVENTS: EventEntry[] = [
     end: "2027-05-01T18:00",
     location: "Houston, TX",
     type: "Championship",
-    url: "/events/worlds"
+    url: "/events/2027cmptx"
 },
 ]
 
+// `new Date("2026-10-09")` (date-only, no time) is parsed as UTC midnight,
+// while `new Date("2027-01-09T09:00")` (has a time) is parsed as local time.
+// Reading either back with local getters (getMonth/getDate) then shows the
+// date-only ones a day early in any timezone behind UTC. Force date-only
+// strings to be parsed as local time so both forms round-trip consistently.
+function parseEventDate(value: string): Date {
+    return /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00`) : new Date(value)
+}
+
 export function resolveEvent(entry: EventEntry, now: Date): ResolvedEvent {
-    const start = new Date(entry.start)
-    const end = entry.end ? new Date(entry.end) : start
+    const start = parseEventDate(entry.start)
+    const end = entry.end ? parseEventDate(entry.end) : start
 
     let status: EventStatus
     if (now < start) status = "upcoming"
@@ -137,4 +163,12 @@ export function resolveEvent(entry: EventEntry, now: Date): ResolvedEvent {
 
 export function resolveEvents(now: Date = new Date()): ResolvedEvent[] {
     return EVENTS.map((entry) => resolveEvent(entry, now))
+}
+
+// Looks up a schedule entry by its detail-page url (e.g. "/events/2026cass")
+// so a dedicated event page can pull name/date/location/type from the single
+// EVENTS list instead of repeating them.
+export function resolveEventByUrl(url: string, now: Date = new Date()): ResolvedEvent | undefined {
+    const entry = EVENTS.find((e) => e.url === url)
+    return entry ? resolveEvent(entry, now) : undefined
 }
