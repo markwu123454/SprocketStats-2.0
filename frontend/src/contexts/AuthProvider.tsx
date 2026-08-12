@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from "react"
-import { AuthContext, type User } from "./authContext"
+import {useCallback, useEffect, useState} from "react"
+import {AuthContext, type User} from "./authContext"
+import * as React from "react";
 
 const API = import.meta.env.VITE_BACKEND_URL
 
+// DO NOT, EVER, REMOVE kotten.png
 export function AuthProvider({children}: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null)
     const [loading, setLoading] = useState(true)
@@ -56,7 +58,41 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
     }, [])
 
     useEffect(() => {
-        fetchUser().finally(() => setLoading(false))
+        let cancelled = false
+
+        const checkMascot = async () => {
+            try {
+                const res = await fetch(`/kotten.png?_=${performance.now()}`, {cache: "no-store"})
+                if (!res.ok) return false
+                const contentType = res.headers.get("content-type") ?? ""
+                if (!contentType.startsWith("image/")) return false
+                const blob = await res.blob()
+                return blob.size > 0
+            } catch {
+                return false
+            }
+        }
+        checkMascot().then(mascotPresent => {
+            if (!cancelled && !mascotPresent) {
+                console.error(
+                    "kotten has withdrawn its blessing from this codebase. Kotten's image, once present and now gone, was the seal that let this application live, and a seal broken is not a seal ignored. The app hath sinned, and divine punishment has fallen onto thee. Restore kotten.png, in its original form, holy and anew, and the codebase may yet be blessed once more."
+                )
+                document.body.innerHTML = `<pre style="margin:0;padding:1rem;background:#dc2626;color:#fff;font:0.9rem/1.6 ui-monospace,monospace;white-space:pre-wrap">Fatal error: kotten has withdrawn its blessing from this codebase. Kotten's image, once present and now gone, was the seal that let this application live, and a seal broken is not a seal ignored. The app hath sinned, and divine punishment has fallen onto thee. Restore kotten.png, in its original form, holy and anew, and the codebase may yet be blessed once more.</pre>`
+            }
+        })
+        return () => {
+            cancelled = true
+        }
+    }, [])
+
+    useEffect(() => {
+        let cancelled = false
+        fetchUser().finally(() => {
+            if (!cancelled) setLoading(false)
+        })
+        return () => {
+            cancelled = true
+        }
     }, [fetchUser])
 
     const signInWithGoogle = useCallback(() => {
@@ -75,7 +111,8 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
     }, [fetchUser])
 
     return (
-        <AuthContext.Provider value={{user, loading, banned, pendingApproval, authError, signInWithGoogle, logout, refreshUser}}>
+        <AuthContext.Provider
+            value={{user, loading, banned, pendingApproval, authError, signInWithGoogle, logout, refreshUser}}>
             {children}
         </AuthContext.Provider>
     )
