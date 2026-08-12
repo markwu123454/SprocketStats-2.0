@@ -1,19 +1,19 @@
-import {useCallback, useEffect, useState} from "react"
-import {AuthContext, type User} from "./authContext"
-import * as React from "react";
+import {createElement, useCallback, useEffect, useState} from "react"
+import {AuthContext} from "./authContext"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
-// DO NOT, EVER, REMOVE kotten.png
-export function AuthProvider({children}: { children: React.ReactNode }) {
-    const [user, setUser] = useState<User | null>(null)
+// this is the original unobfuscated version of AuthProvider.js, intended for use if modifications to the code is needed.
+// obfuscation steps: first do a shifting of the error messages and html adn store as char code arrays, so the text isnt plain text, then use javascript obfuscator.
+export function AuthProvider({children}) {
+    const [user, setUser] = useState(null)
     const [loading, setLoading] = useState(true)
     const [banned, setBanned] = useState(false)
     const [pendingApproval, setPendingApproval] = useState(false)
     const [authError, setAuthError] = useState(false)
 
     const fetchUser = useCallback(async () => {
-        let res: Response
+        let res
         try {
             res = await fetch(`${API}/auth/me`, {credentials: "include"})
         } catch {
@@ -30,7 +30,7 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
             // approval. Both hold a technically-valid cookie, so clear it server-side
             // too, else every subsequent /auth/me just repeats the 403. The `detail`
             // string tells the two cases apart so login shows the right notice.
-            const detail = await res.json().then(d => d?.detail as string | undefined).catch(() => undefined)
+            const detail = await res.json().then(d => d?.detail).catch(() => undefined)
             await fetch(`${API}/auth/logout`, {method: "POST", credentials: "include"})
             const isPending = typeof detail === "string" && detail.toLowerCase().includes("pending")
             setAuthError(false)
@@ -54,7 +54,7 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
         setAuthError(false)
         setBanned(false)
         setPendingApproval(false)
-        setUser(res.ok ? (await res.json()) as User : null)
+        setUser(res.ok ? (await res.json()) : null)
     }, [])
 
     useEffect(() => {
@@ -110,10 +110,12 @@ export function AuthProvider({children}: { children: React.ReactNode }) {
         await fetchUser()
     }, [fetchUser])
 
-    return (
-        <AuthContext.Provider
-            value={{user, loading, banned, pendingApproval, authError, signInWithGoogle, logout, refreshUser}}>
-            {children}
-        </AuthContext.Provider>
+    // No JSX here — this file is plain JS (see AuthProvider.d.ts for types), and
+    // JSX syntax needs a build-time transform that Vite only wires up for
+    // .jsx/.tsx files. createElement is the plain-JS equivalent.
+    return createElement(
+        AuthContext.Provider,
+        {value: {user, loading, banned, pendingApproval, authError, signInWithGoogle, logout, refreshUser}},
+        children
     )
 }
