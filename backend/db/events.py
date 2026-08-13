@@ -6,7 +6,7 @@ async def get_events() -> list[dict]:
     async with db_connection(DB_NAME) as conn:
         rows = await conn.fetch(
             """
-            SELECT name, start_time, end_time, location, event_type, url
+            SELECT name, start_time, end_time, location, event_type, url, tba_key
             FROM events
             ORDER BY display_order, start_time
             """
@@ -25,4 +25,6 @@ def _row_to_event(r) -> dict:
         d["end"] = r["end_time"]
     if r["url"]:
         d["url"] = r["url"]
+    if r["tba_key"]:
+        d["tbaKey"] = r["tba_key"]
     return d

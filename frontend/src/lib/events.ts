@@ -6,7 +6,8 @@ export interface EventEntry {
     end?: string  // ISO datetime; defaults to `start` for single-day events
     location: string
     type: string
-    url?: string  // omit for no link
+    url?: string    // omit for no link
+    tbaKey?: string // TBA event key, e.g. "2026cass"
 }
 
 export interface ResolvedEvent extends EventEntry {

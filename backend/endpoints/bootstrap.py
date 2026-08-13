@@ -21,8 +21,9 @@ from fastapi import APIRouter, Depends
 
 from core.permissions import can, get_permissions_for_role, has_moderation_authority
 from core.security import get_current_user
+import db
 from .attendance import get_meetings
-from .events import list_events
+from .events import list_events, get_prefetch_event_info
 from .members import list_members
 from .tags import get_all_assignments, get_user_tags
 
@@ -44,11 +45,12 @@ router = APIRouter()
 #   members          → GET /members
 
 ENDPOINTS: list[tuple[str, object, str | None]] = [
-    ("events",          lambda u: list_events(),            None),
-    ("meetings",        lambda u: get_meetings(),          None),
-    ("tag_assignments", lambda u: get_all_assignments(),   None),
-    ("user_tags",       lambda u: get_user_tags(u["sub"]), None),
-    ("members",         lambda u: list_members(user=u),    "roster"),
+    ("events",          lambda u: list_events(),              None),
+    ("meetings",        lambda u: get_meetings(),             None),
+    ("tag_assignments", lambda u: get_all_assignments(),      None),
+    ("user_tags",       lambda u: get_user_tags(u["sub"]),    None),
+    ("members",         lambda u: list_members(user=u),       "roster"),
+    ("current_event",   lambda u: get_prefetch_event_info(),  None),
 ]
 
 

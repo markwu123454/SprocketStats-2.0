@@ -26,8 +26,9 @@ REQUIRED_ENV_VARS = [
     "VAPID_PRIVATE_KEY",
 ]
 if os.environ.get("ENV") != "development":
-    REQUIRED_ENV_VARS.append("CORS_ORIGIN")
+    REQUIRED_ENV_VARS.append("CORS_ORIGINS")
 
+# doesnt throw because on fly.io it triggers the machine to be restarted repeatedly and eating usage
 missing_env_vars = [var for var in REQUIRED_ENV_VARS if not os.environ.get(var)]
 if missing_env_vars:
     print(f"Missing required environment variables: {', '.join(missing_env_vars)}")

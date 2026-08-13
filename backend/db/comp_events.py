@@ -6,6 +6,8 @@ class Links(BaseModel):
     tba: str | None = None
     statbotics: str | None = None
     nexus: str | None = None
+    youtube: str | None = None
+    twitch: str | None = None
 
 
 class ItineraryItem(BaseModel):
@@ -38,6 +40,23 @@ class CompEventContent(BaseModel):
     packing_list: list[PackingCategory] | None = None
     instructions: list[Instruction] | None = None
     roster: list[RosterMember] | None = None
+
+
+async def get_prefetch_event() -> dict | None:
+    async with db_connection(DB_NAME) as conn:
+        row = await conn.fetchrow("""
+            SELECT ce.*
+            FROM app_config ac
+            JOIN comp_events ce ON ce.event_key = ac.prefetch_event_id
+            WHERE ac.prefetch_event_id IS NOT NULL
+            LIMIT 1
+        """)
+        return dict(row) if row else None
+
+
+async def set_prefetch_event(event_key: str | None) -> None:
+    async with db_connection(DB_NAME) as conn:
+        await conn.execute("UPDATE app_config SET prefetch_event_id = $1", event_key)
 
 
 async def get_comp_event(event_key: str) -> dict | None:

@@ -322,6 +322,14 @@ async def init_db():
                         roster       JSONB
                     )
                 """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS app_config (
+                        prefetch_event_id TEXT
+                    )
+                """)
+                await conn.execute(
+                    "INSERT INTO app_config (prefetch_event_id) SELECT NULL WHERE NOT EXISTS (SELECT 1 FROM app_config)"
+                )
         except Exception as e:
             logger.error("Failed to initialize schema: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to initialize schema: {e}")
@@ -432,6 +440,14 @@ async def run_migrations():
                     roster       JSONB
                 )
             """)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS app_config (
+                    prefetch_event_id TEXT
+                )
+            """)
+            await conn.execute(
+                "INSERT INTO app_config (prefetch_event_id) SELECT NULL WHERE NOT EXISTS (SELECT 1 FROM app_config)"
+            )
         except Exception as e:
             logger.warning("Migration warning: %s", e)
 

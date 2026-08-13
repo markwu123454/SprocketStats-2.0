@@ -89,9 +89,11 @@ export default function AppShell() {
         })
     }
 
-    const isActive = (to: string) => location.pathname === to
+    const isActive = (to: string) =>
+        location.pathname === to || location.pathname.startsWith(to + "/")
 
     const canViewControl = can(user.permissions, "control_panel.view")
+    const isInsideEvent = /^\/events\/[^/]+/.test(location.pathname)
 
     // Core tabs can carry an optional `visible` predicate (e.g. Attendance is
     // student-only); an ungated tab is always shown. Both the desktop sidebar and
@@ -115,7 +117,7 @@ export default function AppShell() {
         <div className="flex flex-col min-h-0 theme-bg-page bg-cover" style={{ height: "var(--real-vh, 100dvh)" }}>
 
             {/* ── Top header ──────────────────────────────────────── */}
-            <header className="shrink-0 border-b z-30 theme-bg theme-border">
+            <header className={`shrink-0 border-b z-30 theme-bg theme-border${isInsideEvent ? " hidden md:block" : ""}`}>
                 <div className="px-3 h-14 flex items-center justify-between gap-3">
 
                     <div className="flex items-center gap-1">
@@ -278,7 +280,7 @@ export default function AppShell() {
 
             {/* ── Mobile bottom tab bar ───────────────────────────── */}
             <nav
-                className="md:hidden shrink-0 border-t z-30 theme-bg theme-border"
+                className={`${isInsideEvent ? "hidden" : "md:hidden"} shrink-0 border-t z-30 theme-bg theme-border`}
                 style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
             >
                 <div className={showNavText ? "flex h-24" : "flex h-20"}>

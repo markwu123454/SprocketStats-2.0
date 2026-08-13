@@ -63,3 +63,8 @@ nexus = ExternalAPICache(
     headers={"Nexus-Api-Key": os.environ.get("NEXUS_API_KEY", "")},
 )
 statbotics = ExternalAPICache("https://api.statbotics.io/v3", ttl=300)
+
+if os.environ.get("MOCK_EXTERNAL") == "true":
+    from .mock_data import apply_mocks
+    apply_mocks(tba, nexus, statbotics)
+    print("[dev] MOCK_EXTERNAL active — TBA and Nexus calls are mocked")
