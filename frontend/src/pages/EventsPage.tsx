@@ -1,11 +1,25 @@
+import {useEffect} from "react"
 import {ChevronRight} from "lucide-react"
 import {Link} from "react-router-dom";
-import {resolveEvents, STATUS_META} from "@/lib/events.ts"
+import {type EventEntry, resolveEvents, STATUS_META} from "@/lib/events.ts"
+import {useBootstrapped} from "@/contexts/bootstrapContext"
 
+const API = import.meta.env.VITE_BACKEND_URL
 const cardStyle = {background: "var(--theme-bg)", borderColor: "var(--theme-border)"}
 
 export default function EventsPage() {
-    const events = resolveEvents()
+    const [rawEvents, setRawEvents] = useBootstrapped<EventEntry[]>("events", [])
+
+    useEffect(() => {
+        let cancelled = false
+        fetch(`${API}/events`, {credentials: "include"})
+            .then(r => r.ok ? r.json() : [])
+            .then((data: EventEntry[]) => { if (!cancelled) setRawEvents(data) })
+            .catch(() => {})
+        return () => { cancelled = true }
+    }, [])
+
+    const events = resolveEvents(rawEvents)
 
 return (
     <div className="mx-auto px-4 py-8 flex flex-col gap-1">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { Link } from "react-router-dom"
-import { ChevronLeft } from "lucide-react"
+import { ChevronLeft, Plus, Tag, X } from "lucide-react"
 import { AgGridReact } from "ag-grid-react"
 import type {
     CellClassParams,
@@ -11,7 +12,7 @@ import type {
     ValueFormatterParams,
 } from "ag-grid-community"
 import { useAuth } from "@/contexts/authContext"
-import { can, canModerate, type RoleCatalogEntry } from "@/lib/permissions"
+import { can, canModerate, getPerm, type RoleCatalogEntry } from "@/lib/permissions"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -34,6 +35,9 @@ interface MemberRow {
     // ISO timestamp the member was banned, or null. Same staged-until-save
     // treatment as approved_by, persisted via the dedicated ban/unban endpoints.
     banned_at: string | null
+    // Tags are not part of the Save/Reset cycle — add/remove calls the API
+    // immediately and updates local state directly.
+    tags: string[]
 }
 
 /** Extra data ag-grid cell renderers need but that isn't part of a row. */
@@ -45,6 +49,9 @@ interface GridContext {
     onApprove: (id: string) => void
     onBan: (id: string) => void
     onUnban: (id: string) => void
+    /** True for Captains, Mentors, and Leads — anyone with roster access. */
+    canEditTags: boolean
+    onEditTags: (id: string) => void
 }
 
 /** Fields the roster lets you edit; email stays read-only (OAuth identity). */
@@ -62,6 +69,8 @@ const ALL_TRACKED = [...EDITABLE, ...PENDING] as const
 interface MemberRowState extends MemberRow {
     _orig: Pick<MemberRow, EditableField | PendingField>
 }
+
+const TAG_RE = /^[a-z0-9_]{1,64}$/
 
 // Static enum option lists (leading "" = clear the value, shown as an em dash).
 const GRADE_OPTIONS = ["", "freshman", "sophomore", "junior", "senior"]
@@ -170,6 +179,38 @@ function BannedCellRenderer(p: ICellRendererParams<MemberRowState, string | null
     )
 }
 
+function TagsCellRenderer(p: ICellRendererParams<MemberRowState, string[]>) {
+    const ctx = p.context as GridContext
+    const data = p.data
+    if (!data) return null
+    const tags = data.tags ?? []
+    return (
+        <div className="flex items-center gap-1 h-full overflow-hidden">
+            {tags.slice(0, 3).map(t => (
+                <span
+                    key={t}
+                    className="rounded px-1.5 py-0.5 text-xs font-medium truncate max-w-[80px]"
+                    style={{ background: "color-mix(in oklch, var(--theme-text-contrast) 15%, transparent)", color: "var(--theme-text-contrast)" }}
+                >
+                    {t}
+                </span>
+            ))}
+            {tags.length > 3 && (
+                <span className="text-xs theme-subtext-color shrink-0">+{tags.length - 3}</span>
+            )}
+            {ctx.canEditTags && (
+                <button
+                    className="ml-auto shrink-0 rounded p-0.5 theme-subtext-color hover:opacity-70 transition-opacity"
+                    onClick={() => ctx.onEditTags(data.id)}
+                    title="Edit tags"
+                >
+                    <Tag size={13} />
+                </button>
+            )}
+        </div>
+    )
+}
+
 /**
  * Members control page — a full-width, editable roster for Captains and Mentors.
  *
@@ -182,7 +223,16 @@ function BannedCellRenderer(p: ICellRendererParams<MemberRowState, string | null
 export default function MembersPage() {
     const { user } = useAuth()
     const gridRef = useRef<AgGridReact<MemberRowState>>(null)
-    const [rows, setRows]                 = useState<MemberRowState[]>([])
+
+    // Bootstrap pre-seeds — null means "not yet resolved", [] means "resolved but empty"
+    const [bMembers] = useBootstrapped<MemberRow[] | null>("members", null)
+    const [bTagMap]  = useBootstrapped<Record<string, string[]> | null>("tag_assignments", null)
+
+    const [rows, setRows] = useState<MemberRowState[]>(() => {
+        if (!bMembers) return []
+        const tagMap = bTagMap ?? {}
+        return bMembers.map(m => ({ ...m, tags: tagMap[m.id] ?? [], _orig: snapshot(m) }))
+    })
     const [catalog, setCatalog]           = useState<RoleCatalogEntry[]>([])
     const [roleOptions, setRoleOptions]   = useState<string[]>([])
     const [roleLabels, setRoleLabels]     = useState<Record<string, string>>({})
@@ -190,28 +240,49 @@ export default function MembersPage() {
     // Full management (inline profile/role editing) is Captains/Mentors only;
     // Leads reach this page to moderate their subteam but see it read-only.
     const canManage = can(user?.permissions, "control_panel.members")
-    const [loading, setLoading]           = useState(true)
+    // Tag editing is available to anyone with roster access: Captains, Mentors,
+    // and Leads (anyone with a can_moderate spec on their policy).
+    const canEditTags = canManage || Boolean(getPerm(user?.permissions, "can_moderate"))
+    const [editingTagsFor, setEditingTagsFor] = useState<string | null>(null)
+    const [loading, setLoading]           = useState(bMembers === null)
+    // True when bootstrap pre-populated rows at mount — skips the loading overlay
+    // on the background refresh since data is already visible.
+    const hadBootstrap = useRef(bMembers !== null)
+    // Tracks whether the real load() has started; prevents bootstrap from overwriting fresh data.
+    const loadStarted = useRef(false)
     const [saving, setSaving]             = useState(false)
     const [hasChanges, setHasChanges]     = useState(false)
     const [error, setError]               = useState<string | null>(null)
 
+    // Seed rows from bootstrap if it resolves after this component mounted
+    // but before load() has started (async case on slow connections).
+    useEffect(() => {
+        if (loadStarted.current || !bMembers) return
+        const tagMap = bTagMap ?? {}
+        setRows(bMembers.map(m => ({ ...m, tags: tagMap[m.id] ?? [], _orig: snapshot(m) })))
+        setLoading(false)
+    }, [bMembers, bTagMap])
+
     const load = useCallback(async () => {
-        setLoading(true)
+        loadStarted.current = true
+        if (!hadBootstrap.current) setLoading(true)
         setError(null)
         try {
-            const [mRes, rRes] = await Promise.all([
+            const [mRes, rRes, tRes] = await Promise.all([
                 fetch(`${API}/members`, { credentials: "include" }),
                 fetch(`${API}/auth/roles`, { credentials: "include" }),
+                fetch(`${API}/tags/assignments`, { credentials: "include" }),
             ])
             if (!mRes.ok) throw new Error("members")
             const members = await mRes.json() as MemberRow[]
+            const tagMap: Record<string, string[]> = tRes.ok ? await tRes.json() as Record<string, string[]> : {}
             if (rRes.ok) {
                 const cat = await rRes.json() as RoleCatalogEntry[]
                 setCatalog(cat)
                 setRoleOptions(cat.map(c => c.value))
                 setRoleLabels(Object.fromEntries(cat.map(c => [c.value, c.label])))
             }
-            setRows(members.map(m => ({ ...m, _orig: snapshot(m) })))
+            setRows(members.map(m => ({ ...m, tags: tagMap[m.id] ?? [], _orig: snapshot(m) })))
             setHasChanges(false)
         } catch {
             setError("Failed to load members")
@@ -261,13 +332,36 @@ export default function MembersPage() {
         patchRow(id, { banned_at: null })
     }, [patchRow])
 
+    const handleTagAdd = useCallback(async (userId: string, tag: string) => {
+        await fetch(`${API}/tags/user/${userId}/${tag}`, { method: "POST", credentials: "include" })
+        const api = gridRef.current?.api
+        if (!api) return
+        const node = api.getRowNode(userId)
+        if (!node?.data) return
+        const tags = [...(node.data.tags ?? [])]
+        if (!tags.includes(tag)) {
+            node.setData({ ...node.data, tags: [...tags, tag].sort() })
+        }
+    }, [])
+
+    const handleTagRemove = useCallback(async (userId: string, tag: string) => {
+        await fetch(`${API}/tags/user/${userId}/${tag}`, { method: "DELETE", credentials: "include" })
+        const api = gridRef.current?.api
+        if (!api) return
+        const node = api.getRowNode(userId)
+        if (!node?.data) return
+        node.setData({ ...node.data, tags: (node.data.tags ?? []).filter(t => t !== tag) })
+    }, [])
+
     const gridContext = useMemo<GridContext>(() => ({
         currentUserId: user?.id ?? "",
         canModerateRole: (role: string | null) => canModerate(user?.permissions, role, catalog),
         onApprove: handleApprove,
         onBan: handleBan,
         onUnban: handleUnban,
-    }), [user?.id, user?.permissions, catalog, handleApprove, handleBan, handleUnban])
+        canEditTags,
+        onEditTags: setEditingTagsFor,
+    }), [user?.id, user?.permissions, catalog, handleApprove, handleBan, handleUnban, canEditTags])
 
     const roleFormatter = useCallback(
         (p: ValueFormatterParams<MemberRowState, string | null>): string =>
@@ -304,6 +398,10 @@ export default function MembersPage() {
         {
             field: "banned_at", headerName: "Banned", editable: false,
             cellRenderer: BannedCellRenderer, flex: 1, minWidth: 110, cellClassRules: DIRTY_RULES,
+        },
+        {
+            field: "tags", headerName: "Tags", editable: false,
+            cellRenderer: TagsCellRenderer, flex: 1.5, minWidth: 160, sortable: false,
         },
     ], [roleOptions, roleFormatter, canManage])
 
@@ -446,6 +544,143 @@ export default function MembersPage() {
                     opacity: 0.55;
                 }
             `}</style>
+
+            {editingTagsFor && (() => {
+                const api = gridRef.current?.api
+                const node = api?.getRowNode(editingTagsFor)
+                const member = node?.data
+                if (!member) return null
+                return (
+                    <TagsModal
+                        member={member}
+                        onClose={() => setEditingTagsFor(null)}
+                        onAdd={handleTagAdd}
+                        onRemove={handleTagRemove}
+                    />
+                )
+            })()}
+        </div>
+    )
+}
+
+interface TagsModalProps {
+    member: MemberRowState
+    onClose: () => void
+    onAdd: (userId: string, tag: string) => Promise<void>
+    onRemove: (userId: string, tag: string) => Promise<void>
+}
+
+function TagsModal({ member, onClose, onAdd, onRemove }: TagsModalProps) {
+    const [tags, setTags] = useState<string[]>(member.tags ?? [])
+    const [input, setInput] = useState("")
+    const [busy, setBusy] = useState(false)
+    const [tagError, setTagError] = useState<string | null>(null)
+    const inputRef = useRef<HTMLInputElement>(null)
+
+    useEffect(() => { inputRef.current?.focus() }, [])
+
+    async function handleAdd() {
+        const tag = input.trim().toLowerCase()
+        if (!TAG_RE.test(tag)) {
+            setTagError("Lowercase letters, numbers, and underscores only (1–64 chars)")
+            return
+        }
+        if (tags.includes(tag)) {
+            setTagError("Tag already assigned")
+            return
+        }
+        setTagError(null)
+        setBusy(true)
+        try {
+            await onAdd(member.id, tag)
+            setTags(prev => [...prev, tag].sort())
+            setInput("")
+        } finally {
+            setBusy(false)
+        }
+    }
+
+    async function handleRemove(tag: string) {
+        setBusy(true)
+        try {
+            await onRemove(member.id, tag)
+            setTags(prev => prev.filter(t => t !== tag))
+        } finally {
+            setBusy(false)
+        }
+    }
+
+    return (
+        <div
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.5)" }}
+            onClick={e => { if (e.target === e.currentTarget) onClose() }}
+        >
+            <div
+                className="w-full max-w-sm rounded-2xl border p-5 flex flex-col gap-4 backdrop-blur-sm theme-bg theme-border"
+            >
+                <div className="flex items-center gap-2">
+                    <Tag size={16} className="theme-subtext-color" />
+                    <h2 className="text-sm font-semibold theme-text-contrast flex-1">
+                        Tags — {member.display_name ?? member.name}
+                    </h2>
+                    <button onClick={onClose} className="theme-subtext-color hover:opacity-70 transition-opacity">
+                        <X size={16} />
+                    </button>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5 min-h-[32px]">
+                    {tags.length === 0 && (
+                        <span className="text-xs theme-subtext-color">No tags yet</span>
+                    )}
+                    {tags.map(t => (
+                        <span
+                            key={t}
+                            className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium"
+                            style={{ background: "color-mix(in oklch, var(--theme-text-contrast) 15%, transparent)", color: "var(--theme-text-contrast)" }}
+                        >
+                            {t}
+                            <button
+                                onClick={() => void handleRemove(t)}
+                                disabled={busy}
+                                className="hover:opacity-60 transition-opacity disabled:opacity-30"
+                            >
+                                <X size={11} />
+                            </button>
+                        </span>
+                    ))}
+                </div>
+
+                <div className="flex gap-2">
+                    <input
+                        ref={inputRef}
+                        value={input}
+                        onChange={e => { setInput(e.target.value); setTagError(null) }}
+                        onKeyDown={e => { if (e.key === "Enter") void handleAdd() }}
+                        placeholder="new_tag"
+                        disabled={busy}
+                        className="flex-1 rounded-lg border px-3 py-1.5 text-sm theme-text theme-border theme-bg outline-none focus:ring-1 disabled:opacity-50"
+                        style={{ background: "color-mix(in oklch, var(--theme-border) 30%, var(--theme-bg))" }}
+                    />
+                    <button
+                        onClick={() => void handleAdd()}
+                        disabled={busy || !input.trim()}
+                        className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
+                    >
+                        <Plus size={14} />
+                        Add
+                    </button>
+                </div>
+
+                {tagError && (
+                    <p className="text-xs" style={{ color: "#dc2626" }}>{tagError}</p>
+                )}
+
+                <p className="text-xs theme-subtext-color">
+                    Tag changes save immediately and don't require pressing Save.
+                </p>
+            </div>
         </div>
     )
 }

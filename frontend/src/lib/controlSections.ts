@@ -41,7 +41,7 @@ export const CONTROL_SECTIONS: ControlSection[] = [
         to: "upcoming-event",
         label: "Upcoming Event",
         icon: CalendarPlus,
-        visible: p => can(p, CP + "upcoming_event"),
+        visible: () => false,
     },
     {
         to: "members",
@@ -57,7 +57,7 @@ export const CONTROL_SECTIONS: ControlSection[] = [
         to: "notifications",
         label: "Notifications",
         icon: Bell,
-        visible: p => can(p, CP + "notifications"),
+        visible: () => false,
     },
     {
         to: "push",
@@ -65,7 +65,7 @@ export const CONTROL_SECTIONS: ControlSection[] = [
         icon: Send,
         // Separate page/feature from dashboard Notifications above -- same
         // authoring permission, but its own table, endpoints, and history.
-        visible: p => can(p, CP + "notifications"),
+        visible: () => false,
     },
 ]
 

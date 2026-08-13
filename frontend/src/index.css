@@ -157,6 +157,46 @@
     }
 }
 
+/* Kill the column-slide animation that plays when ag-grid sizes columns to fit the grid width. */
+.ag-header-cell,
+.ag-cell {
+    transition-duration: 0s !important;
+}
+
+/* AG Grid scroll containers — unlayered so it beats AG Grid's own injected styles */
+.ag-body-viewport,
+.ag-center-cols-viewport,
+.ag-body-horizontal-scroll-viewport {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+.ag-body-viewport::-webkit-scrollbar,
+.ag-center-cols-viewport::-webkit-scrollbar,
+.ag-body-horizontal-scroll-viewport::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.ag-body-viewport::-webkit-scrollbar-track,
+.ag-center-cols-viewport::-webkit-scrollbar-track,
+.ag-body-horizontal-scroll-viewport::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+}
+
+.ag-body-viewport::-webkit-scrollbar-thumb,
+.ag-center-cols-viewport::-webkit-scrollbar-thumb,
+.ag-body-horizontal-scroll-viewport::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: 9999px;
+}
+
+.ag-body-viewport::-webkit-scrollbar-thumb:hover,
+.ag-center-cols-viewport::-webkit-scrollbar-thumb:hover,
+.ag-body-horizontal-scroll-viewport::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+}
+
 @layer components {
     .legal-copy {
         color: var(--theme-subtext-color);

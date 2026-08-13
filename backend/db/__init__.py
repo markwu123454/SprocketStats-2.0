@@ -5,3 +5,6 @@ from .meeting_hours import *
 from .attendance import *
 from .notifications import *
 from .push import *
+from .tags import *
+from .events import *
+from .comp_events import *

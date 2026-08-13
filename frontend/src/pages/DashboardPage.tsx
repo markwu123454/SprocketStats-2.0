@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react"
+import {useEffect, useState} from "react"
+import { Link } from "react-router-dom"
 import { useOnboardedUser } from "@/contexts/authContext"
-import { Calendar, Eye, EyeOff, KeyRound } from "lucide-react"
+import { useBootstrapped } from "@/contexts/bootstrapContext"
+import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, Milestone } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
+import { resolveEvent, type EventEntry } from "@/lib/events"
+import type { EventInfo } from "@/lib/eventApi"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -26,8 +30,13 @@ const cardStyle = { background: "var(--theme-bg)", borderColor: "var(--theme-bor
 
 export default function DashboardPage() {
     const user = useOnboardedUser()
-    const [meetings, setMeetings] = useState<MeetingHours[] | null>(null)
+    const [meetings, setMeetings]   = useBootstrapped<MeetingHours[] | null>("meetings", null)
+    const [rawEvents]               = useBootstrapped<EventEntry[]>("events", [])
+    const [currentEvent]            = useBootstrapped<EventInfo | null>("current_event", null)
     const [codeVisible, setCodeVisible] = useState(false)
+
+    const eventEntry   = rawEvents.find(e => e.tbaKey === currentEvent?.event_key)
+    const resolvedEvent = eventEntry ? resolveEvent(eventEntry, new Date()) : null
 
     useEffect(() => {
         let cancelled = false
@@ -62,6 +71,38 @@ export default function DashboardPage() {
                     <p className="text-sm theme-subtext-color">Here's your overview</p>
                 </div>
             </div>
+
+            {/* Current event card */}
+            {currentEvent && (
+                <Link
+                    to={`/events/${currentEvent.event_key}`}
+                    className="rounded-xl border p-5 flex items-center gap-4 backdrop-blur-sm transition-colors hover:border-(--theme-text-contrast)"
+                    style={cardStyle}
+                >
+                    <div className="flex-1 min-w-0">
+                        {resolvedEvent && (
+                            <span
+                                className="text-[10px] font-bold tracking-wider uppercase block mb-0.5"
+                                style={{
+                                    color: resolvedEvent.status === "current" ? "var(--theme-text-contrast)" : "var(--theme-subtext-color)",
+                                }}
+                            >
+                                {resolvedEvent.status === "current" ? "Happening now" : resolvedEvent.status === "upcoming" ? "Upcoming" : "Completed"}
+                            </span>
+                        )}
+                        <p className="text-base font-bold theme-text truncate">{currentEvent.event_name}</p>
+                        {resolvedEvent && (
+                            <p className="text-sm theme-subtext-color mt-0.5">{resolvedEvent.dateLabel} · {resolvedEvent.location}</p>
+                        )}
+                    </div>
+                    <div
+                        className="shrink-0 flex items-center justify-center w-9 h-9 rounded-full"
+                        style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
+                    >
+                        <ChevronRight size={18} />
+                    </div>
+                </Link>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* This week's meeting */}
