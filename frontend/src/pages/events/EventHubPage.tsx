@@ -92,63 +92,70 @@ export default function EventHubPage() {
             return (ta.predicted_time ?? ta.scheduled_time ?? 0) - (tb.predicted_time ?? tb.scheduled_time ?? 0)
         })
 
+    const cardBase = { background: "var(--theme-bg)", borderColor: "var(--theme-border)" }
+
     return (
         <div className="max-w-xl mx-auto px-4 py-5 flex flex-col gap-6 pb-8">
 
             {/* Day timeline */}
-            {timeline && (timeline.current || timeline.upcoming.length > 0) && (
-                <section>
-                    <SectionLabel>Today</SectionLabel>
-                    <div
-                        className="rounded-xl border overflow-hidden"
-                        style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
-                    >
-                        {timeline.current && <TimelineRow item={timeline.current} isCurrent />}
-                        {timeline.upcoming.map((item, i) => <TimelineRow key={i} item={item} />)}
-                    </div>
-                </section>
-            )}
+            <section>
+                <SectionLabel>Today</SectionLabel>
+                <div className="rounded-xl border overflow-hidden" style={cardBase}>
+                    {timeline && (timeline.current || timeline.upcoming.length > 0) ? (
+                        <>
+                            {timeline.current && <TimelineRow item={timeline.current} isCurrent />}
+                            {timeline.upcoming.map((item, i) => <TimelineRow key={i} item={item} />)}
+                        </>
+                    ) : (
+                        <PlaceholderRow>Schedule not yet posted</PlaceholderRow>
+                    )}
+                </div>
+            </section>
 
             {/* Our team */}
-            {(ourNext || rankEntry) && (
-                <section className="flex flex-col gap-2">
-                    <SectionLabel>Our Team</SectionLabel>
-                    {rankEntry && (
-                        <div
-                            className="flex items-center gap-4 px-4 py-3 rounded-xl border"
-                            style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
-                        >
-                            <span className="text-sm font-semibold" style={{ color: "var(--theme-text)" }}>
-                                Rank {rankEntry.rank} / {rankTotal}
-                            </span>
-                            <span className="text-sm" style={{ color: "var(--theme-subtext-color)" }}>
-                                {rankEntry.record.wins}–{rankEntry.record.losses}–{rankEntry.record.ties}
-                            </span>
-                        </div>
-                    )}
-                    {ourNext && <NextMatchCard match={ourNext} />}
-                </section>
-            )}
+            <section className="flex flex-col gap-2">
+                <SectionLabel>Our Team</SectionLabel>
+                {rankEntry ? (
+                    <div className="flex items-center gap-4 px-4 py-3 rounded-xl border" style={cardBase}>
+                        <span className="text-sm font-semibold" style={{ color: "var(--theme-text)" }}>
+                            Rank {rankEntry.rank} / {rankTotal}
+                        </span>
+                        <span className="text-sm" style={{ color: "var(--theme-subtext-color)" }}>
+                            {rankEntry.record.wins}–{rankEntry.record.losses}–{rankEntry.record.ties}
+                        </span>
+                    </div>
+                ) : (
+                    <div className="flex items-center px-4 py-3 rounded-xl border" style={cardBase}>
+                        <span className="text-sm" style={{ color: "var(--theme-subtext-color)" }}>Rankings not yet available</span>
+                    </div>
+                )}
+                {ourNext ? (
+                    <NextMatchCard match={ourNext} />
+                ) : (
+                    <div className="flex items-center px-4 py-3 rounded-xl border" style={cardBase}>
+                        <span className="text-sm" style={{ color: "var(--theme-subtext-color)" }}>No upcoming match</span>
+                    </div>
+                )}
+            </section>
 
             {/* Watch teams */}
-            {watchGroups.length > 0 && (
-                <section>
-                    <SectionLabel>Watch</SectionLabel>
-                    <div
-                        className="rounded-xl border overflow-hidden"
-                        style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
-                    >
-                        {watchGroups.map(([matchKey, entries]) => (
+            <section>
+                <SectionLabel>Watch</SectionLabel>
+                <div className="rounded-xl border overflow-hidden" style={cardBase}>
+                    {watchGroups.length > 0 ? (
+                        watchGroups.map(([matchKey, entries]) => (
                             <WatchRow key={matchKey} entries={entries} />
-                        ))}
-                    </div>
-                </section>
-            )}
+                        ))
+                    ) : (
+                        <PlaceholderRow>Match data not yet available</PlaceholderRow>
+                    )}
+                </div>
+            </section>
 
             {/* Quick links */}
-            {hasLinks && (
-                <section>
-                    <SectionLabel>Links</SectionLabel>
+            <section>
+                <SectionLabel>Links</SectionLabel>
+                {hasLinks ? (
                     <div className="flex gap-3">
                         {SERVICES.map(({ key, label, favicon }) => {
                             const href = links![key]
@@ -156,8 +163,12 @@ export default function EventHubPage() {
                             return <LinkIcon key={key} label={label} favicon={favicon} href={href} />
                         })}
                     </div>
-                </section>
-            )}
+                ) : (
+                    <div className="flex items-center px-4 py-3 rounded-xl border" style={cardBase}>
+                        <span className="text-sm" style={{ color: "var(--theme-subtext-color)" }}>Links not yet available</span>
+                    </div>
+                )}
+            </section>
         </div>
     )
 }
@@ -167,6 +178,14 @@ function SectionLabel({ children }: { children: string }) {
         <p className="text-[11px] font-bold tracking-wider uppercase mb-3" style={{ color: "var(--theme-subtext-color)" }}>
             {children}
         </p>
+    )
+}
+
+function PlaceholderRow({ children }: { children: string }) {
+    return (
+        <div className="px-4 py-3 text-sm" style={{ color: "var(--theme-subtext-color)" }}>
+            {children}
+        </div>
     )
 }
 

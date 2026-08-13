@@ -5,11 +5,8 @@ export default function PackingPage() {
     const { info, loading } = useEventContext()
     const [checked, setChecked] = useState<Set<string>>(new Set())
 
-    if (loading) return <PageState>Loading…</PageState>
-
-    const hasPacking     = (info?.packing_list?.length ?? 0) > 0
+    const hasPacking      = (info?.packing_list?.length ?? 0) > 0
     const hasInstructions = (info?.instructions?.length ?? 0) > 0
-    if (!hasPacking && !hasInstructions) return <PageState>Packing info not yet posted.</PageState>
 
     function toggle(id: string) {
         setChecked(prev => {
@@ -23,14 +20,14 @@ export default function PackingPage() {
         <div className="max-w-xl mx-auto px-4 py-6 flex flex-col gap-8">
 
             {/* Packing list */}
-            {hasPacking && (
-                <section>
-                    <h2
-                        className="text-[11px] font-bold tracking-wider uppercase mb-4"
-                        style={{ color: "var(--theme-subtext-color)" }}
-                    >
-                        Packing List
-                    </h2>
+            <section>
+                <h2
+                    className="text-[11px] font-bold tracking-wider uppercase mb-4"
+                    style={{ color: "var(--theme-subtext-color)" }}
+                >
+                    Packing List
+                </h2>
+                {hasPacking ? (
                     <div className="flex flex-col gap-3">
                         {info!.packing_list!.map(({ category, items }) => (
                             <div
@@ -78,18 +75,25 @@ export default function PackingPage() {
                             </div>
                         ))}
                     </div>
-                </section>
-            )}
+                ) : (
+                    <div
+                        className="rounded-xl border px-4 py-3 text-sm"
+                        style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)", color: "var(--theme-subtext-color)" }}
+                    >
+                        Packing list not yet posted.
+                    </div>
+                )}
+            </section>
 
             {/* Instructions */}
-            {hasInstructions && (
-                <section>
-                    <h2
-                        className="text-[11px] font-bold tracking-wider uppercase mb-4"
-                        style={{ color: "var(--theme-subtext-color)" }}
-                    >
-                        Instructions
-                    </h2>
+            <section>
+                <h2
+                    className="text-[11px] font-bold tracking-wider uppercase mb-4"
+                    style={{ color: "var(--theme-subtext-color)" }}
+                >
+                    Instructions
+                </h2>
+                {hasInstructions ? (
                     <div className="flex flex-col gap-4">
                         {info!.instructions!.map(({ heading, body }) => (
                             <div key={heading}>
@@ -102,8 +106,15 @@ export default function PackingPage() {
                             </div>
                         ))}
                     </div>
-                </section>
-            )}
+                ) : (
+                    <div
+                        className="rounded-xl border px-4 py-3 text-sm"
+                        style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)", color: "var(--theme-subtext-color)" }}
+                    >
+                        Instructions not yet posted.
+                    </div>
+                )}
+            </section>
         </div>
     )
 }
