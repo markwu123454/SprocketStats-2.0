@@ -55,10 +55,7 @@ export default function ItineraryPage() {
         }
     }, [loading])
 
-    if (loading) return <PageState>Loading…</PageState>
-    if (!info?.itinerary?.length) return <PageState>Itinerary not yet posted.</PageState>
-
-    const rows = buildRows(info.itinerary, Date.now())
+    const rows = info?.itinerary?.length ? buildRows(info.itinerary, Date.now()) : []
 
     return (
         <div className="max-w-xl mx-auto px-4 py-6">
@@ -66,11 +63,17 @@ export default function ItineraryPage() {
                 className="rounded-xl border overflow-hidden"
                 style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
             >
-                {rows.map((row, i) => {
-                    if (row.type === "day") return <DayHeader key={i} label={row.label} />
-                    if (row.type === "now") return <NowLine key={i} ref={nowRef} />
-                    return <ItemRow key={i} item={row.item} isPast={row.isPast} />
-                })}
+                {rows.length > 0 ? (
+                    rows.map((row, i) => {
+                        if (row.type === "day") return <DayHeader key={i} label={row.label} />
+                        if (row.type === "now") return <NowLine key={i} ref={nowRef} />
+                        return <ItemRow key={i} item={row.item} isPast={row.isPast} />
+                    })
+                ) : (
+                    <div className="px-4 py-3 text-sm" style={{ color: "var(--theme-subtext-color)" }}>
+                        Itinerary not yet posted.
+                    </div>
+                )}
             </div>
         </div>
     )

@@ -46,7 +46,7 @@ function parseNexusStatus(raw: string | null | undefined): { label: string; colo
             if (re.test(raw)) return { label, color }
         }
     }
-    return { label: "In Pit", color: "var(--theme-subtext-color)" }
+    return { label: "Unknown", color: "var(--theme-subtext-color)" }
 }
 
 // ── main component ─────────────────────────────────────────────────────────────

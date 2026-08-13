@@ -69,20 +69,22 @@ const COL_DEFS: ColDef<RosterMember>[] = [
     },
 ]
 
-export default function RosterPage() {
-    const { info, loading } = useEventContext()
+function NoRosterOverlay() {
+    return <span style={{ color: "var(--theme-subtext-color)" }}>Roster not yet posted.</span>
+}
 
-    if (loading) return <PageState>Loading…</PageState>
-    if (!info?.roster?.length) return <PageState>Roster not yet posted.</PageState>
+export default function RosterPage() {
+    const { info } = useEventContext()
 
     return (
         <div className="h-full px-4 py-4 flex flex-col">
             <div className="rounded-xl overflow-hidden border theme-border flex-1 min-h-0">
                 <AgGridReact
-                    rowData={info.roster}
+                    rowData={info?.roster ?? []}
                     columnDefs={COL_DEFS}
                     defaultColDef={DEFAULT_COL_DEF}
                     autoSizeStrategy={AUTO_SIZE_STRATEGY}
+                    noRowsOverlayComponent={NoRosterOverlay}
                     initialState={{
                         sort: { sortModel: [{ colId: "role", sort: "asc" }] },
                     }}
