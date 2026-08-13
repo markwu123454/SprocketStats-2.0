@@ -307,7 +307,7 @@ async def init_db():
                         location      TEXT   NOT NULL,
                         event_type    TEXT   NOT NULL,
                         url           TEXT,
-                        tba_key       TEXT   UNIQUE,
+                        tba_key       TEXT,
                         display_order INT    NOT NULL DEFAULT 0
                     )
                 """)
@@ -426,6 +426,7 @@ async def run_migrations():
                 )
             """)
             await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS tba_key TEXT")
+            await conn.execute("ALTER TABLE events DROP CONSTRAINT IF EXISTS events_tba_key_key")
             await conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS events_tba_key_idx ON events (tba_key) WHERE tba_key IS NOT NULL"
             )
