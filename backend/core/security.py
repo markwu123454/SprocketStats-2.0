@@ -112,6 +112,31 @@ async def require_active(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+def require_tag(tag: str) -> Callable[..., dict]:
+    """Build a dependency that gates on the caller holding a specific tag.
+
+    Tags are not embedded in the JWT, so this always hits the DB — the check
+    reflects the current state even if the user's tags changed after login.
+    Stacks login + ban/approval enforcement the same way :func:`require_access`
+    does.
+
+    :param tag: The tag slug the caller must hold.
+    :returns: A dependency returning the authenticated user dict.
+    :raises HTTPException: 401 if unauthenticated; 403 if banned, pending, or
+        the tag is absent.
+    """
+    async def dependency(user: dict = Depends(get_current_user)) -> dict:
+        await account_state.assert_active(user["sub"])
+        import db as _db  # noqa: PLC0415 — lazy to break the core↔db import cycle
+        if not await _db.user_has_tag(user["sub"], tag):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Tag '{tag}' required",
+            )
+        return user
+    return dependency
+
+
 def require_access(
     *,
     roles: str | Iterable[str] | None = None,

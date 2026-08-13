@@ -4,6 +4,7 @@ import "./index.css"
 import ThemeProvider from "@/contexts/themeProvider.tsx"
 import {AuthProvider} from "@/contexts/AuthProvider"
 import {AppReadyProvider} from "@/contexts/AppReadyProvider"
+import {BootstrapProvider} from "@/contexts/BootstrapProvider"
 
 import AuthWrapper from "@/components/wrappers/AuthWrapper.tsx"
 import ControlGuard from "@/components/wrappers/ControlGuard.tsx"
@@ -53,6 +54,7 @@ export default function App() {
         <ThemeProvider>
             <AuthProvider>
                 <AppReadyProvider>
+                    <BootstrapProvider>
                     <BrowserRouter>
                         <div className="flex flex-col min-h-0" style={{ height: "var(--real-vh, 100dvh)" }}>
                             <Suspense fallback={null}>
@@ -91,6 +93,7 @@ export default function App() {
                             </Suspense>
                         </div>
                     </BrowserRouter>
+                    </BootstrapProvider>
                 </AppReadyProvider>
             </AuthProvider>
         </ThemeProvider>

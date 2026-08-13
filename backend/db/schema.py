@@ -286,6 +286,42 @@ async def init_db():
                     "CREATE INDEX IF NOT EXISTS push_delivery_logs_sent_created_idx "
                     "ON push_delivery_logs (created_at) WHERE status = 'sent'"
                 )
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_tags (
+                        user_id     TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        tag         TEXT        NOT NULL CHECK (tag ~ '^[a-z0-9_]{1,64}$'),
+                        assigned_by TEXT        REFERENCES users(id) ON DELETE SET NULL,
+                        assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        PRIMARY KEY (user_id, tag)
+                    )
+                """)
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS user_tags_tag_idx ON user_tags (tag)"
+                )
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS events (
+                        id            SERIAL PRIMARY KEY,
+                        name          TEXT   NOT NULL,
+                        start_time    TEXT   NOT NULL,
+                        end_time      TEXT,
+                        location      TEXT   NOT NULL,
+                        event_type    TEXT   NOT NULL,
+                        url           TEXT,
+                        tba_key       TEXT   UNIQUE,
+                        display_order INT    NOT NULL DEFAULT 0
+                    )
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS comp_events (
+                        event_key    TEXT PRIMARY KEY,
+                        event_name   TEXT NOT NULL,
+                        links        JSONB,
+                        itinerary    JSONB,
+                        packing_list JSONB,
+                        instructions JSONB,
+                        roster       JSONB
+                    )
+                """)
         except Exception as e:
             logger.error("Failed to initialize schema: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to initialize schema: {e}")
@@ -357,6 +393,45 @@ async def run_migrations():
             # now-unused column from any table created before this change.
             await conn.execute("ALTER TABLE push_messages DROP COLUMN IF EXISTS link")
             await conn.execute("ALTER TABLE meeting_hours ADD COLUMN IF NOT EXISTS meeting_purpose TEXT")
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_tags (
+                    user_id     TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    tag         TEXT        NOT NULL CHECK (tag ~ '^[a-z0-9_]{1,64}$'),
+                    assigned_by TEXT        REFERENCES users(id) ON DELETE SET NULL,
+                    assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    PRIMARY KEY (user_id, tag)
+                )
+            """)
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS user_tags_tag_idx ON user_tags (tag)"
+            )
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS events (
+                    id            SERIAL PRIMARY KEY,
+                    name          TEXT   NOT NULL,
+                    start_time    TEXT   NOT NULL,
+                    end_time      TEXT,
+                    location      TEXT   NOT NULL,
+                    event_type    TEXT   NOT NULL,
+                    url           TEXT,
+                    display_order INT    NOT NULL DEFAULT 0
+                )
+            """)
+            await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS tba_key TEXT")
+            await conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS events_tba_key_idx ON events (tba_key) WHERE tba_key IS NOT NULL"
+            )
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS comp_events (
+                    event_key    TEXT PRIMARY KEY,
+                    event_name   TEXT NOT NULL,
+                    links        JSONB,
+                    itinerary    JSONB,
+                    packing_list JSONB,
+                    instructions JSONB,
+                    roster       JSONB
+                )
+            """)
         except Exception as e:
             logger.warning("Migration warning: %s", e)
 

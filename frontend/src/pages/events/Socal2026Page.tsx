@@ -1,13 +1,15 @@
 import {Users} from "lucide-react"
 import EventDetailLayout from "@/components/events/EventDetailLayout.tsx"
 import EventComingSoonPage from "@/pages/EventComingSoonPage.tsx"
-import {resolveEventByUrl} from "@/lib/events.ts"
+import {type EventEntry, resolveEventByUrl} from "@/lib/events.ts"
+import {useBootstrapped} from "@/contexts/bootstrapContext"
 
 // Detail page for the 2026 SoCal Showdown (/events/2026cass). Not much is
 // locked in yet — this establishes the layout other event pages should
 // follow; swap this placeholder body out as real details show up.
 export default function Socal2026Page() {
-    const event = resolveEventByUrl("/events/2026cass")
+    const [rawEvents] = useBootstrapped<EventEntry[]>("events", [])
+    const event = resolveEventByUrl(rawEvents, "/events/2026cass")
     if (!event) return <EventComingSoonPage/>
 
     return (

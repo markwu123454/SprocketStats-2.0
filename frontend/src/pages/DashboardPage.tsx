@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react"
+import {useEffect, useState} from "react"
 import { useOnboardedUser } from "@/contexts/authContext"
+import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { Calendar, Eye, EyeOff, KeyRound } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
 
@@ -26,7 +27,7 @@ const cardStyle = { background: "var(--theme-bg)", borderColor: "var(--theme-bor
 
 export default function DashboardPage() {
     const user = useOnboardedUser()
-    const [meetings, setMeetings] = useState<MeetingHours[] | null>(null)
+    const [meetings, setMeetings] = useBootstrapped<MeetingHours[] | null>("meetings", null)
     const [codeVisible, setCodeVisible] = useState(false)
 
     useEffect(() => {
