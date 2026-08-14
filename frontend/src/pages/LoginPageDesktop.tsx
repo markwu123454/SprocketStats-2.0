@@ -4,7 +4,7 @@ import {
     GoogleButton,
     HeroContent,
     LegalFooter,
-    LoginErrorNotice,
+    LoginNoticeBanner,
     SignInHeading,
     SponsorFooter,
 } from "@/components/LoginShared";
@@ -13,7 +13,7 @@ import { useScrollLock } from "@/lib/useScrollLock";
 /* ════════════════════════════════════════════════════════════════
    LoginPageDesktop — split hero / form layout
    ════════════════════════════════════════════════════════════════ */
-export default function LoginPageDesktop({ season, timeInfo, loading, banned, pendingApproval, authError, signInWithGoogle }: LoginPageProps) {
+export default function LoginPageDesktop({ season, timeInfo, loading, loginNotice, signingIn, signInWithGoogle }: LoginPageProps) {
     useScrollLock();
 
     return (
@@ -49,23 +49,9 @@ export default function LoginPageDesktop({ season, timeInfo, loading, banned, pe
                         <SignInHeading />
                     </div>
 
-                    <GoogleButton loading={loading} disabled={authError} onClick={signInWithGoogle} />
+                    <GoogleButton loading={loading || signingIn} disabled={loginNotice === "authError"} onClick={signInWithGoogle} />
 
-                    {banned && (
-                        <LoginErrorNotice>
-                            This account has been banned. Contact a captain or mentor if you think that's a mistake.
-                        </LoginErrorNotice>
-                    )}
-                    {pendingApproval && (
-                        <LoginErrorNotice>
-                            Your account is awaiting approval. Ask a captain or mentor to approve you, then sign in again.
-                        </LoginErrorNotice>
-                    )}
-                    {authError && (
-                        <LoginErrorNotice>
-                            Can't reach the server right now. Try again in a moment.
-                        </LoginErrorNotice>
-                    )}
+                    <LoginNoticeBanner notice={loginNotice} />
 
                     <SponsorFooter />
                 </div>

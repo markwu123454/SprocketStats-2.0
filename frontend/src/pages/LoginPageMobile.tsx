@@ -6,7 +6,7 @@ import {
     HeroContent,
     LegalFooter,
     LegalFooterCompact,
-    LoginErrorNotice,
+    LoginNoticeBanner,
     SignInHeading,
     SponsorFooter,
 } from "@/components/LoginShared";
@@ -28,14 +28,14 @@ import { useScrollLock } from "@/lib/useScrollLock";
    button sits lowest relative to the footer.
    ──────────────────────────────────────────────────────────────── */
 const CLAMP_PEEK     = 34;
-const CLAMP_EXPANDED = 175;
+const CLAMP_EXPANDED = 100;
 const PEEK_HEIGHT    = 155;
-const EXPAND_HEIGHT  = 425;
+const EXPAND_HEIGHT  = 350;
 
 /* ════════════════════════════════════════════════════════════════
    LoginPageMobile — hero + draggable bottom sheet
    ════════════════════════════════════════════════════════════════ */
-export default function LoginPageMobile({ season, timeInfo, loading, banned, pendingApproval, authError, signInWithGoogle }: LoginPageProps) {
+export default function LoginPageMobile({ season, timeInfo, loading, loginNotice, signingIn, signInWithGoogle }: LoginPageProps) {
     useScrollLock();
 
     const sheetRef  = useRef<HTMLElement>(null);
@@ -48,9 +48,8 @@ export default function LoginPageMobile({ season, timeInfo, loading, banned, pen
     /* ── Error notice measurement ────────────────────────────────
        The notice slot is always mounted and collapses to zero height
        when there is nothing to say, so measuring it covers a notice
-       appearing and clearing. Keyed on the flags rather than watched
-       with a ResizeObserver: the flags are what change, and the resize
-       listener picks up a re-wrap on rotation.
+       appearing and clearing. Keyed on loginNotice: that's what changes,
+       and the resize listener picks up a re-wrap on rotation.
        ────────────────────────────────────────────────────────────── */
     useLayoutEffect(() => {
         const measure = () => {
@@ -60,7 +59,7 @@ export default function LoginPageMobile({ season, timeInfo, loading, banned, pen
         measure();
         window.addEventListener("resize", measure);
         return () => window.removeEventListener("resize", measure);
-    }, [banned, pendingApproval, authError]);
+    }, [loginNotice]);
 
     const peekHeight   = PEEK_HEIGHT   + errorHeight;
     const expandHeight = EXPAND_HEIGHT + errorHeight;
@@ -282,28 +281,14 @@ export default function LoginPageMobile({ season, timeInfo, loading, banned, pen
                         </div>
 
                         {/* Google button — always visible */}
-                        <GoogleButton loading={loading} disabled={authError} onClick={signInWithGoogle} />
+                        <GoogleButton loading={loading || signingIn} disabled={loginNotice === "authError"} onClick={signInWithGoogle} />
 
                         {/* Error notice — in normal flow, so a rejected sign-in is
                             visible in the peek state without discovering the drag.
                             flex-col keeps the notice margins out of the parent's
                             collapse, so the measured height is the real one. */}
                         <div ref={errorRef} className="flex flex-col">
-                            {banned && (
-                                <LoginErrorNotice>
-                                    This account has been banned. Contact a captain or mentor if you think that's a mistake.
-                                </LoginErrorNotice>
-                            )}
-                            {pendingApproval && (
-                                <LoginErrorNotice>
-                                    Your account is awaiting approval. Ask a captain or mentor to approve you, then sign in again.
-                                </LoginErrorNotice>
-                            )}
-                            {authError && (
-                                <LoginErrorNotice>
-                                    Can't reach the server right now. Try again in a moment.
-                                </LoginErrorNotice>
-                            )}
+                            <LoginNoticeBanner notice={loginNotice} />
                         </div>
 
                         {/* Compact legal line — visible at peek, fades out as the
