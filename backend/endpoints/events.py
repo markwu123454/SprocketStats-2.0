@@ -79,9 +79,19 @@ async def get_event_update(event_key: str, _: dict = Depends(get_current_user)):
 
 # ── Bootstrap helper ───────────────────────────────────────────────────────────
 
-async def get_prefetch_event_info() -> dict | None:
+async def get_current_event_info(user: dict) -> dict | None:
+    """Prefetch the currently-selected event via get_event_info — the same
+    assembly a normal page load hits — instead of duplicating it here."""
     row = await db.get_prefetch_event()
     if not row:
         return None
-    matches, rankings, nexus_data = await _fetch_live(row["event_key"])
-    return {**row, **_live_payload(matches, rankings, nexus_data)}
+    try:
+        return await get_event_info(row["event_key"], user)
+    except HTTPException:
+        return None
+
+@router.get("/list_events")
+async def list_event_keys(_: dict = Depends(get_current_user)) -> list[str]:
+    """Event keys with a hub page. Backs the `event_keys` bootstrap entry so the
+    frontend can tell a real event from a 404 without a per-event fetch."""
+    return await db.get_comp_event_keys()

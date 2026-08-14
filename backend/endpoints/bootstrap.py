@@ -21,9 +21,8 @@ from fastapi import APIRouter, Depends
 
 from core.permissions import can, get_permissions_for_role, has_moderation_authority
 from core.security import get_current_user
-import db
 from .attendance import get_meetings
-from .events import list_events, get_prefetch_event_info
+from .events import list_events, get_current_event_info, list_event_keys
 from .members import list_members
 from .tags import get_all_assignments, get_user_tags
 
@@ -38,6 +37,11 @@ router = APIRouter()
 #   guard         — None: all authenticated users
 #                   "roster": leads, captains, and mentors only
 #
+# Factories call endpoint functions (from .events, .attendance, etc.), never
+# db.* directly. The point of bootstrap is to prefetch what each endpoint
+# would return — permission checks, response shaping, joins with other data —
+# not to reach around that and return raw db output.
+#
 # URL cross-reference (what each page fetches independently on its own visit):
 #   meetings         → GET /attendance/meetings
 #   tag_assignments  → GET /tags/assignments
@@ -50,7 +54,8 @@ ENDPOINTS: list[tuple[str, object, str | None]] = [
     ("tag_assignments", lambda u: get_all_assignments(),      None),
     ("user_tags",       lambda u: get_user_tags(u["sub"]),    None),
     ("members",         lambda u: list_members(user=u),       "roster"),
-    ("current_event",   lambda u: get_prefetch_event_info(),  None),
+    ("current_event",   lambda u: get_current_event_info(u),  None),
+    ("event_keys",      lambda u: list_event_keys(),          None),
 ]
 
 
