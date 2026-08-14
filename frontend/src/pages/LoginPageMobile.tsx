@@ -268,6 +268,12 @@ export default function LoginPageMobile({ season, timeInfo, loading, loginNotice
                 >
                     <div aria-hidden="true" className="lpm-drag-handle"/>
 
+                    {__GIT_HASH__ && (
+                        <span style={{position: "absolute", bottom: "calc(10px + env(safe-area-inset-bottom, 0px))", right: 12, fontSize: 10, fontFamily: "monospace", color: "color-mix(in oklch, var(--theme-subtext-color) 55%, transparent)", userSelect: "none", pointerEvents: "none"}}>
+                            {__GIT_HASH__}
+                        </span>
+                    )}
+
                     <div
                         className="lpm-form-center"
                         style={{
