@@ -28,9 +28,9 @@ import { useScrollLock } from "@/lib/useScrollLock";
    button sits lowest relative to the footer.
    ──────────────────────────────────────────────────────────────── */
 const CLAMP_PEEK     = 34;
-const CLAMP_EXPANDED = 175;
+const CLAMP_EXPANDED = 100;
 const PEEK_HEIGHT    = 155;
-const EXPAND_HEIGHT  = 425;
+const EXPAND_HEIGHT  = 350;
 
 /* ════════════════════════════════════════════════════════════════
    LoginPageMobile — hero + draggable bottom sheet
