@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useEventContext } from "@/contexts/eventContext"
 
 export default function PackingPage() {
-    const { info, loading } = useEventContext()
+    const { info } = useEventContext()
     const [checked, setChecked] = useState<Set<string>>(new Set())
 
     const hasPacking      = (info?.packing_list?.length ?? 0) > 0
@@ -11,7 +11,8 @@ export default function PackingPage() {
     function toggle(id: string) {
         setChecked(prev => {
             const next = new Set(prev)
-            next.has(id) ? next.delete(id) : next.add(id)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
             return next
         })
     }
@@ -115,14 +116,6 @@ export default function PackingPage() {
                     </div>
                 )}
             </section>
-        </div>
-    )
-}
-
-function PageState({ children }: { children: string }) {
-    return (
-        <div className="flex items-center justify-center py-16">
-            <span className="text-sm" style={{ color: "var(--theme-subtext-color)" }}>{children}</span>
         </div>
     )
 }

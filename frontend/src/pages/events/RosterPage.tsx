@@ -95,11 +95,3 @@ export default function RosterPage() {
         </div>
     )
 }
-
-function PageState({ children }: { children: string }) {
-    return (
-        <div className="flex items-center justify-center py-16">
-            <span className="text-sm" style={{ color: "var(--theme-subtext-color)" }}>{children}</span>
-        </div>
-    )
-}

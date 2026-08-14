@@ -1,4 +1,4 @@
-import {createElement, useCallback, useEffect, useState} from "react"
+import {createElement, useCallback, useEffect, useRef, useState} from "react"
 import {AuthContext} from "./authContext"
 import type {LoginNotice} from "./authContext"
 import * as React from "react";
@@ -12,6 +12,7 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
     const [loading, setLoading] = useState(true)
     const [loginNotice, setLoginNotice] = useState<LoginNotice>(null)
     const [signingIn, setSigningIn] = useState(false)
+    const prefetchedLoginUrl = useRef<string | null>(null)
 
     const fetchUser = useCallback(async () => {
         let res
@@ -91,6 +92,20 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
         }
     }, [fetchUser])
 
+    // Pre-fetch the Google OAuth URL whenever there's no signed-in user so the
+    // popup can open directly to accounts.google.com on click, skipping the
+    // backend round-trip (~400ms). The URL is consumed and cleared on use; if
+    // it hasn't resolved yet the popup falls back to /auth/login as before.
+    useEffect(() => {
+        if (loading || user) return
+        let cancelled = false
+        fetch(`${API}/auth/login-url`, {credentials: "include"})
+            .then(r => r.ok ? r.json() : null)
+            .then(data => { if (!cancelled && data?.url) prefetchedLoginUrl.current = data.url })
+            .catch(() => {})
+        return () => { cancelled = true }
+    }, [loading, user])
+
     // Opens Google sign-in in a popup instead of navigating the main tab away.
     // The popup lands on the backend's /auth/callback, which posts a result
     // back via postMessage and closes itself (see _popup_close_html in
@@ -125,19 +140,28 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
             return
         }
 
-        if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-            try {
-                // #0e0e0e matches the actual dark-mode background of Google's
-                // account chooser (accounts.google.com), sampled directly from
-                // a screenshot rather than guessed.
-                popup.document.write('<!doctype html><html><body style="background:#0e0e0e;margin:0"></body></html>')
-                popup.document.close()
-            } catch {
-                // Best-effort cosmetic touch — a failure here shouldn't block sign-in.
-            }
+        try {
+            // Paint the popup before navigating — avoids raw about:blank while
+            // the target page loads. Dark bg sampled from Google's own account
+            // chooser so the transition is seamless in dark mode.
+            const dark = window.matchMedia("(prefers-color-scheme: dark)").matches
+            const bg = dark ? "#0e0e0e" : "#f3f4f6"
+            const fg = dark ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.35)"
+            popup.document.write(
+                `<!doctype html><html lang="en"><body style="background:${bg};margin:0;height:100vh;` +
+                `display:flex;align-items:center;justify-content:center;` +
+                `font:13px/1 system-ui,sans-serif;color:${fg}">Connecting to Google…</body></html>`
+            )
+            popup.document.close()
+        } catch {
+            // Best-effort cosmetic touch — a failure here shouldn't block sign-in.
         }
 
-        popup.location.href = `${API}/auth/login`
+        // Use the pre-fetched Google URL if available (skips the backend hop),
+        // otherwise fall back to /auth/login which will redirect there.
+        const loginTarget = prefetchedLoginUrl.current ?? `${API}/auth/login`
+        prefetchedLoginUrl.current = null
+        popup.location.href = loginTarget
 
         // Starting a new attempt supersedes whatever notice was left over
         // from before (a stale ban/pending/authError notice, or a previous
@@ -173,7 +197,7 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
 
         const poll = window.setInterval(() => {
             if (popup.closed) finish("cancelled")
-        }, 500)
+        }, 200)
     }, [fetchUser])
 
     const logout = useCallback(async () => {

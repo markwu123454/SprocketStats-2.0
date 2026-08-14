@@ -56,13 +56,10 @@ export default function LoginPageRouter() {
     const isMobile  = useIsMobile();
 
     useEffect(() => {
-        const t = setTimeout(() => markReady(), 500);
-        return () => clearTimeout(t);
-    }, [markReady]);
-
-    useEffect(() => {
-        if (!loading && user) navigate("/dashboard", { replace: true });
-    }, [user, loading, navigate]);
+        if (loading) return;
+        if (user) navigate("/dashboard", { replace: true });
+        else markReady();
+    }, [loading, user, navigate, markReady]);
 
     const props: LoginPageProps = { season, timeInfo, loading, loginNotice, signingIn, signInWithGoogle };
 

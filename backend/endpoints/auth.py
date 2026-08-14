@@ -76,6 +76,21 @@ async def login(request: Request):
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 
+@router.get("/login-url")
+async def login_url(request: Request):
+    """Pre-generate the Google OAuth URL without issuing a redirect.
+
+    Stores state/nonce in the session exactly as /login would, so the callback
+    validates correctly. The frontend pre-fetches this on login page mount and
+    opens the popup directly to accounts.google.com, skipping the backend
+    round-trip on click (~400ms saved).
+    """
+    redirect_uri = str(request.url_for("callback"))
+    rv = await oauth.google.create_authorization_url(redirect_uri)
+    await oauth.google.save_authorize_data(request, redirect_uri=redirect_uri, **rv)
+    return {"url": rv["url"]}
+
+
 @router.get("/callback", name="callback")
 async def callback(request: Request):
     try:
