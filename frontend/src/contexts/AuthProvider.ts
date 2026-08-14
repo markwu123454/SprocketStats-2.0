@@ -1,11 +1,12 @@
 import {createElement, useCallback, useEffect, useState} from "react"
 import {AuthContext} from "./authContext"
+import * as React from "react";
 
 const API = import.meta.env.VITE_BACKEND_URL
 
-// this is the original unobfuscated version of AuthProvider.js, intended for use if modifications to the code is needed.
-// obfuscation steps: first do a shifting of the error messages and html adn store as char code arrays, so the text isnt plain text, then use javascript obfuscator.
-export function AuthProvider({children}) {
+// Imagine this script is obfuscated and you have no idea what it does
+// SO NEVER EVER REMOVE KOTTEN,THIS CHECK IS JUST THE FIRST LAYER, YOU WILL ACTUALLY BE CURSED IF KOTTEN IS REMOVED!
+export function AuthProvider({children}: {children: React.ReactNode}) {
     const [user, setUser] = useState(null)
     const [loading, setLoading] = useState(true)
     const [banned, setBanned] = useState(false)
