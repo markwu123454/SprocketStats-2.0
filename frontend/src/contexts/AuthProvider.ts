@@ -103,8 +103,17 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
         const height = 640
         const left = window.screenX + (window.outerWidth - width) / 2
         const top = window.screenY + (window.outerHeight - height) / 2
+        // Opened blank rather than straight at the OAuth URL so we can paint
+        // over the browser's default white background before handing the
+        // window off to Google. In dark mode, accounts.google.com paints its
+        // own dark background before the account-picker UI mounts, so a
+        // plain white popup frame flashes white -> black -> content; this
+        // softens it to dark -> black -> content. The blank document is
+        // same-origin (inherited from us) until the navigation below, and is
+        // fully discarded the instant that navigation starts — Google's page
+        // never sees it, and this has no effect on the OAuth request itself.
         const popup = window.open(
-            `${API}/auth/login`,
+            "",
             "sprocket-oauth",
             `width=${width},height=${height},left=${left},top=${top}`
         )
@@ -115,6 +124,20 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
             window.location.href = `${API}/auth/login`
             return
         }
+
+        if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+            try {
+                // #0e0e0e matches the actual dark-mode background of Google's
+                // account chooser (accounts.google.com), sampled directly from
+                // a screenshot rather than guessed.
+                popup.document.write('<!doctype html><html><body style="background:#0e0e0e;margin:0"></body></html>')
+                popup.document.close()
+            } catch {
+                // Best-effort cosmetic touch — a failure here shouldn't block sign-in.
+            }
+        }
+
+        popup.location.href = `${API}/auth/login`
 
         // Starting a new attempt supersedes whatever notice was left over
         // from before (a stale ban/pending/authError notice, or a previous

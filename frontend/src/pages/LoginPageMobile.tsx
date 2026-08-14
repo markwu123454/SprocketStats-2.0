@@ -270,7 +270,16 @@ export default function LoginPageMobile({ season, timeInfo, loading, loginNotice
 
                     <div
                         className="lpm-form-center"
-                        style={{ paddingBottom: btnClamp }}
+                        style={{
+                            paddingBottom: btnClamp,
+                            // Matches .lpm-sheet's height transition below — without
+                            // this, the sheet's own height animates smoothly on
+                            // release but this padding (which is what actually
+                            // pushes the button/notices/peek-legal-line up or down)
+                            // snaps instantly, since it's a plain inline style with
+                            // no CSS transition of its own.
+                            transition: dragging ? "none" : "padding-bottom 0.38s cubic-bezier(0.32, 0.72, 0, 1)",
+                        }}
                     >
                         {/* Heading — fades in as sheet expands */}
                         <div className="lpm-reveal-head lpm-expand-only">
