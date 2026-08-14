@@ -59,6 +59,15 @@ export default function LoginPageDesktop({ season, timeInfo, loading, loginNotic
                 <div className="w-full max-w-[420px] mx-auto self-end">
                     <LegalFooter />
                 </div>
+
+                {__GIT_HASH__ && (
+                    <span
+                        className="absolute bottom-2 right-3 text-[10px] select-none pointer-events-none font-mono"
+                        style={{ color: "color-mix(in oklch, var(--theme-subtext-color) 55%, transparent)" }}
+                    >
+                        {__GIT_HASH__}
+                    </span>
+                )}
             </section>
         </div>
     );
