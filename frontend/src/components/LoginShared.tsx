@@ -26,7 +26,7 @@ export function SeasonWordmark({ url, label }: { url: string; label: string }) {
         return () => { cancelled = true; };
     }, [url]);
 
-    if (!svg) return null;
+    if (!svg) return <div className="w-[min(480px,100%)] h-[94px]" aria-label={label} />;
 
     return (
         <div

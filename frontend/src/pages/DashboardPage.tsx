@@ -2,7 +2,7 @@ import {useEffect, useState} from "react"
 import { Link } from "react-router-dom"
 import { useOnboardedUser } from "@/contexts/authContext"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
-import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, Milestone } from "lucide-react"
+import { Calendar, Eye, EyeOff, KeyRound, ChevronRight } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
 import { resolveEvent, type EventEntry } from "@/lib/events"
 import type { EventInfo } from "@/lib/eventApi"
@@ -45,7 +45,7 @@ export default function DashboardPage() {
             .then((data: MeetingHours[]) => { if (!cancelled) setMeetings(data) })
             .catch(() => { if (!cancelled) setMeetings([]) })
         return () => { cancelled = true }
-    }, [])
+    }, [setMeetings])
 
     const now = new Date()
     const sorted = (meetings ?? [])

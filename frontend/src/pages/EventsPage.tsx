@@ -17,7 +17,7 @@ export default function EventsPage() {
             .then((data: EventEntry[]) => { if (!cancelled) setRawEvents(data) })
             .catch(() => {})
         return () => { cancelled = true }
-    }, [])
+    }, [setRawEvents])
 
     const events = resolveEvents(rawEvents)
 

@@ -46,11 +46,11 @@ function getTimelineSlice(items: ItineraryItem[]) {
 
 function nextMatchFor(matches: TBAMatch[], teamKey: string): TBAMatch | null {
     const now = Date.now() / 1000
-    return matches
+    const sorted = matches
         .filter(m => getAlliance(m, teamKey) !== null && !m.actual_time)
         .filter(m => (m.predicted_time ?? m.scheduled_time ?? 0) > now - 600)
         .sort((a, b) => (a.predicted_time ?? a.scheduled_time ?? 0) - (b.predicted_time ?? b.scheduled_time ?? 0))
-        [0] ?? null
+    return sorted[0] ?? null
 }
 
 export default function EventHubPage() {

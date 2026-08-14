@@ -245,7 +245,7 @@ export default function LoginPageMobile({ season, timeInfo, loading, loginNotice
                         }}
                     />
 
-                    <HeroContent season={season} timeInfo={timeInfo} compact />
+                    <HeroContent season={season} timeInfo={timeInfo} compact/>
                 </aside>
 
                 {/* ══ BOTTOM — sheet ══ */}
@@ -263,10 +263,10 @@ export default function LoginPageMobile({ season, timeInfo, loading, loginNotice
                         transition: dragging ? "none" : "height 0.38s cubic-bezier(0.32, 0.72, 0, 1)",
                         touchAction: "none",
                         ["--btn-clamp" as string]: `${btnClamp}px`,
-                        ...(dragging ? { ["--reveal" as string]: reveal } : {}),
+                        ...(dragging ? {["--reveal" as string]: reveal} : {}),
                     }}
                 >
-                    <div aria-hidden="true" className="lpm-drag-handle" />
+                    <div aria-hidden="true" className="lpm-drag-handle"/>
 
                     <div
                         className="lpm-form-center"
@@ -284,32 +284,33 @@ export default function LoginPageMobile({ season, timeInfo, loading, loginNotice
                         {/* Heading — fades in as sheet expands */}
                         <div className="lpm-reveal-head lpm-expand-only">
                             <div className="mb-4">
-                                <BrandLockup size={32} />
+                                <BrandLockup size={32}/>
                             </div>
-                            <SignInHeading />
+                            <SignInHeading/>
                         </div>
 
                         {/* Google button — always visible */}
-                        <GoogleButton loading={loading || signingIn} disabled={loginNotice === "authError"} onClick={signInWithGoogle} />
+                        <GoogleButton loading={loading || signingIn} disabled={loginNotice === "authError"}
+                                      onClick={signInWithGoogle}/>
 
                         {/* Error notice — in normal flow, so a rejected sign-in is
                             visible in the peek state without discovering the drag.
                             flex-col keeps the notice margins out of the parent's
                             collapse, so the measured height is the real one. */}
                         <div ref={errorRef} className="flex flex-col">
-                            <LoginNoticeBanner notice={loginNotice} />
+                            <LoginNoticeBanner notice={loginNotice}/>
                         </div>
 
                         {/* Compact legal line — visible at peek, fades out as the
                             full footer below takes over */}
                         <div className="mt-3.5 lpm-peek-only">
-                            <LegalFooterCompact />
+                            <LegalFooterCompact/>
                         </div>
 
                         {/* Footer — fades in below the button as sheet expands */}
                         <div className="lpm-reveal-foot lpm-expand-only">
-                            <LegalFooter />
-                            <SponsorFooter />
+                            <LegalFooter/>
+                            <SponsorFooter/>
                         </div>
                     </div>
                 </section>
