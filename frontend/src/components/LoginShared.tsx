@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "@/contexts/themeContext";
+import type { LoginNotice } from "@/contexts/authContext";
 import type { SeasonInfo, TimeInfo } from "@/pages/LoginPageRouter";
 
 /* ════════════════════════════════════════════════════════════════
@@ -204,7 +205,7 @@ export function LegalFooterCompact() {
 }
 
 /* ── Login error notice — banned account, unreachable backend, etc ── */
-export function LoginErrorNotice({ children }: { children: React.ReactNode }) {
+function LoginErrorNotice({ children }: { children: React.ReactNode }) {
     return (
         <p
             className="m-0 mt-4 mb-3 px-3 py-2 rounded-lg border text-[13px] leading-snug"
@@ -218,6 +219,48 @@ export function LoginErrorNotice({ children }: { children: React.ReactNode }) {
         </p>
     );
 }
+
+/* ── Login notice banner — renders the one active LoginNotice, if any ──
+   `notice` is mutually exclusive by construction (see LoginNotice in
+   authContext.ts), so this is a straight switch rather than a stack of
+   independent conditionals. */
+export function LoginNoticeBanner({ notice }: { notice: LoginNotice }) {
+    switch (notice) {
+        case "banned":
+            return (
+                <LoginErrorNotice>
+                    This account has been banned. Contact a captain or mentor if you think that's a mistake.
+                </LoginErrorNotice>
+            );
+        case "pendingApproval":
+            return (
+                <LoginErrorNotice>
+                    Your account is awaiting approval. Ask a captain or mentor to approve you, then sign in again.
+                </LoginErrorNotice>
+            );
+        case "authError":
+            return (
+                <LoginErrorNotice>
+                    Can't reach the server right now. Try again in a moment.
+                </LoginErrorNotice>
+            );
+        case "signInError":
+            return (
+                <LoginErrorNotice>
+                    Sign-in didn't go through. Please try again.
+                </LoginErrorNotice>
+            );
+        case "signInCancelled":
+            return (
+                <LoginErrorNotice>
+                    Sign-in cancelled.
+                </LoginErrorNotice>
+            );
+        default:
+            return null;
+    }
+}
+
 
 /* ── Sign-in heading ─────────────────────────────────────────── */
 export function SignInHeading() {

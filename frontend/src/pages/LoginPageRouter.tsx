@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/authContext";
+import type { LoginNotice } from "@/contexts/authContext";
 import { useAppReady } from "@/contexts/appReadyContext";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { useThemeSeasonInfo, type SeasonInfo } from "@/lib/seasonTheme";
@@ -18,9 +19,8 @@ export interface LoginPageProps {
     season: SeasonInfo | null;
     timeInfo: TimeInfo;
     loading: boolean;
-    banned: boolean;
-    pendingApproval: boolean;
-    authError: boolean;
+    loginNotice: LoginNotice;
+    signingIn: boolean;
     signInWithGoogle: () => void;
 }
 
@@ -48,7 +48,7 @@ function getTimeInfo(): TimeInfo {
 
 /* ── Router ──────────────────────────────────────────────────── */
 export default function LoginPageRouter() {
-    const { user, loading, banned, pendingApproval, authError, signInWithGoogle } = useAuth();
+    const { user, loading, loginNotice, signingIn, signInWithGoogle } = useAuth();
     const navigate  = useNavigate();
     const markReady = useAppReady();
     const season    = useThemeSeasonInfo();
@@ -64,7 +64,7 @@ export default function LoginPageRouter() {
         if (!loading && user) navigate("/dashboard", { replace: true });
     }, [user, loading, navigate]);
 
-    const props: LoginPageProps = { season, timeInfo, loading, banned, pendingApproval, authError, signInWithGoogle };
+    const props: LoginPageProps = { season, timeInfo, loading, loginNotice, signingIn, signInWithGoogle };
 
     return isMobile
         ? <LoginPageMobile  {...props} />

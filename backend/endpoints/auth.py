@@ -1,9 +1,11 @@
+import json
+import logging
 import os
 
 # noinspection PyUnresolvedReferences
 from authlib.integrations.starlette_client import OAuth
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, field_validator, model_validator
 
 import db
@@ -20,6 +22,8 @@ from core.security import (
     set_auth_cookie,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL")
@@ -34,6 +38,38 @@ oauth.register(
 )
 
 
+def _popup_close_html(*, ok: bool, fallback_path: str) -> HTMLResponse:
+    """The page the OAuth popup lands on after Google redirects back.
+
+    Hands the result to the window that opened the popup via ``postMessage``
+    and closes itself, so the main app tab never navigates away (see
+    ``signInWithGoogle`` in AuthProvider.ts). Falls back to a normal redirect
+    of *this* window when there's no ``opener`` -- e.g. the popup got blocked
+    and the browser fell back to a same-tab navigation, or ``/auth/login`` was
+    opened directly rather than through the popup flow.
+    """
+    message = json.dumps({"source": "sprocket-auth", "ok": ok})
+    target_origin = json.dumps(FRONTEND_URL)
+    fallback_url = json.dumps(f"{FRONTEND_URL}{fallback_path}")
+    html = f"""<!doctype html>
+<html><body style="font-family:sans-serif;text-align:center;padding-top:3rem;color:#666">
+<p>{"Signing you in&hellip;" if ok else "Sign-in failed. You can close this window."}</p>
+<script>
+(function() {{
+    try {{
+        if (window.opener) {{
+            window.opener.postMessage({message}, {target_origin});
+            window.close();
+            return;
+        }}
+    }} catch (e) {{}}
+    window.location.replace({fallback_url});
+}})();
+</script>
+</body></html>"""
+    return HTMLResponse(html)
+
+
 @router.get("/login")
 async def login(request: Request):
     redirect_uri = str(request.url_for("callback"))
@@ -44,12 +80,14 @@ async def login(request: Request):
 async def callback(request: Request):
     try:
         token = await oauth.google.authorize_access_token(request)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"OAuth error: {exc}")
+    except Exception:
+        logger.warning("OAuth token exchange failed", exc_info=True)
+        return _popup_close_html(ok=False, fallback_path="/")
 
     user_info = token.get("userinfo")
     if not user_info:
-        raise HTTPException(status_code=400, detail="No userinfo in token response")
+        logger.warning("OAuth callback had no userinfo in token response")
+        return _popup_close_html(ok=False, fallback_path="/")
 
     user = await db.upsert_user(user_info)
     user_dict = dict(user)
@@ -57,7 +95,7 @@ async def callback(request: Request):
     session_jwt = issue_jwt(user_dict)
 
     redirect_path = "/onboarding" if not user_dict.get("onboarding_complete") else "/dashboard"
-    response = RedirectResponse(url=f"{FRONTEND_URL}{redirect_path}")
+    response = _popup_close_html(ok=True, fallback_path=redirect_path)
     set_auth_cookie(response, session_jwt)
     return response
 

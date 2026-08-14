@@ -66,21 +66,35 @@ export interface OnboardedUser extends BaseUser {
 
 export type User = PendingUser | OnboardedUser
 
+/**
+ * The single reason (if any) the login screen has something to tell the user.
+ * Mutually exclusive by construction — AuthProvider only ever has one of
+ * these active at a time, replacing whatever was there before rather than
+ * layering on top of it.
+ *
+ *  - `"banned"` — last /auth/me came back 403 "banned": a real account, blocked.
+ *  - `"pendingApproval"` — last /auth/me came back 403 "pending approval": onboarded
+ *    into a privileged role, awaiting a captain/mentor.
+ *  - `"authError"` — last /auth/me failed for a reason other than "not signed
+ *    in", banned, or pending (network failure, 404, 500, 503, ...). Signing in
+ *    would just hit the same broken backend, so the login UI blocks the button
+ *    rather than bouncing the user through a dead redirect.
+ *  - `"signInError"` — the OAuth popup reported the exchange itself failed
+ *    (Google rejected it, callback error, etc). Distinct from `"authError"`,
+ *    which is about the backend being unreachable, not a bad sign-in attempt.
+ *  - `"signInCancelled"` — the popup closed without ever reporting a result.
+ *    In practice almost always the user closing it partway through, not a
+ *    failure, so it gets its own non-alarming wording.
+ */
+export type LoginNotice = "banned" | "pendingApproval" | "authError" | "signInError" | "signInCancelled" | null
+
 export interface AuthContextValue {
     user: User | null
     loading: boolean
-    // Set when the last /auth/me call came back 403 "banned" — the account is
-    // real but has been banned, distinct from simply not being signed in.
-    banned: boolean
-    // Set when the last /auth/me call came back 403 "pending approval" — the
-    // account onboarded into a privileged role but no captain/mentor has approved
-    // it yet, so it's bounced to login until then. Distinct from banned.
-    pendingApproval: boolean
-    // Set when the last /auth/me call failed for a reason other than "not
-    // signed in" or "banned" — network failure, 404, 500, 503, etc. Signing
-    // in would just hit the same broken backend, so the login UI should
-    // block the button rather than bounce the user through a dead redirect.
-    authError: boolean
+    loginNotice: LoginNotice
+    // True while the Google OAuth popup is open, from click until it reports
+    // back (success, failure, or the user closing it manually).
+    signingIn: boolean
     signInWithGoogle: () => void
     logout: () => Promise<void>
     refreshUser: () => Promise<void>

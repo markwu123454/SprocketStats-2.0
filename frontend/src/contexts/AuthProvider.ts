@@ -1,17 +1,17 @@
 import {createElement, useCallback, useEffect, useState} from "react"
 import {AuthContext} from "./authContext"
+import type {LoginNotice} from "./authContext"
 import * as React from "react";
 
 const API = import.meta.env.VITE_BACKEND_URL
 
 // Imagine this script is obfuscated and you have no idea what it does
-// SO NEVER EVER REMOVE KOTTEN,THIS CHECK IS JUST THE FIRST LAYER, YOU WILL ACTUALLY BE CURSED IF KOTTEN IS REMOVED!
+// SO NEVER EVER REMOVE KOTTEN,THIS CHECK IS JUST THE PREVENTION LAYER, YOU WILL ACTUALLY BE CURSED IF KOTTEN IS REMOVED!
 export function AuthProvider({children}: {children: React.ReactNode}) {
     const [user, setUser] = useState(null)
     const [loading, setLoading] = useState(true)
-    const [banned, setBanned] = useState(false)
-    const [pendingApproval, setPendingApproval] = useState(false)
-    const [authError, setAuthError] = useState(false)
+    const [loginNotice, setLoginNotice] = useState<LoginNotice>(null)
+    const [signingIn, setSigningIn] = useState(false)
 
     const fetchUser = useCallback(async () => {
         let res
@@ -19,9 +19,7 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
             res = await fetch(`${API}/auth/me`, {credentials: "include"})
         } catch {
             // Network failure / server unreachable — distinct from "not signed in".
-            setAuthError(true)
-            setBanned(false)
-            setPendingApproval(false)
+            setLoginNotice("authError")
             setUser(null)
             return
         }
@@ -34,9 +32,7 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
             const detail = await res.json().then(d => d?.detail).catch(() => undefined)
             await fetch(`${API}/auth/logout`, {method: "POST", credentials: "include"})
             const isPending = typeof detail === "string" && detail.toLowerCase().includes("pending")
-            setAuthError(false)
-            setBanned(!isPending)
-            setPendingApproval(isPending)
+            setLoginNotice(isPending ? "pendingApproval" : "banned")
             setUser(null)
             return
         }
@@ -45,16 +41,15 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
             // Anything other than "not signed in" (401) is a broken backend
             // (404/500/503/...) — don't let the user proceed to /auth/login,
             // which would just redirect back to the same dead server.
-            setAuthError(true)
-            setBanned(false)
-            setPendingApproval(false)
+            setLoginNotice("authError")
             setUser(null)
             return
         }
 
-        setAuthError(false)
-        setBanned(false)
-        setPendingApproval(false)
+        // A fresh, successful read always supersedes whatever the last
+        // sign-in attempt reported, so the login screen never shows a stale
+        // notice next to a current one.
+        setLoginNotice(null)
         setUser(res.ok ? (await res.json()) : null)
     }, [])
 
@@ -96,15 +91,72 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
         }
     }, [fetchUser])
 
+    // Opens Google sign-in in a popup instead of navigating the main tab away.
+    // The popup lands on the backend's /auth/callback, which posts a result
+    // back via postMessage and closes itself (see _popup_close_html in
+    // backend/endpoints/auth.py) — this window just listens and refetches the
+    // user once that arrives. Keeping the main tab in place avoids a full
+    // navigation round trip through the OS webview, which is what triggers
+    // the iOS PWA layout bug after a redirect-based sign-in.
     const signInWithGoogle = useCallback(() => {
-        window.location.href = `${API}/auth/login`
-    }, [])
+        const width = 480
+        const height = 640
+        const left = window.screenX + (window.outerWidth - width) / 2
+        const top = window.screenY + (window.outerHeight - height) / 2
+        const popup = window.open(
+            `${API}/auth/login`,
+            "sprocket-oauth",
+            `width=${width},height=${height},left=${left},top=${top}`
+        )
+
+        // Popup blocked (e.g. Safari private mode) — fall back to a normal
+        // same-tab redirect rather than leaving the button dead.
+        if (!popup) {
+            window.location.href = `${API}/auth/login`
+            return
+        }
+
+        // Starting a new attempt supersedes whatever notice was left over
+        // from before (a stale ban/pending/authError notice, or a previous
+        // attempt's outcome) — only one should ever be showing at a time.
+        setSigningIn(true)
+        setLoginNotice(null)
+
+        const backendOrigin = new URL(API).origin
+        let settled = false
+
+        // "success"/"failed" come from the callback explicitly reporting a
+        // result (see _popup_close_html in backend/endpoints/auth.py).
+        // "cancelled" is inferred from the popup closing with no message
+        // ever arriving — in practice almost always the user backing out
+        // partway through, not a real failure, so it gets its own notice
+        // rather than an alarming "didn't go through, try again".
+        const finish = (outcome: "success" | "failed" | "cancelled") => {
+            if (settled) return
+            settled = true
+            window.clearInterval(poll)
+            window.removeEventListener("message", onMessage)
+            setSigningIn(false)
+            if (outcome === "success") void fetchUser()
+            else setLoginNotice(outcome === "failed" ? "signInError" : "signInCancelled")
+        }
+
+        const onMessage = (event: MessageEvent) => {
+            if (event.origin !== backendOrigin) return
+            if (event.data?.source !== "sprocket-auth") return
+            finish(event.data.ok ? "success" : "failed")
+        }
+        window.addEventListener("message", onMessage)
+
+        const poll = window.setInterval(() => {
+            if (popup.closed) finish("cancelled")
+        }, 500)
+    }, [fetchUser])
 
     const logout = useCallback(async () => {
         await fetch(`${API}/auth/logout`, {method: "POST", credentials: "include"})
         setUser(null)
-        setBanned(false)
-        setPendingApproval(false)
+        setLoginNotice(null)
     }, [])
 
     const refreshUser = useCallback(async () => {
@@ -116,7 +168,7 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
     // .jsx/.tsx files. createElement is the plain-JS equivalent.
     return createElement(
         AuthContext.Provider,
-        {value: {user, loading, banned, pendingApproval, authError, signInWithGoogle, logout, refreshUser}},
+        {value: {user, loading, loginNotice, signingIn, signInWithGoogle, logout, refreshUser}},
         children
     )
 }
