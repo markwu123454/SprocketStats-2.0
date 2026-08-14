@@ -103,6 +103,13 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
         const height = 640
         const left = window.screenX + (window.outerWidth - width) / 2
         const top = window.screenY + (window.outerHeight - height) / 2
+        // TODO: on iOS, the popup flashes white (browser's default blank-window
+        // background) then black (accounts.google.com painting its dark-mode
+        // background before the account-picker UI mounts) before settling. The
+        // black part is Google's own cross-origin page and out of our control,
+        // but the white part is ours: opening blank and synchronously painting a
+        // dark background before navigating would soften it to dark -> black ->
+        // content instead. Skipped for now — low priority, purely cosmetic.
         const popup = window.open(
             `${API}/auth/login`,
             "sprocket-oauth",
