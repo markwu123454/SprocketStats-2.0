@@ -68,6 +68,14 @@ async def get_comp_event(event_key: str) -> dict | None:
         return dict(row) if row else None
 
 
+async def get_comp_event_keys() -> list[str]:
+    """All event_keys with a hub page. Bootstrapped so the frontend can tell
+    a real event from a 404 without waiting on a per-event fetch."""
+    async with db_connection(DB_NAME) as conn:
+        rows = await conn.fetch("SELECT event_key FROM comp_events")
+        return [r["event_key"] for r in rows]
+
+
 async def upsert_comp_event(event_key: str, content: CompEventContent) -> dict:
     data = content.model_dump()
     async with db_connection(DB_NAME) as conn:
