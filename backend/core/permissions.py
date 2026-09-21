@@ -35,25 +35,25 @@ _MODERATE_SUBTEAM: dict[str, Any] = {"scope": "subteam", "target_levels": ["memb
 # `requires_approval` marks a role that can't be used until an approver signs off
 # (enforced at /auth/me); `can_moderate` is this role's moderation authority.
 ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
-    "cad_member":           {"label": "CAD Member",           "level": "member", "subteam": "cad",           "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}},
-    "cad_lead":             {"label": "CAD Lead",             "level": "lead",   "subteam": "cad",           "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}},
-    "electrical_member":    {"label": "Electrical Member",    "level": "member", "subteam": "electrical",    "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}},
-    "electrical_lead":      {"label": "Electrical Lead",      "level": "lead",   "subteam": "electrical",    "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}},
-    "manufacturing_member": {"label": "Manufacturing Member", "level": "member", "subteam": "manufacturing", "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}},
-    "manufacturing_lead":   {"label": "Manufacturing Lead",   "level": "lead",   "subteam": "manufacturing", "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}},
-    "programming_member":   {"label": "Programming Member",   "level": "member", "subteam": "programming",   "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}},
-    "programming_lead":     {"label": "Programming Lead",     "level": "lead",   "subteam": "programming",   "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}},
-    "scouting_member":      {"label": "Scouting Member",      "level": "member", "subteam": "scouting",      "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True}},
-    "scouting_lead":        {"label": "Scouting Lead",        "level": "lead",   "subteam": "scouting",      "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True, "notifications": True}},
-    "publicity_member":     {"label": "Publicity Member",     "level": "member", "subteam": "publicity",     "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}},
-    "publicity_lead":       {"label": "Publicity Lead",       "level": "lead",   "subteam": "publicity",     "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}},
-    "operations_member":    {"label": "Operations Member",    "level": "member", "subteam": "operations",    "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}},
-    "operations_lead":      {"label": "Operations Lead",      "level": "lead",   "subteam": "operations",    "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}},
-    "outreach_member":      {"label": "Outreach Member",      "level": "member", "subteam": "outreach",      "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}},
-    "outreach_lead":        {"label": "Outreach Lead",        "level": "lead",   "subteam": "outreach",      "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}},
-    "captain":              {"label": "Captain",              "level": "captain", "subteam": None,           "requires_approval": True,  "can_moderate": _MODERATE_ALL,     "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True, "members": True, "notifications": True}},
-    "mentor":               {"label": "Mentor",               "level": "mentor",  "subteam": None,           "requires_approval": True,  "can_moderate": _MODERATE_ALL,     "school_info": {"required": False}, "attendance": {"view": False}, "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True, "members": True, "notifications": True}},
-    "alumni":               {"label": "Alumni",               "level": "alumni",  "subteam": None,           "requires_approval": False, "school_info": {"required": False}, "attendance": {"view": False}, "control_panel": {"view": False}},
+    "cad_member":           {"label": "CAD Member",           "level": "member", "subteam": "cad",           "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
+    "cad_lead":             {"label": "CAD Lead",             "level": "lead",   "subteam": "cad",           "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}},
+    "electrical_member":    {"label": "Electrical Member",    "level": "member", "subteam": "electrical",    "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
+    "electrical_lead":      {"label": "Electrical Lead",      "level": "lead",   "subteam": "electrical",    "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}},
+    "manufacturing_member": {"label": "Manufacturing Member", "level": "member", "subteam": "manufacturing", "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
+    "manufacturing_lead":   {"label": "Manufacturing Lead",   "level": "lead",   "subteam": "manufacturing", "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}},
+    "programming_member":   {"label": "Programming Member",   "level": "member", "subteam": "programming",   "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
+    "programming_lead":     {"label": "Programming Lead",     "level": "lead",   "subteam": "programming",   "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}},
+    "scouting_member":      {"label": "Scouting Member",      "level": "member", "subteam": "scouting",      "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True}, "tasks": {"view": True, "assign": False}},
+    "scouting_lead":        {"label": "Scouting Lead",        "level": "lead",   "subteam": "scouting",      "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True, "notifications": True}, "tasks": {"view": True, "assign": True}},
+    "publicity_member":     {"label": "Publicity Member",     "level": "member", "subteam": "publicity",     "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
+    "publicity_lead":       {"label": "Publicity Lead",       "level": "lead",   "subteam": "publicity",     "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}},
+    "operations_member":    {"label": "Operations Member",    "level": "member", "subteam": "operations",    "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
+    "operations_lead":      {"label": "Operations Lead",      "level": "lead",   "subteam": "operations",    "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}},
+    "outreach_member":      {"label": "Outreach Member",      "level": "member", "subteam": "outreach",      "requires_approval": False, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
+    "outreach_lead":        {"label": "Outreach Lead",        "level": "lead",   "subteam": "outreach",      "requires_approval": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}},
+    "captain":              {"label": "Captain",              "level": "captain", "subteam": None,           "requires_approval": True,  "can_moderate": _MODERATE_ALL,     "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True, "members": True, "notifications": True}, "tasks": {"view": True, "assign": True}},
+    "mentor":               {"label": "Mentor",               "level": "mentor",  "subteam": None,           "requires_approval": True,  "can_moderate": _MODERATE_ALL,     "school_info": {"required": False}, "attendance": {"view": False}, "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True, "members": True, "notifications": True}, "tasks": {"view": True, "assign": True}},
+    "alumni":               {"label": "Alumni",               "level": "alumni",  "subteam": None,           "requires_approval": False, "school_info": {"required": False}, "attendance": {"view": False}, "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
 }
 
 
@@ -132,6 +132,43 @@ def has_moderation_authority(role: str | None) -> bool:
     :returns: ``True`` if the role has any moderation authority, else ``False``.
     """
     return get_perm(get_permissions_for_role(role), "can_moderate") is not None
+
+
+def has_task_authority(role: str | None) -> bool:
+    """Return whether ``role`` is in the Task Assignments authority set.
+
+    The authority set (every ``*_lead``, ``captain``, and ``mentor``) may assign
+    or reassign a task to anyone, edit/delete any task, and unreview a done task.
+    Members and alumni are not in it, though they can still view, create, claim,
+    and review tasks (see ``"tasks"`` on each role's policy object). Thin
+    truthiness wrapper over ``tasks.assign``, kept as a named helper so callers
+    read as intent ("is this an authority-set member?") rather than a raw path.
+
+    :param role: The role slug, or ``None``.
+    :returns: ``True`` if the role holds ``tasks.assign``, else ``False``.
+    """
+    return can(get_permissions_for_role(role), "tasks.assign")
+
+
+def task_buckets() -> list[str]:
+    """Return every valid Task Assignments bucket slug, ``"general"`` last.
+
+    Derived from the distinct ``subteam`` values in :data:`ROLE_DEFINITIONS`
+    (in declaration order, de-duplicated) so the valid-bucket set can never drift
+    from the roles that actually exist -- adding a subteam later needs no
+    separate bucket list to update. ``"general"`` is appended as the one bucket
+    with no corresponding subteam. This is the authoritative list endpoints
+    validate an incoming ``bucket`` against; there is deliberately no DB CHECK
+    constraint mirroring it, so it stays a pure-Python edit.
+
+    :returns: E.g. ``["cad", "electrical", ..., "outreach", "general"]``.
+    """
+    subteams: list[str] = []
+    for defn in ROLE_DEFINITIONS.values():
+        subteam = get_perm(defn, "subteam")
+        if subteam and subteam not in subteams:
+            subteams.append(subteam)
+    return [*subteams, "general"]
 
 
 def can_role_moderate(actor_role: str | None, target_role: str | None) -> bool:
@@ -243,6 +280,8 @@ __all__ = [
     "can",
     "role_requires_approval",
     "has_moderation_authority",
+    "has_task_authority",
+    "task_buckets",
     "can_role_moderate",
     "role_rank",
     "can_edit_authored",

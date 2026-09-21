@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation } from "react-router-dom"
 import { useAuth, useOnboardedUser } from "@/contexts/authContext"
 import {
     LayoutDashboard, CalendarCheck, ClipboardList, Settings,
-    LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Milestone,
+    LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Milestone, ListChecks,
 } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
 import NotificationGate from "@/components/NotificationGate.tsx"
@@ -34,6 +34,7 @@ const CORE_TABS: NavTab[] = [
     { to: "/attendance",  label: "Attendance",  icon: CalendarCheck, visible: () => false },
     { to: "/events", label: "Events", icon: Milestone          },
     { to: "/scouting",    label: "Scouting",    icon: ClipboardList   },
+    { to: "/tasks",       label: "Tasks",       icon: ListChecks,     visible: p => can(p, "tasks.view") },
 ]
 
 const CONTROL_PANEL_TAB = {

@@ -330,6 +330,29 @@ async def init_db():
                 await conn.execute(
                     "INSERT INTO app_config (prefetch_event_id) SELECT NULL WHERE NOT EXISTS (SELECT 1 FROM app_config)"
                 )
+                # `bucket` has no CHECK constraint -- it is validated in Python
+                # against core.permissions.task_buckets() so a new subteam never
+                # needs a migration to become a valid bucket.
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS tasks (
+                        id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                        title       TEXT        NOT NULL,
+                        area        TEXT        NOT NULL DEFAULT 'General',
+                        bucket      TEXT        NOT NULL,
+                        priority    TEXT        NOT NULL DEFAULT 'med'  CHECK (priority IN ('high','med','low')),
+                        status      TEXT        NOT NULL DEFAULT 'todo' CHECK (status IN ('todo','doing','review','done')),
+                        assignee_id TEXT        REFERENCES users(id) ON DELETE SET NULL,
+                        due_date    DATE,
+                        created_by  TEXT        NOT NULL REFERENCES users(id),
+                        finished_by TEXT        REFERENCES users(id) ON DELETE SET NULL,
+                        reviewed_by TEXT        REFERENCES users(id) ON DELETE SET NULL,
+                        created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """)
+                await conn.execute("CREATE INDEX IF NOT EXISTS tasks_bucket_idx ON tasks (bucket)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS tasks_assignee_id_idx ON tasks (assignee_id)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS tasks_status_idx ON tasks (status)")
         except Exception as e:
             logger.error("Failed to initialize schema: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to initialize schema: {e}")
@@ -449,6 +472,26 @@ async def run_migrations():
             await conn.execute(
                 "INSERT INTO app_config (prefetch_event_id) SELECT NULL WHERE NOT EXISTS (SELECT 1 FROM app_config)"
             )
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                    title       TEXT        NOT NULL,
+                    area        TEXT        NOT NULL DEFAULT 'General',
+                    bucket      TEXT        NOT NULL,
+                    priority    TEXT        NOT NULL DEFAULT 'med'  CHECK (priority IN ('high','med','low')),
+                    status      TEXT        NOT NULL DEFAULT 'todo' CHECK (status IN ('todo','doing','review','done')),
+                    assignee_id TEXT        REFERENCES users(id) ON DELETE SET NULL,
+                    due_date    DATE,
+                    created_by  TEXT        NOT NULL REFERENCES users(id),
+                    finished_by TEXT        REFERENCES users(id) ON DELETE SET NULL,
+                    reviewed_by TEXT        REFERENCES users(id) ON DELETE SET NULL,
+                    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+            """)
+            await conn.execute("CREATE INDEX IF NOT EXISTS tasks_bucket_idx ON tasks (bucket)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS tasks_assignee_id_idx ON tasks (assignee_id)")
+            await conn.execute("CREATE INDEX IF NOT EXISTS tasks_status_idx ON tasks (status)")
         except Exception as e:
             logger.warning("Migration warning: %s", e)
 
