@@ -1,0 +1,31 @@
+{
+  "pkg": "frontend",
+  "globalName": "SprocketStats",
+  "projectId": "b8ac76b4-10f3-4073-b690-6e4bd7c7ea14",
+  "shape": "package",
+  "srcDir": "src",
+  "tsconfig": "tsconfig.app.json",
+  "buildCmd": "npx vite build -c .design-sync/vite.ds-css.config.ts",
+  "componentSrcMap": {
+    "Dropdown": "src/components/ui/Dropdown.tsx",
+    "TimeWheel": "src/components/ui/TimeWheel.tsx"
+  },
+  "docsDir": ".design-sync/docs",
+  "dtsPropsFor": {
+    "Dropdown": "value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; disabled?: boolean; placeholder?: string; className?: string; triggerClassName?: string; menuAlign?: \"left\" | \"right\"; resizable?: boolean; initialMaxHeight?: number;",
+    "TimeWheel": "label: string; value: string; onChange: (v: string) => void;"
+  },
+  "cssEntry": ".design-sync/.cache/tw/ds.css",
+  "readmeHeader": ".design-sync/conventions.md",
+  "provider": {
+    "component": "ThemeShell"
+  },
+  "overrides": {
+    "TimeWheel": {
+      "cardMode": "column"
+    },
+    "Dropdown": {
+      "cardMode": "column"
+    }
+  }
+}

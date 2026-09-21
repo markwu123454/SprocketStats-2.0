@@ -1,0 +1,69 @@
+/* Design-system stylesheet for the claude.ai/design export.
+ *
+ * The app's own compiled CSS is Tailwind-purged down to the classes the app
+ * happens to use, so utilities as ordinary as `grid-cols-2` are missing from it.
+ * A design agent building new screens with this kit writes classes the app never
+ * needed, and every one of those would silently render as nothing.
+ *
+ * This entry re-exports the app's real theme layer (src/index.css — the single
+ * source of truth for the season palettes and the `theme-*` utilities) and adds
+ * a safelist of the layout/typography utilities new designs actually reach for.
+ * Nothing here redefines app styling; it only widens what is available.
+ */
+
+@import "../src/index.css";
+
+/* Keep scanning the real app source, so anything the app uses stays included. */
+@source "../src";
+/* ...and the preview compositions, so authored preview cards never go unstyled. */
+@source "./previews";
+
+/* ── Safelist ──────────────────────────────────────────────────────────────
+   Utilities a newly-designed screen is likely to use but the app does not. */
+
+/* Layout */
+@source inline("{sm:,md:,lg:,}grid-cols-{1..12}");
+@source inline("{sm:,md:,lg:,}col-span-{1..12}");
+@source inline("{sm:,md:,lg:,}flex-{row,col,wrap,nowrap,1,auto,none}");
+@source inline("{sm:,md:,lg:,}{block,inline-block,inline-flex,hidden,grid,flex}");
+@source inline("items-{start,center,end,baseline,stretch}");
+@source inline("justify-{start,center,end,between,around,evenly}");
+@source inline("{gap,gap-x,gap-y}-{0,1,2,3,4,5,6,8,10,12,16}");
+@source inline("{absolute,relative,fixed,sticky,inset-0,top-0,bottom-0,left-0,right-0}");
+@source inline("z-{0,10,20,30,40,50}");
+@source inline("overflow-{auto,hidden,x-auto,y-auto}");
+
+/* Spacing */
+@source inline("{p,px,py,pt,pb,pl,pr}-{0,1,2,3,4,5,6,8,10,12,16}");
+@source inline("{m,mx,my,mt,mb,ml,mr}-{0,1,2,3,4,5,6,8,10,12,16}");
+@source inline("{mx,my}-auto");
+
+/* Sizing */
+@source inline("w-{full,auto,fit,screen,px,1/2,1/3,2/3,1/4,3/4}");
+@source inline("h-{full,auto,fit,screen,px}");
+@source inline("{w,h}-{4,6,8,10,12,16,20,24,32,40,48,64}");
+@source inline("max-w-{xs,sm,md,lg,xl,2xl,3xl,4xl,5xl,full,none}");
+@source inline("min-h-{0,full,screen}");
+
+/* Typography */
+@source inline("text-{xs,sm,base,lg,xl,2xl,3xl,4xl,5xl}");
+@source inline("font-{thin,light,normal,medium,semibold,bold,extrabold,mono,sans}");
+@source inline("text-{left,center,right,justify}");
+@source inline("{uppercase,lowercase,capitalize,truncate,italic,underline}");
+@source inline("leading-{none,tight,snug,normal,relaxed,loose}");
+@source inline("tracking-{tighter,tight,normal,wide,wider,widest}");
+@source inline("whitespace-{normal,nowrap,pre}");
+
+/* Borders, corners, elevation */
+@source inline("rounded-{none,sm,md,lg,xl,2xl,3xl,full}");
+@source inline("border-{0,2,4,8}");
+@source inline("border-{t,b,l,r}");
+@source inline("shadow-{none,sm,md,lg,xl,2xl}");
+@source inline("opacity-{0,10,20,30,40,50,60,70,80,90,100}");
+
+/* Interaction */
+@source inline("{hover:,focus:,}{opacity-80,opacity-90,underline}");
+@source inline("cursor-{pointer,not-allowed,grab,default}");
+@source inline("transition-{all,colors,opacity,transform}");
+@source inline("duration-{75,100,150,200,300,500}");
+@source inline("select-none");

@@ -23,6 +23,7 @@ const PackingPage        = lazy(() => import("@/pages/events/PackingPage"))
 const RosterPage         = lazy(() => import("@/pages/events/RosterPage"))
 const CompPage           = lazy(() => import("@/pages/events/CompPage"))
 const ScoutingPage    = lazy(() => import("@/pages/ScoutingPage"))
+const TasksPage       = lazy(() => import("@/pages/TasksPage"))
 const ControlPanelHub  = lazy(() => import("@/pages/control/ControlPanelHub"))
 const MeetingPage       = lazy(() => import("@/pages/control/MeetingPage"))
 const UpcomingEventPage = lazy(() => import("@/pages/control/UpcomingEventPage"))
@@ -83,6 +84,7 @@ export default function App() {
                                             <Route path="comp"      element={<CompPage/>}/>
                                         </Route>
                                         <Route path="/scouting"    element={<ScoutingPage/>}/>
+                                        <Route path="/tasks"       element={<TasksPage/>}/>
                                         <Route path="/control"     element={<ControlPanelHub/>}/>
                                         <Route path="/control/meeting"        element={<ControlGuard section="meeting"><MeetingPage/></ControlGuard>}/>
                                         <Route path="/control/upcoming-event" element={<ControlGuard section="upcoming-event"><UpcomingEventPage/></ControlGuard>}/>

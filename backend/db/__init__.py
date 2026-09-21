@@ -8,3 +8,4 @@ from .push import *
 from .tags import *
 from .events import *
 from .comp_events import *
+from .tasks import *

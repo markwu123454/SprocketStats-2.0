@@ -11,6 +11,7 @@ from .push import router as push_router
 from .kiosk import router as kiosk_router
 from .tags import router as tags_router
 from .events import router as events_router
+from .tasks import router as tasks_router
 
 router = APIRouter()
 router.include_router(general_router)
@@ -25,3 +26,4 @@ router.include_router(push_router, prefix="/push")
 router.include_router(kiosk_router, prefix="/kiosk")
 router.include_router(tags_router, prefix="/tags")
 router.include_router(events_router, prefix="/events")
+router.include_router(tasks_router, prefix="/tasks")
