@@ -22,6 +22,9 @@ export default function MeetingPage() {
             {canTime && (
                 <section className="flex flex-col gap-2">
                     <h2 className="text-sm font-semibold theme-text">Meeting Time</h2>
+                    <p className="text-sm theme-subtext-color">
+                        Schedule a one-off meeting, or turn on Repeat to fill in a recurring practice schedule.
+                    </p>
                     <MeetingHoursEditor />
                 </section>
             )}
