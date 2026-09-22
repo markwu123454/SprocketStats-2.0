@@ -1163,10 +1163,11 @@ function TaskRow({
                             >
                                 Reopen
                             </button>
-                            {!isFinisher && (
+                            {(!isFinisher || canAssign) && (
                                 <button
                                     type="button"
                                     onClick={e => { e.stopPropagation(); onMarkReviewed() }}
+                                    title={isFinisher && canAssign ? "You finished this task — mark it reviewed anyway" : undefined}
                                     className="hover:brightness-110"
                                     style={{
                                         height: 28, boxSizing: "border-box", padding: "0 12px", borderRadius: 7, fontSize: 12, fontWeight: 700,
@@ -1176,7 +1177,7 @@ function TaskRow({
                                     Mark reviewed
                                 </button>
                             )}
-                            {isFinisher && (
+                            {isFinisher && !canAssign && (
                                 <span
                                     title="Someone else on the team needs to review this"
                                     style={{

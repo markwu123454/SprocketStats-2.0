@@ -235,9 +235,10 @@ def _as(app: FastAPI, user: dict) -> TestClient:
     return TestClient(app)
 
 
-# ── Review: anyone except the finisher ──────────────────────────────────────
+# ── Review: the authority set may review their own work; everyone else must
+#    have someone else review it ────────────────────────────────────────────
 
-def test_review_forbidden_for_the_finisher(app, store):
+def test_review_forbidden_for_the_finisher_as_member(app, store):
     store.add_user("member-1", "Member One", role="cad_member")
     task_id = store.add_task(status="review", finished_by="member-1")
 
@@ -255,6 +256,28 @@ def test_review_allowed_for_anyone_else(app, store):
     body = resp.json()
     assert body["status"] == "done"
     assert body["reviewed_by"] == "captain-1"
+
+
+def test_review_allowed_for_finisher_who_is_captain(app, store):
+    store.add_user("captain-1", "Cap One", role="captain")
+    task_id = store.add_task(status="review", finished_by="captain-1")
+
+    resp = _as(app, CAPTAIN).post(f"/tasks/{task_id}/review")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "done"
+    assert body["reviewed_by"] == "captain-1"
+
+
+def test_review_allowed_for_finisher_who_is_lead(app, store):
+    store.add_user("lead-1", "Lead One", role="cad_lead")
+    task_id = store.add_task(status="review", finished_by="lead-1")
+
+    resp = _as(app, LEAD).post(f"/tasks/{task_id}/review")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "done"
+    assert body["reviewed_by"] == "lead-1"
 
 
 def test_review_requires_review_status(app, store):

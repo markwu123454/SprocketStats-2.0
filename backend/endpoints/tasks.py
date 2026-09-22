@@ -320,14 +320,15 @@ async def remove_contributor(task_id: str, user_id: str, user: dict = Depends(re
 
 @router.post("/{task_id}/review")
 async def review_task(task_id: str, user: dict = Depends(require_task_access)):
-    """Mark an in-review task reviewed (-> `done`). Anyone except the person who
-    finished it may do this -- enforced here, not just hidden in the UI."""
+    """Mark an in-review task reviewed (-> `done`). The authority set may review
+    their own finished work; everyone else may not -- enforced here, not just
+    hidden in the UI."""
     existing = await db.get_task(task_id)
     if existing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     if existing["status"] != "review":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Task is not awaiting review")
-    if existing["finished_by"] == user["sub"]:
+    if existing["finished_by"] == user["sub"] and not has_task_authority(user.get("role")):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="You cannot review a task you finished yourself"
         )
