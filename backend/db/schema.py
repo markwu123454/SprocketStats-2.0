@@ -353,6 +353,26 @@ async def init_db():
                 await conn.execute("CREATE INDEX IF NOT EXISTS tasks_bucket_idx ON tasks (bucket)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS tasks_assignee_id_idx ON tasks (assignee_id)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS tasks_status_idx ON tasks (status)")
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS task_contributors (
+                        task_id  UUID        NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                        user_id  TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        PRIMARY KEY (task_id, user_id)
+                    )
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS task_notes (
+                        id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                        task_id    UUID        NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                        author_id  TEXT        REFERENCES users(id) ON DELETE SET NULL,
+                        body       TEXT        NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """)
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS task_notes_task_id_idx ON task_notes (task_id, created_at)"
+                )
         except Exception as e:
             logger.error("Failed to initialize schema: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to initialize schema: {e}")
@@ -492,6 +512,26 @@ async def run_migrations():
             await conn.execute("CREATE INDEX IF NOT EXISTS tasks_bucket_idx ON tasks (bucket)")
             await conn.execute("CREATE INDEX IF NOT EXISTS tasks_assignee_id_idx ON tasks (assignee_id)")
             await conn.execute("CREATE INDEX IF NOT EXISTS tasks_status_idx ON tasks (status)")
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS task_contributors (
+                    task_id  UUID        NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    user_id  TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    PRIMARY KEY (task_id, user_id)
+                )
+            """)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS task_notes (
+                    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                    task_id    UUID        NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    author_id  TEXT        REFERENCES users(id) ON DELETE SET NULL,
+                    body       TEXT        NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+            """)
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS task_notes_task_id_idx ON task_notes (task_id, created_at)"
+            )
         except Exception as e:
             logger.warning("Migration warning: %s", e)
 

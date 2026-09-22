@@ -33,6 +33,10 @@ class FakeStore:
     def __init__(self):
         self.tasks: dict[str, dict] = {}
         self.users: dict[str, dict] = {}
+        # task id -> ordered list of contributor user ids (earliest first,
+        # mirroring `ORDER BY added_at` in the real query).
+        self.contributors: dict[str, list[str]] = {}
+        self.notes: dict[str, dict] = {}
 
     def add_user(self, user_id, display_name, role=None, approved_by="approver", banned_at=None,
                  onboarding_complete=True):
@@ -72,6 +76,16 @@ class FakeStore:
         d["created_by_name"] = self.users.get(t["created_by"], {}).get("display_name")
         d["finished_by_name"] = self.users.get(t["finished_by"], {}).get("display_name") if t["finished_by"] else None
         d["reviewed_by_name"] = self.users.get(t["reviewed_by"], {}).get("display_name") if t["reviewed_by"] else None
+        d["contributors"] = [
+            {"id": uid, "display_name": self.users.get(uid, {}).get("display_name")}
+            for uid in self.contributors.get(t["id"], [])
+        ]
+        d["note_count"] = sum(1 for n in self.notes.values() if n["task_id"] == t["id"])
+        return d
+
+    def _joined_note(self, n: dict) -> dict:
+        d = dict(n)
+        d["author_name"] = self.users.get(n["author_id"], {}).get("display_name") if n["author_id"] else None
         return d
 
     # -- db.tasks-shaped async methods, monkeypatched onto the `db` module --
@@ -137,6 +151,62 @@ class FakeStore:
     async def get_user(self, user_id):
         return self.users.get(user_id)
 
+    async def add_contributor(self, task_id, user_id):
+        t = self.tasks.get(task_id)
+        if t is None:
+            return None
+        ids = self.contributors.setdefault(task_id, [])
+        if user_id not in ids:
+            ids.append(user_id)
+        return self._joined(t)
+
+    async def remove_contributor(self, task_id, user_id):
+        t = self.tasks.get(task_id)
+        if t is None:
+            return None
+        ids = self.contributors.get(task_id)
+        if ids and user_id in ids:
+            ids.remove(user_id)
+        return self._joined(t)
+
+    async def release_assignee(self, task_id):
+        t = self.tasks.get(task_id)
+        if t is None:
+            return None
+        ids = self.contributors.get(task_id, [])
+        if ids:
+            t["assignee_id"] = ids.pop(0)
+        else:
+            t["assignee_id"] = None
+            if t["status"] == "doing":
+                t["status"] = "todo"
+        t["updated_at"] = datetime.now(timezone.utc)
+        return self._joined(t)
+
+    async def list_task_notes(self, task_id):
+        notes = [n for n in self.notes.values() if n["task_id"] == task_id]
+        notes.sort(key=lambda n: n["created_at"])
+        return [self._joined_note(n) for n in notes]
+
+    async def get_task_note(self, note_id):
+        n = self.notes.get(note_id)
+        return self._joined_note(n) if n else None
+
+    async def create_task_note(self, task_id, author_id, body):
+        nid = str(uuid.uuid4())
+        note = {
+            "id": nid,
+            "task_id": task_id,
+            "author_id": author_id,
+            "body": body,
+            "created_at": datetime.now(timezone.utc),
+        }
+        self.notes[nid] = note
+        return self._joined_note(note)
+
+    async def delete_task_note(self, note_id):
+        return self.notes.pop(note_id, None) is not None
+
 
 @pytest.fixture
 def store(monkeypatch):
@@ -144,7 +214,9 @@ def store(monkeypatch):
     for name in (
         "list_tasks", "get_task", "list_task_people", "create_task",
         "update_task", "claim_task", "review_task", "unreview_task",
-        "delete_task", "get_user",
+        "delete_task", "get_user", "add_contributor", "remove_contributor",
+        "release_assignee", "list_task_notes", "get_task_note",
+        "create_task_note", "delete_task_note",
     ):
         monkeypatch.setattr(db, name, getattr(fake, name))
     return fake
@@ -163,9 +235,10 @@ def _as(app: FastAPI, user: dict) -> TestClient:
     return TestClient(app)
 
 
-# ── Review: anyone except the finisher ──────────────────────────────────────
+# ── Review: the authority set may review their own work; everyone else must
+#    have someone else review it ────────────────────────────────────────────
 
-def test_review_forbidden_for_the_finisher(app, store):
+def test_review_forbidden_for_the_finisher_as_member(app, store):
     store.add_user("member-1", "Member One", role="cad_member")
     task_id = store.add_task(status="review", finished_by="member-1")
 
@@ -183,6 +256,28 @@ def test_review_allowed_for_anyone_else(app, store):
     body = resp.json()
     assert body["status"] == "done"
     assert body["reviewed_by"] == "captain-1"
+
+
+def test_review_allowed_for_finisher_who_is_captain(app, store):
+    store.add_user("captain-1", "Cap One", role="captain")
+    task_id = store.add_task(status="review", finished_by="captain-1")
+
+    resp = _as(app, CAPTAIN).post(f"/tasks/{task_id}/review")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "done"
+    assert body["reviewed_by"] == "captain-1"
+
+
+def test_review_allowed_for_finisher_who_is_lead(app, store):
+    store.add_user("lead-1", "Lead One", role="cad_lead")
+    task_id = store.add_task(status="review", finished_by="lead-1")
+
+    resp = _as(app, LEAD).post(f"/tasks/{task_id}/review")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "done"
+    assert body["reviewed_by"] == "lead-1"
 
 
 def test_review_requires_review_status(app, store):
@@ -453,3 +548,286 @@ def test_list_tasks_open_to_any_authenticated_user(app, store):
     resp = _as(app, MEMBER).get("/tasks")
     assert resp.status_code == 200
     assert {t["title"] for t in resp.json()} == {"A", "B"}
+
+
+# ── Contributors: add/remove ────────────────────────────────────────────────
+
+def test_add_contributor_member_can_add_self(app, store):
+    store.add_user("member-1", "Member One", role="cad_member")
+    task_id = store.add_task(assignee_id="assignee-1", status="doing")
+
+    resp = _as(app, MEMBER).post(f"/tasks/{task_id}/contributors")
+    assert resp.status_code == 200
+    assert resp.json()["contributors"] == [{"id": "member-1", "display_name": "Member One"}]
+
+
+def test_add_contributor_requires_assignee(app, store):
+    task_id = store.add_task(assignee_id=None, status="todo")
+    resp = _as(app, MEMBER).post(f"/tasks/{task_id}/contributors")
+    assert resp.status_code == 400
+
+
+def test_add_contributor_rejected_for_done_task(app, store):
+    task_id = store.add_task(assignee_id="assignee-1", status="done")
+    resp = _as(app, MEMBER).post(f"/tasks/{task_id}/contributors")
+    assert resp.status_code == 400
+
+
+def test_add_contributor_conflict_when_caller_is_assignee(app, store):
+    task_id = store.add_task(assignee_id="member-1", status="doing")
+    resp = _as(app, MEMBER).post(f"/tasks/{task_id}/contributors")
+    assert resp.status_code == 409
+
+
+def test_add_contributor_twice_is_idempotent(app, store):
+    store.add_user("member-1", "Member One", role="cad_member")
+    task_id = store.add_task(assignee_id="assignee-1", status="doing")
+
+    resp1 = _as(app, MEMBER).post(f"/tasks/{task_id}/contributors")
+    resp2 = _as(app, MEMBER).post(f"/tasks/{task_id}/contributors")
+    assert resp1.status_code == 200
+    assert resp2.status_code == 200
+    assert resp2.json()["contributors"] == [{"id": "member-1", "display_name": "Member One"}]
+
+
+def test_contributor_can_leave(app, store):
+    store.add_user("member-1", "Member One", role="cad_member")
+    task_id = store.add_task(assignee_id="assignee-1", status="doing")
+    store.contributors[task_id] = ["member-1"]
+
+    resp = _as(app, MEMBER).delete(f"/tasks/{task_id}/contributors/me")
+    assert resp.status_code == 200
+    assert resp.json()["contributors"] == []
+
+
+# ── Contributors: the authority set may add/remove OTHER people ────────────
+
+def test_lead_adds_another_member_as_contributor(app, store):
+    store.add_user("member-1", "Member One", role="cad_member")
+    task_id = store.add_task(assignee_id="assignee-1", status="doing")
+
+    resp = _as(app, LEAD).post(f"/tasks/{task_id}/contributors", json={"user_id": "member-1"})
+    assert resp.status_code == 200
+    assert resp.json()["contributors"] == [{"id": "member-1", "display_name": "Member One"}]
+
+
+def test_member_cannot_add_someone_else_as_contributor(app, store):
+    store.add_user("other-1", "Other One", role="cad_member")
+    task_id = store.add_task(assignee_id="assignee-1", status="doing")
+
+    resp = _as(app, MEMBER).post(f"/tasks/{task_id}/contributors", json={"user_id": "other-1"})
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Only the authority set may add other people as contributors"
+
+
+def test_lead_adds_unknown_user_as_contributor(app, store):
+    task_id = store.add_task(assignee_id="assignee-1", status="doing")
+
+    resp = _as(app, LEAD).post(f"/tasks/{task_id}/contributors", json={"user_id": "ghost"})
+    assert resp.status_code == 400
+
+
+def test_lead_adds_the_assignee_as_contributor_conflicts(app, store):
+    store.add_user("assignee-1", "Assignee One", role="cad_member")
+    task_id = store.add_task(assignee_id="assignee-1", status="doing")
+
+    resp = _as(app, LEAD).post(f"/tasks/{task_id}/contributors", json={"user_id": "assignee-1"})
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "That person is already the assignee"
+
+
+def test_lead_removes_another_contributor(app, store):
+    store.add_user("member-1", "Member One", role="cad_member")
+    task_id = store.add_task(assignee_id="assignee-1", status="doing")
+    store.contributors[task_id] = ["member-1"]
+
+    resp = _as(app, LEAD).delete(f"/tasks/{task_id}/contributors/member-1")
+    assert resp.status_code == 200
+    assert resp.json()["contributors"] == []
+
+
+def test_member_cannot_remove_other_contributor(app, store):
+    store.add_user("other-1", "Other One", role="cad_member")
+    task_id = store.add_task(assignee_id="assignee-1", status="doing")
+    store.contributors[task_id] = ["other-1"]
+
+    resp = _as(app, MEMBER).delete(f"/tasks/{task_id}/contributors/other-1")
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Only the authority set may remove other contributors"
+    assert store.contributors[task_id] == ["other-1"]
+
+
+# ── Unassigning (PATCH assignee_id=null) and reassigning ────────────────────
+
+def test_unassign_with_no_contributors_moves_doing_to_todo(app, store):
+    task_id = store.add_task(assignee_id="member-1", status="doing", created_by="member-1")
+
+    resp = _as(app, CAPTAIN).patch(f"/tasks/{task_id}", json={"assignee_id": None})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["assignee_id"] is None
+    assert body["status"] == "todo"
+
+
+def test_unassign_review_task_stays_in_review(app, store):
+    task_id = store.add_task(assignee_id="member-1", status="review", created_by="member-1")
+
+    resp = _as(app, CAPTAIN).patch(f"/tasks/{task_id}", json={"assignee_id": None})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["assignee_id"] is None
+    assert body["status"] == "review"
+
+
+def test_unassign_with_contributors_promotes_earliest(app, store):
+    store.add_user("c1", "Contributor One", role="cad_member")
+    store.add_user("c2", "Contributor Two", role="cad_member")
+    task_id = store.add_task(assignee_id="member-1", status="doing", created_by="member-1")
+    store.contributors[task_id] = ["c1", "c2"]
+
+    resp = _as(app, CAPTAIN).patch(f"/tasks/{task_id}", json={"assignee_id": None})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["assignee_id"] == "c1"
+    assert body["status"] == "doing"
+    assert body["contributors"] == [{"id": "c2", "display_name": "Contributor Two"}]
+
+
+def test_reassign_to_contributor_removes_them_from_contributor_list(app, store):
+    store.add_user("target-1", "Target One", role="cad_member")
+    task_id = store.add_task(assignee_id="member-1", status="doing", created_by="member-1")
+    store.contributors[task_id] = ["target-1"]
+
+    resp = _as(app, CAPTAIN).patch(f"/tasks/{task_id}", json={"assignee_id": "target-1"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["assignee_id"] == "target-1"
+    assert body["contributors"] == []
+
+
+# ── Notes ────────────────────────────────────────────────────────────────
+
+def test_notes_empty_list_and_zero_count(app, store):
+    task_id = store.add_task()
+
+    resp = _as(app, MEMBER).get(f"/tasks/{task_id}/notes")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+    task_resp = _as(app, MEMBER).get("/tasks")
+    assert task_resp.status_code == 200
+    task = next(t for t in task_resp.json() if t["id"] == task_id)
+    assert task["note_count"] == 0
+
+
+def test_notes_listed_oldest_first(app, store):
+    task_id = store.add_task()
+    store.notes["n1"] = {
+        "id": "n1", "task_id": task_id, "author_id": "member-1", "body": "first",
+        "created_at": datetime(2024, 1, 1, tzinfo=timezone.utc),
+    }
+    store.notes["n2"] = {
+        "id": "n2", "task_id": task_id, "author_id": "member-1", "body": "second",
+        "created_at": datetime(2024, 1, 2, tzinfo=timezone.utc),
+    }
+
+    resp = _as(app, MEMBER).get(f"/tasks/{task_id}/notes")
+    assert resp.status_code == 200
+    assert [n["body"] for n in resp.json()] == ["first", "second"]
+
+
+def test_list_notes_unknown_task_404(app, store):
+    resp = _as(app, MEMBER).get("/tasks/does-not-exist/notes")
+    assert resp.status_code == 404
+
+
+def test_create_note_strips_and_bumps_note_count(app, store):
+    store.add_user("member-1", "Member One", role="cad_member")
+    task_id = store.add_task()
+
+    resp = _as(app, MEMBER).post(f"/tasks/{task_id}/notes", json={"body": "  hello  "})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["body"] == "hello"
+    assert body["task_id"] == task_id
+    assert body["author_id"] == "member-1"
+    assert body["author_name"] == "Member One"
+
+    task_resp = _as(app, MEMBER).get("/tasks")
+    task = next(t for t in task_resp.json() if t["id"] == task_id)
+    assert task["note_count"] == 1
+
+
+def test_create_note_rejects_blank_body(app, store):
+    task_id = store.add_task()
+    resp = _as(app, MEMBER).post(f"/tasks/{task_id}/notes", json={"body": "   "})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Note can't be empty"
+
+
+def test_create_note_rejects_too_long_body(app, store):
+    task_id = store.add_task()
+    resp = _as(app, MEMBER).post(f"/tasks/{task_id}/notes", json={"body": "x" * 2001})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Note is too long"
+
+
+def test_create_note_unknown_task_404(app, store):
+    resp = _as(app, MEMBER).post("/tasks/does-not-exist/notes", json={"body": "hi"})
+    assert resp.status_code == 404
+
+
+def test_delete_own_note(app, store):
+    task_id = store.add_task()
+    store.notes["n1"] = {
+        "id": "n1", "task_id": task_id, "author_id": "member-1", "body": "mine",
+        "created_at": datetime.now(timezone.utc),
+    }
+
+    resp = _as(app, MEMBER).delete(f"/tasks/{task_id}/notes/n1")
+    assert resp.status_code == 204
+    assert "n1" not in store.notes
+
+
+def test_member_cannot_delete_someone_elses_note(app, store):
+    task_id = store.add_task()
+    store.notes["n1"] = {
+        "id": "n1", "task_id": task_id, "author_id": "other-1", "body": "not mine",
+        "created_at": datetime.now(timezone.utc),
+    }
+
+    resp = _as(app, MEMBER).delete(f"/tasks/{task_id}/notes/n1")
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "You can only delete your own notes"
+    assert "n1" in store.notes
+
+
+def test_lead_can_delete_someone_elses_note(app, store):
+    task_id = store.add_task()
+    store.notes["n1"] = {
+        "id": "n1", "task_id": task_id, "author_id": "other-1", "body": "not mine",
+        "created_at": datetime.now(timezone.utc),
+    }
+
+    resp = _as(app, LEAD).delete(f"/tasks/{task_id}/notes/n1")
+    assert resp.status_code == 204
+    assert "n1" not in store.notes
+
+
+def test_delete_note_wrong_task_404(app, store):
+    task_id = store.add_task()
+    other_task_id = store.add_task()
+    store.notes["n1"] = {
+        "id": "n1", "task_id": other_task_id, "author_id": "member-1", "body": "elsewhere",
+        "created_at": datetime.now(timezone.utc),
+    }
+
+    resp = _as(app, MEMBER).delete(f"/tasks/{task_id}/notes/n1")
+    assert resp.status_code == 404
+    assert "n1" in store.notes
+
+
+def test_delete_unknown_note_404(app, store):
+    task_id = store.add_task()
+    resp = _as(app, MEMBER).delete(f"/tasks/{task_id}/notes/does-not-exist")
+    assert resp.status_code == 404

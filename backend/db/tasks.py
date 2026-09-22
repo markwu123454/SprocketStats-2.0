@@ -14,12 +14,31 @@ _SELECT_TASK = """
            a.display_name AS assignee_name,
            c.display_name AS created_by_name,
            f.display_name AS finished_by_name,
-           r.display_name AS reviewed_by_name
+           r.display_name AS reviewed_by_name,
+           COALESCE(
+               (SELECT json_agg(json_build_object('id', u.id, 'display_name', u.display_name) ORDER BY tc.added_at)
+                FROM task_contributors tc
+                JOIN users u ON u.id = tc.user_id
+                WHERE tc.task_id = t.id),
+               '[]'::json
+           ) AS contributors,
+           (SELECT count(*) FROM task_notes n WHERE n.task_id = t.id) AS note_count
     FROM tasks t
     LEFT JOIN users a ON a.id = t.assignee_id
     LEFT JOIN users c ON c.id = t.created_by
     LEFT JOIN users f ON f.id = t.finished_by
     LEFT JOIN users r ON r.id = t.reviewed_by
+"""
+
+# Shared join backing the task-notes reads -- mirrors _SELECT_TASK's pattern of
+# one canonical joined shape rather than a raw variant and a joined variant
+# that could drift apart. `author_id` is ON DELETE SET NULL, so a note from a
+# deleted user still reads back (with a null author_name) instead of vanishing.
+_SELECT_NOTE = """
+    SELECT n.*,
+           u.display_name AS author_name
+    FROM task_notes n
+    LEFT JOIN users u ON u.id = n.author_id
 """
 
 # Columns update_task() is ever allowed to touch. Defensive whitelist so a bug
@@ -255,6 +274,156 @@ async def unreview_task(task_id: str) -> asyncpg.Record | None:
     return await get_task(task_id)
 
 
+async def add_contributor(task_id: str, user_id: str) -> asyncpg.Record | None:
+    """Add `user_id` as a contributor on `task_id`. Idempotent -- adding someone
+    who is already a contributor is a no-op, not an error.
+
+    :returns: The updated, joined task row, or `None` if `task_id` doesn't exist.
+    """
+    async with db_connection(DB_NAME) as conn:
+        try:
+            await conn.execute(
+                """
+                INSERT INTO task_contributors (task_id, user_id)
+                VALUES ($1, $2)
+                ON CONFLICT DO NOTHING
+                """,
+                task_id,
+                user_id,
+            )
+        except Exception as e:
+            logger.error("add_contributor failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to add contributor")
+    return await get_task(task_id)
+
+
+async def remove_contributor(task_id: str, user_id: str) -> asyncpg.Record | None:
+    """Remove `user_id` from `task_id`'s contributor list, if present.
+
+    :returns: The updated, joined task row, or `None` if `task_id` doesn't exist.
+    """
+    async with db_connection(DB_NAME) as conn:
+        try:
+            await conn.execute(
+                "DELETE FROM task_contributors WHERE task_id = $1 AND user_id = $2",
+                task_id,
+                user_id,
+            )
+        except Exception as e:
+            logger.error("remove_contributor failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to remove contributor")
+    return await get_task(task_id)
+
+
+async def release_assignee(task_id: str) -> asyncpg.Record | None:
+    """Clear a task's assignee, promoting the earliest contributor if there is one.
+
+    Locks the task row for the duration of the transaction so a concurrent
+    contributor add/remove can't race the promotion decision. If a contributor
+    exists, the earliest one (by `added_at`) becomes the new assignee and their
+    contributor row is deleted; `status` is left untouched. Otherwise the task
+    goes fully unassigned and, per the "no assignee means To do" rule, `doing`
+    drops back to `todo` -- `review` and `done` are unaffected since they no
+    longer depend on having an assignee.
+
+    :returns: The updated, joined task row, or `None` if `task_id` doesn't exist.
+    """
+    async with db_connection(DB_NAME) as conn:
+        try:
+            async with conn.transaction():
+                locked = await conn.fetchval("SELECT id FROM tasks WHERE id = $1 FOR UPDATE", task_id)
+                if locked is None:
+                    return None
+
+                contributor = await conn.fetchrow(
+                    """
+                    SELECT user_id FROM task_contributors
+                    WHERE task_id = $1
+                    ORDER BY added_at ASC
+                    LIMIT 1
+                    """,
+                    task_id,
+                )
+
+                if contributor is not None:
+                    await conn.execute(
+                        "UPDATE tasks SET assignee_id = $2, updated_at = now() WHERE id = $1",
+                        task_id,
+                        contributor["user_id"],
+                    )
+                    await conn.execute(
+                        "DELETE FROM task_contributors WHERE task_id = $1 AND user_id = $2",
+                        task_id,
+                        contributor["user_id"],
+                    )
+                else:
+                    await conn.execute(
+                        """
+                        UPDATE tasks
+                        SET assignee_id = NULL,
+                            status = CASE WHEN status = 'doing' THEN 'todo' ELSE status END,
+                            updated_at = now()
+                        WHERE id = $1
+                        """,
+                        task_id,
+                    )
+        except Exception as e:
+            logger.error("release_assignee failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to release assignee")
+    return await get_task(task_id)
+
+
+async def list_task_notes(task_id: str) -> list[asyncpg.Record]:
+    """Return every note on `task_id`, oldest first, with the author's display name joined in."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetch(_SELECT_NOTE + " WHERE n.task_id = $1 ORDER BY n.created_at ASC", task_id)
+        except Exception as e:
+            logger.error("list_task_notes failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to fetch notes")
+
+
+async def get_task_note(note_id: str) -> asyncpg.Record | None:
+    """Return one note by id with the same joined author name as list_task_notes(), or None."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow(_SELECT_NOTE + " WHERE n.id = $1", note_id)
+        except Exception as e:
+            logger.error("get_task_note failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to fetch note")
+
+
+async def create_task_note(task_id: str, author_id: str, body: str) -> asyncpg.Record:
+    """Insert a new note on `task_id` and return it in the joined shape callers expect."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO task_notes (task_id, author_id, body)
+                VALUES ($1, $2, $3)
+                RETURNING id
+                """,
+                task_id,
+                author_id,
+                body,
+            )
+        except Exception as e:
+            logger.error("create_task_note failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to create note")
+    return await get_task_note(row["id"])
+
+
+async def delete_task_note(note_id: str) -> bool:
+    """Delete a note. Returns whether a row was actually removed."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            result = await conn.execute("DELETE FROM task_notes WHERE id = $1", note_id)
+        except Exception as e:
+            logger.error("delete_task_note failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to delete note")
+    return result == "DELETE 1"
+
+
 async def delete_task(task_id: str) -> bool:
     """Delete a task. Returns whether a row was actually removed."""
     async with db_connection(DB_NAME) as conn:
@@ -276,4 +445,11 @@ __all__ = [
     "review_task",
     "unreview_task",
     "delete_task",
+    "add_contributor",
+    "remove_contributor",
+    "release_assignee",
+    "list_task_notes",
+    "get_task_note",
+    "create_task_note",
+    "delete_task_note",
 ]
