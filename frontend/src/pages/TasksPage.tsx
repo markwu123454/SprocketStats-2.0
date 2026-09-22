@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from "react"
+import { useLocation } from "react-router-dom"
 import { Pencil, Trash2, X } from "lucide-react"
 import { useOnboardedUser, type OnboardedUser } from "@/contexts/authContext"
 import { can, getPerm } from "@/lib/permissions"
@@ -6,6 +7,7 @@ import Dropdown from "@/components/ui/Dropdown"
 import { BUCKET_OPTIONS, TASK_BUCKETS, bucketLabel, isTaskBucket } from "@/lib/taskBuckets"
 import {
     claimTask, createTask, deleteTask, fetchPeople, fetchTasks, reviewTask, unreviewTask, updateTask,
+    PRIORITY_LABEL, STATUS_LABEL,
     type CreateTaskInput, type Person, type Task, type TaskPriority, type TaskStatus, type UpdateTaskInput,
 } from "@/lib/tasksApi"
 
@@ -23,18 +25,11 @@ function tint(token: string, pct: number): string {
 }
 
 const PRIORITY_ORDER: TaskPriority[] = ["low", "med", "high"]
-const PRIORITY_LABEL: Record<TaskPriority, string> = { high: "High", med: "Medium", low: "Low" }
 
 // Cycling is restricted to todo → doing → review (never "done" here) because
 // the backend only ever reaches `done` through the review endpoint — a bare
 // PATCH is rejected. See TASKS_CONTRACT.md.
 const STATUS_ORDER: Exclude<TaskStatus, "done">[] = ["todo", "doing", "review"]
-const STATUS_LABEL: Record<TaskStatus, string> = {
-    todo: "To do",
-    doing: "In progress",
-    review: "Needs review",
-    done: "Done",
-}
 
 function priorityPillStyle(priority: TaskPriority): CSSProperties {
     const isHigh = priority === "high"
@@ -102,6 +97,12 @@ function assigneeOptions(people: Person[]) {
 type WhoFilter = "everyone" | "me" | "unclaimed" | string // string branch = a person id
 type StatusFilter = "all" | TaskStatus
 
+/** Router `state` accepted by `/tasks` to pre-set its filters. */
+export interface TasksPageState {
+    bucket?: string
+    who?: WhoFilter
+}
+
 /**
  * Task Assignments board. Buckets (left rail) are the 8 subteams + General;
  * the default bucket is the viewer's own subteam (no subteam → "All tasks").
@@ -130,8 +131,13 @@ export default function TasksPage() {
     const [loadError, setLoadError] = useState<string | null>(null)
     const [actionError, setActionError] = useState<string | null>(null)
 
-    const [bucketFilter, setBucketFilter] = useState<string>(mySubteam ?? "all")
-    const [whoFilter, setWhoFilter] = useState<WhoFilter>("everyone")
+    // Links can pre-set the filters via router state -- e.g. the dashboard's
+    // "Your tasks" card opens on every bucket filtered to the viewer, since
+    // their tasks aren't necessarily in their own subteam.
+    const initialFilters = useLocation().state as TasksPageState | null
+
+    const [bucketFilter, setBucketFilter] = useState<string>(initialFilters?.bucket ?? mySubteam ?? "all")
+    const [whoFilter, setWhoFilter] = useState<WhoFilter>(initialFilters?.who ?? "everyone")
     const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
     const [showCreate, setShowCreate] = useState(false)
     const [showDone, setShowDone] = useState(false)

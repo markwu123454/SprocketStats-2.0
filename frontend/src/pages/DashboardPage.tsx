@@ -1,13 +1,21 @@
-import {useEffect, useState} from "react"
+import {useEffect, useState, type ReactNode} from "react"
 import { Link } from "react-router-dom"
 import { useOnboardedUser } from "@/contexts/authContext"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
-import { Calendar, Eye, EyeOff, KeyRound, ChevronRight } from "lucide-react"
+import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
 import { resolveEvent, type EventEntry } from "@/lib/events"
 import type { EventInfo } from "@/lib/eventApi"
+import { can } from "@/lib/permissions"
+import type { TasksPageState } from "@/pages/TasksPage"
+import { fetchTasks, PRIORITY_LABEL, STATUS_LABEL, type Task, type TaskPriority } from "@/lib/tasksApi"
 
 const API = import.meta.env.VITE_BACKEND_URL
+
+// The one hardcoded color on this page: High priority / overdue. The theme
+// has no "danger" token (see .design-sync/conventions.md) -- mirrors the
+// existing exception in TasksPage.tsx.
+const DANGER_RED = "#dc2626"
 
 interface MeetingHours {
     id: string
@@ -26,6 +34,25 @@ function formatMeetingDay(iso: string): string {
     return d.toLocaleDateString("en-US", { weekday: "long" })
 }
 
+// Parses a "YYYY-MM-DD" date as a LOCAL date (never UTC) so due dates don't
+// shift a day depending on the viewer's timezone.
+function parseLocalDate(dateStr: string): Date {
+    const [y, m, d] = dateStr.split("-").map(Number)
+    return new Date(y, m - 1, d)
+}
+
+function formatDueDate(dateStr: string): string {
+    return parseLocalDate(dateStr).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+}
+
+function isOverdue(dateStr: string): boolean {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return parseLocalDate(dateStr) < today
+}
+
+const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, med: 1, low: 2 }
+
 const cardStyle = { background: "var(--theme-bg)", borderColor: "var(--theme-border)" }
 
 export default function DashboardPage() {
@@ -34,9 +61,11 @@ export default function DashboardPage() {
     const [rawEvents]               = useBootstrapped<EventEntry[]>("events", [])
     const [currentEvent]            = useBootstrapped<EventInfo | null>("current_event", null)
     const [codeVisible, setCodeVisible] = useState(false)
+    const [tasks, setTasks] = useState<Task[] | null>(null)
 
     const eventEntry   = rawEvents.find(e => e.tbaKey === currentEvent?.event_key)
     const resolvedEvent = eventEntry ? resolveEvent(eventEntry, new Date()) : null
+    const canViewTasks = can(user.permissions, "tasks.view")
 
     useEffect(() => {
         let cancelled = false
@@ -46,6 +75,15 @@ export default function DashboardPage() {
             .catch(() => { if (!cancelled) setMeetings([]) })
         return () => { cancelled = true }
     }, [setMeetings])
+
+    useEffect(() => {
+        if (!canViewTasks) return
+        let cancelled = false
+        fetchTasks()
+            .then(data => { if (!cancelled) setTasks(data) })
+            .catch(() => { if (!cancelled) setTasks([]) })
+        return () => { cancelled = true }
+    }, [canViewTasks])
 
     const now = new Date()
     const sorted = (meetings ?? [])
@@ -58,6 +96,15 @@ export default function DashboardPage() {
     // (see OnboardingRequest.validate_school_info_required on the backend) --
     // mentors/alumni never have them, so their absence gates this card.
     const hasSchoolInfo = Boolean(user.grade && user.team_year)
+
+    const myTasks = (tasks ?? [])
+        .filter(t => t.assignee_id === user.id && t.status !== "done")
+        .slice()
+        .sort((a, b) =>
+            PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
+            || (a.due_date === b.due_date ? 0 : a.due_date === null ? 1 : b.due_date === null ? -1 : a.due_date.localeCompare(b.due_date))
+            || a.title.localeCompare(b.title)
+        )
 
     return (
         <div className="max-w-7xl mx-auto px-4 py-8 flex flex-col gap-8">
@@ -136,6 +183,65 @@ export default function DashboardPage() {
                         </>
                     )}
                 </div>
+
+                {/* Your tasks -- only for roles with tasks.view permission */}
+                {canViewTasks && (
+                    <div className="rounded-xl border p-5 flex flex-col gap-3 backdrop-blur-sm" style={cardStyle}>
+                        <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium theme-text opacity-70">Your tasks</span>
+                            <ListChecks size={18} className="theme-text-contrast opacity-80" />
+                        </div>
+
+                        {tasks === null ? (
+                            <p className="text-sm theme-subtext-color">Loading…</p>
+                        ) : myTasks.length === 0 ? (
+                            <>
+                                <p className="text-lg font-semibold theme-text">No tasks assigned</p>
+                                <p className="text-sm theme-subtext-color">You're all caught up.</p>
+                            </>
+                        ) : (
+                            <>
+                                <div className="flex flex-col gap-2.5">
+                                    {myTasks.slice(0, 5).map(task => {
+                                        const overdue = task.due_date != null && isOverdue(task.due_date)
+                                        const metaParts: ReactNode[] = [STATUS_LABEL[task.status]]
+                                        if (task.priority === "high") {
+                                            metaParts.push(<span key="priority" style={{ color: DANGER_RED }}>{PRIORITY_LABEL.high}</span>)
+                                        }
+                                        if (task.due_date) {
+                                            metaParts.push(
+                                                overdue
+                                                    ? <span key="due" style={{ color: DANGER_RED }}>Overdue</span>
+                                                    : <span key="due">Due {formatDueDate(task.due_date)}</span>
+                                            )
+                                        }
+                                        return (
+                                            <div key={task.id} className="min-w-0">
+                                                <p className="text-sm font-medium theme-text truncate">{task.title}</p>
+                                                <p className="text-xs theme-subtext-color flex items-center gap-1 flex-wrap">
+                                                    {metaParts.map((part, i) => (
+                                                        <span key={i} className="flex items-center gap-1">
+                                                            {i > 0 && <span aria-hidden="true">·</span>}
+                                                            {part}
+                                                        </span>
+                                                    ))}
+                                                </p>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                                <Link
+                                    to="/tasks"
+                                    state={{ bucket: "all", who: "me" } satisfies TasksPageState}
+                                    className="text-sm theme-text-contrast hover:underline flex items-center gap-1 self-start"
+                                >
+                                    {myTasks.length > 5 ? `View all (${myTasks.length})` : "Open tasks"}
+                                    <ChevronRight size={14} />
+                                </Link>
+                            </>
+                        )}
+                    </div>
+                )}
 
                 {/* Offline account code -- only for roles with school info on file */}
                 {hasSchoolInfo && (
