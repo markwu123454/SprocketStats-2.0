@@ -10,6 +10,14 @@ const API = import.meta.env.VITE_BACKEND_URL
 export type TaskPriority = "high" | "med" | "low"
 export type TaskStatus = "todo" | "doing" | "review" | "done"
 
+export const PRIORITY_LABEL: Record<TaskPriority, string> = { high: "High", med: "Medium", low: "Low" }
+export const STATUS_LABEL: Record<TaskStatus, string> = {
+    todo: "To do",
+    doing: "In progress",
+    review: "Needs review",
+    done: "Done",
+}
+
 export interface Task {
     id: string
     title: string
