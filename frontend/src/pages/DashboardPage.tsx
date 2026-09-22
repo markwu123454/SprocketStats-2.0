@@ -98,7 +98,7 @@ export default function DashboardPage() {
     const hasSchoolInfo = Boolean(user.grade && user.team_year)
 
     const myTasks = (tasks ?? [])
-        .filter(t => t.assignee_id === user.id && t.status !== "done")
+        .filter(t => (t.assignee_id === user.id || t.contributors.some(c => c.id === user.id)) && (t.status === "todo" || t.status === "doing"))
         .slice()
         .sort((a, b) =>
             PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
@@ -205,6 +205,9 @@ export default function DashboardPage() {
                                     {myTasks.slice(0, 5).map(task => {
                                         const overdue = task.due_date != null && isOverdue(task.due_date)
                                         const metaParts: ReactNode[] = [STATUS_LABEL[task.status]]
+                                        if (task.assignee_id !== user.id && task.contributors.some(c => c.id === user.id)) {
+                                            metaParts.push(<span key="contributing">Contributing</span>)
+                                        }
                                         if (task.priority === "high") {
                                             metaParts.push(<span key="priority" style={{ color: DANGER_RED }}>{PRIORITY_LABEL.high}</span>)
                                         }

@@ -36,11 +36,22 @@ export interface Task {
     reviewed_by_name: string | null
     created_at: string
     updated_at: string
+    contributors: Person[]
+    note_count: number
 }
 
 export interface Person {
     id: string
     display_name: string
+}
+
+export interface TaskNote {
+    id: string
+    task_id: string
+    author_id: string | null
+    author_name: string | null
+    body: string
+    created_at: string
 }
 
 export interface CreateTaskInput {
@@ -100,6 +111,25 @@ export function claimTask(id: string): Promise<Task> {
     return apiFetch<Task>(`/tasks/${id}/claim`, { method: "POST" })
 }
 
+/** Adds a contributor; 400 if unassigned or done, 409 if that person is the assignee.
+ *  Omit `userId` to add the caller; adding someone else requires the authority set. */
+export function addContributor(id: string, userId?: string): Promise<Task> {
+    return apiFetch<Task>(`/tasks/${id}/contributors`, {
+        method: "POST",
+        ...(userId ? { body: JSON.stringify({ user_id: userId }) } : {}),
+    })
+}
+
+/** Removes a contributor. Removing someone other than the caller requires the authority set. */
+export function removeContributor(id: string, userId: string): Promise<Task> {
+    return apiFetch<Task>(`/tasks/${id}/contributors/${userId}`, { method: "DELETE" })
+}
+
+/** The caller leaves the task's contributor list. */
+export function leaveTask(id: string): Promise<Task> {
+    return removeContributor(id, "me")
+}
+
 /** Anyone except `finished_by` may mark a `review` task `done`. */
 export function reviewTask(id: string): Promise<Task> {
     return apiFetch<Task>(`/tasks/${id}/review`, { method: "POST" })
@@ -112,4 +142,19 @@ export function unreviewTask(id: string): Promise<Task> {
 
 export function deleteTask(id: string): Promise<void> {
     return apiFetch<void>(`/tasks/${id}`, { method: "DELETE" })
+}
+
+/** Oldest first. */
+export function fetchNotes(taskId: string): Promise<TaskNote[]> {
+    return apiFetch<TaskNote[]>(`/tasks/${taskId}/notes`)
+}
+
+/** 400 if `body` is blank or over 2000 characters. */
+export function addNote(taskId: string, body: string): Promise<TaskNote> {
+    return apiFetch<TaskNote>(`/tasks/${taskId}/notes`, { method: "POST", body: JSON.stringify({ body }) })
+}
+
+/** Allowed for the note's author or the authority set; 403 otherwise. */
+export function deleteNote(taskId: string, noteId: string): Promise<void> {
+    return apiFetch<void>(`/tasks/${taskId}/notes/${noteId}`, { method: "DELETE" })
 }
