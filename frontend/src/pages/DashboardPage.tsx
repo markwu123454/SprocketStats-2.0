@@ -7,7 +7,7 @@ import Avatar from "@/components/Avatar.tsx"
 import { resolveEvent, type EventEntry } from "@/lib/events"
 import type { EventInfo } from "@/lib/eventApi"
 import { can } from "@/lib/permissions"
-import type { TasksPageState } from "@/pages/TasksPage"
+import type { TasksPageState } from "@/pages/TasksPageRouter"
 import { fetchTasks, PRIORITY_LABEL, STATUS_LABEL, type Task, type TaskPriority } from "@/lib/tasksApi"
 
 const API = import.meta.env.VITE_BACKEND_URL

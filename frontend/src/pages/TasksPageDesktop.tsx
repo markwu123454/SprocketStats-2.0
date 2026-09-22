@@ -1,158 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from "react"
+import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from "react"
 import { useLocation } from "react-router-dom"
 import { Pencil, X } from "lucide-react"
 import { useOnboardedUser, type OnboardedUser } from "@/contexts/authContext"
-import { can, getPerm } from "@/lib/permissions"
 import Dropdown from "@/components/ui/Dropdown"
-import { BUCKET_OPTIONS, TASK_BUCKETS, bucketLabel, isTaskBucket } from "@/lib/taskBuckets"
+import { BUCKET_OPTIONS, TASK_BUCKETS, bucketLabel } from "@/lib/taskBuckets"
 import {
-    addContributor, addNote, claimTask, createTask, deleteNote, deleteTask, fetchNotes, fetchPeople, fetchTasks, leaveTask, removeContributor, reviewTask, unreviewTask, updateTask,
+    addContributor, addNote, createTask, deleteNote, fetchNotes, leaveTask, removeContributor, reviewTask, unreviewTask, updateTask,
     PRIORITY_LABEL, STATUS_LABEL,
-    type CreateTaskInput, type Person, type Task, type TaskNote, type TaskPriority, type TaskStatus, type UpdateTaskInput,
+    type CreateTaskInput, type Person, type Task, type TaskNote, type TaskPriority, type UpdateTaskInput,
 } from "@/lib/tasksApi"
-
-// The one hardcoded color on this page: High priority / destructive actions.
-// The theme has no "danger" token (see .design-sync/conventions.md); the
-// design mockup's own reds (#f87171/#fca5a5) are tuned for the dark teal
-// season and fail contrast on the light 2026 cream, so every "danger" use
-// in the mockup is routed through this instead (see SPEC "Colors").
-const DANGER_RED = "#dc2626"
-// A handful of hover accents below use "#dc2626"/"rgba(248,113,113,0.12)"
-// as literal strings inside Tailwind arbitrary-value classes (e.g.
-// `hover:text-[#dc2626]`) rather than interpolating DANGER_RED — Tailwind's
-// class scanner only sees literal text in source, not runtime template
-// values, so the class name has to be spelled out. Keep them in sync by hand.
-
-/** `color-mix(in oklch, var(--token) pct%, transparent)` — the design's own
- *  tint helper, used anywhere a themed color needs partial opacity without
- *  touching the token itself. */
-function tint(token: string, pct: number): string {
-    return `color-mix(in oklch, var(${token}) ${pct}%, transparent)`
-}
-
-/** Same idea as {@link tint}, but for a literal color (e.g. a fixed accent
- *  hex) instead of a theme token. */
-function tintColor(color: string, pct: number): string {
-    return `color-mix(in oklch, ${color} ${pct}%, transparent)`
-}
-
-const PRIORITY_ORDER: TaskPriority[] = ["high", "med", "low"]
-// Priority stripe / label colors. Medium and low are fixed pastel accents
-// (SPEC "Colors": "deliberate, theme-independent accents") — kept literal in
-// every season. High is folded into DANGER_RED rather than the mockup's own
-// #f87171 ("one red, not two").
-const PRIORITY_COLOR: Record<TaskPriority, string> = { high: DANGER_RED, med: "#f5d547", low: "#45908d" }
-
-// Sort order for rows *within* an area card: open work first, then whatever
-// needs a look, done last. Distinct from the old cycling order (which never
-// included "done" — a bare PATCH can't reach it) since this is pure display
-// sorting, not a set of reachable states.
-const STATUS_SORT_ORDER: TaskStatus[] = ["todo", "doing", "review", "done"]
-type SettableStatus = Exclude<TaskStatus, "done">
-
-// The 5 avatar background pastels + the fixed dark-ink initial color, picked
-// by `name.charCodeAt(0) % 5` (mirrors the mockup's `avBg`). These are fixed
-// swatches independent of season, so the initial glyph has to stay dark in
-// every theme -- including the light 2026 cream -- which is why this is the
-// one place a literal near-black hex is intentional outside DANGER_RED.
-const AVATAR_COLORS = ["#f5d547", "#9ad4c4", "#c4b5fd", "#fca5a5", "#93c5fd"]
-const AVATAR_INK = "#082626"
-function avatarBg(name: string): string {
-    if (!name) return AVATAR_COLORS[0]
-    return AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length]
-}
-function initialOf(name: string | null | undefined): string {
-    return name && name.length > 0 ? name.charAt(0).toUpperCase() : "?"
-}
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-/** `due_date` is a bare "YYYY-MM-DD" — parse as local midnight so it never
- *  reads a day early west of UTC (same fix as `resolveEvent` in lib/events.ts). */
-function formatDue(dateStr: string | null): string {
-    if (!dateStr) return "No due date"
-    const d = new Date(`${dateStr}T00:00`)
-    return `Due ${MONTHS[d.getMonth()]} ${d.getDate()}`
-}
-
-/** "just now" / "5m ago" / "2h ago" / "3d ago", falling back to a short date
- *  ("Mar 4") past a week — used for note timestamps. */
-function formatRelativeTime(iso: string): string {
-    const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
-    if (minutes < 1) return "just now"
-    if (minutes < 60) return `${minutes}m ago`
-    const hours = Math.floor(minutes / 60)
-    if (hours < 24) return `${hours}h ago`
-    const days = Math.floor(hours / 24)
-    if (days < 7) return `${days}d ago`
-    const d = new Date(iso)
-    return `${MONTHS[d.getMonth()]} ${d.getDate()}`
-}
-
-function startOfTodayMs(): number {
-    const d = new Date()
-    d.setHours(0, 0, 0, 0)
-    return d.getTime()
-}
-
-function isOverdue(task: Task, todayMs: number): boolean {
-    if (task.status === "done" || !task.due_date) return false
-    return new Date(`${task.due_date}T00:00`).getTime() < todayMs
-}
-
-/** Due text + color for a row: "Overdue · Sep 21" in danger red, else the
- *  plain "Due Sep 21" (or "No due date") in subtext. */
-function rowDue(task: Task, todayMs: number): { text: string; color: string } {
-    if (isOverdue(task, todayMs)) {
-        const d = new Date(`${task.due_date}T00:00`)
-        return { text: `Overdue · ${MONTHS[d.getMonth()]} ${d.getDate()}`, color: DANGER_RED }
-    }
-    return { text: formatDue(task.due_date), color: "var(--theme-subtext-color)" }
-}
-
-function assigneeOptions(people: Person[]) {
-    return [{ value: "", label: "Unassigned" }, ...people.map(p => ({ value: p.id, label: p.display_name }))]
-}
-
-function sortWithinArea(a: Task, b: Task): number {
-    const byStatus = STATUS_SORT_ORDER.indexOf(a.status) - STATUS_SORT_ORDER.indexOf(b.status)
-    if (byStatus !== 0) return byStatus
-    if (a.due_date === b.due_date) return 0
-    if (a.due_date === null) return 1
-    if (b.due_date === null) return -1
-    return a.due_date.localeCompare(b.due_date)
-}
-
-// ── Unread notes: count-based, localStorage-backed ──────────────────────
-// The backend has no read-tracking and `Task` only carries `note_count` (no
-// per-note timestamps), so "unread" is tracked as a delta against the count
-// last seen, not against individual notes. Wrapped in try/catch throughout:
-// Safari private mode throws on both read and write.
-const NOTES_SEEN_KEY = "tasks.notes-seen"
-
-function loadSeenMap(): Record<string, number> {
-    try {
-        const raw = localStorage.getItem(NOTES_SEEN_KEY)
-        if (!raw) return {}
-        const parsed: unknown = JSON.parse(raw)
-        return parsed && typeof parsed === "object" ? parsed as Record<string, number> : {}
-    } catch {
-        return {}
-    }
-}
-
-function saveSeenMap(map: Record<string, number>) {
-    try {
-        localStorage.setItem(NOTES_SEEN_KEY, JSON.stringify(map))
-    } catch {
-        // Safari private mode, storage disabled, quota, etc. -- unread state
-        // just won't persist across reloads, which is fine.
-    }
-}
-
-type WhoFilter = "everyone" | "me" | "unclaimed" | string // string branch = a person id
-type StatusFilter = "all" | TaskStatus
-type Quick = null | "unclaimed" | "overdue" | "review"
+import {
+    DANGER_RED, PRIORITY_ORDER, PRIORITY_COLOR, AVATAR_INK,
+    tint, tintColor, avatarBg, initialOf, formatRelativeTime, isOverdue, rowDue, assigneeOptions, sortWithinArea,
+    matchesFilter, type SettableStatus, type WhoFilter, type StatusFilter, type Quick,
+} from "@/lib/taskFormat"
+import { useTaskBoard } from "@/lib/useTaskBoard"
 
 /** Router `state` accepted by `/tasks` to pre-set its filters. */
 export interface TasksPageState {
@@ -186,18 +48,10 @@ interface SubteamGroup {
  *    threaded through the row/detail below, and the dropped `takeOver`/
  *    member "Release" affordances the mockup has that would just 403.
  */
-export default function TasksPage() {
+export default function TasksPageDesktop() {
     const user = useOnboardedUser()
-    const canAssign = can(user.permissions, "tasks.assign")
-
-    const rawSubteam = getPerm(user.permissions, "subteam")
-    const mySubteam = typeof rawSubteam === "string" && isTaskBucket(rawSubteam) ? rawSubteam : null
-
-    const [tasks, setTasks] = useState<Task[]>([])
-    const [people, setPeople] = useState<Person[]>([])
-    const [loading, setLoading] = useState(true)
-    const [loadError, setLoadError] = useState<string | null>(null)
-    const [actionError, setActionError] = useState<string | null>(null)
+    const board = useTaskBoard()
+    const { tasks, people, loading, loadError, actionError, setActionError, canAssign, mySubteam, canEditTask, todayMs, unread } = board
 
     // Links can pre-set the filters via router state -- e.g. the dashboard's
     // "Your tasks" card opens on every bucket filtered to the viewer, since
@@ -219,21 +73,6 @@ export default function TasksPage() {
     const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
     const [statusMenuOpenId, setStatusMenuOpenId] = useState<string | null>(null)
     const [drafts, setDrafts] = useState<Record<string, string>>({})
-    const [seen, setSeen] = useState<Record<string, number>>(() => loadSeenMap())
-    const markReadTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-    // Mirrors `tasks` for the mark-read timer below, which fires 900ms after
-    // it's scheduled and needs the *current* note_count at that moment, not
-    // whatever it was when the timer was set -- see the timer's own comment.
-    const tasksRef = useRef<Task[]>(tasks)
-    useEffect(() => { tasksRef.current = tasks }, [tasks])
-
-    // Guards against a background poll's response landing after the page has
-    // been navigated away from -- fetchTasks() is in flight across an
-    // unmount, resolves late, and would otherwise still call setTasks.
-    const mountedRef = useRef(true)
-    useEffect(() => () => { mountedRef.current = false }, [])
-
-    useEffect(() => () => { if (markReadTimer.current) clearTimeout(markReadTimer.current) }, [])
 
     // Click anywhere outside an open row popover (status picker / overflow
     // menu) closes it. Their trigger + popover share a `data-task-popover`
@@ -249,213 +88,6 @@ export default function TasksPage() {
         document.addEventListener("mousedown", onDocMouseDown)
         return () => document.removeEventListener("mousedown", onDocMouseDown)
     }, [])
-
-    // A task with no `seen` entry has never been looked at on this device --
-    // treat that as "caught up" rather than "everything is unread", or a
-    // fresh browser (or the first load after this feature ships) would
-    // render every task with notes as fully unread. Only stamps tasks with
-    // NO existing entry; an entry that's already there reflects a real prior
-    // visit and is left alone, so notes that land after that visit still
-    // count. Shared by the initial load and the silent poll below, since a
-    // newly-visible task can arrive via either path.
-    const stampSeenForNewTasks = useCallback((newTasks: Task[]) => {
-        setSeen(prev => {
-            let changed = false
-            const next = { ...prev }
-            for (const task of newTasks) {
-                if (next[task.id] === undefined) {
-                    next[task.id] = task.note_count
-                    changed = true
-                }
-            }
-            if (!changed) return prev
-            saveSeenMap(next)
-            return next
-        })
-    }, [])
-
-    const load = useCallback(async () => {
-        setLoading(true)
-        setLoadError(null)
-        try {
-            const [t, p] = await Promise.all([fetchTasks(), fetchPeople()])
-            setTasks(t)
-            setPeople(p)
-            stampSeenForNewTasks(t)
-        } catch {
-            setLoadError("Failed to load tasks")
-        } finally {
-            setLoading(false)
-        }
-    }, [stampSeenForNewTasks])
-
-    useEffect(() => { void load() }, [load])
-
-    // Guards `refreshTasksSilently` against overlapping requests (a poll
-    // tick firing while the previous one is still in flight, or racing the
-    // immediate refresh on tab-visible / claim-collision paths). A ref, not
-    // state, since it's a pure in-flight flag with no rendering implication.
-    const pollInFlight = useRef(false)
-
-    // Timestamp of the most recently *applied* mutation result (claim,
-    // status change, reassignment, delete, ...) -- bumped by `applyTask`/
-    // `removeTask` below, so every mutation path gets it for free. A poll
-    // response fetched *before* this moment is stale relative to what's
-    // already on screen: without checking it, a slow poll landing just
-    // after a mutation would overwrite the board with pre-mutation data,
-    // silently reverting the user's own action for up to a full interval.
-    const lastMutationAt = useRef(0)
-
-    /** Background refresh: re-fetches tasks only (never people -- the
-     *  roster changes far too rarely to poll) and never touches `loading`,
-     *  `loadError` or `actionError`. Used by the 30s poll below, the
-     *  tab-visible resume, and after a claim collision so the board catches
-     *  up with whoever actually got the task. Failures are swallowed
-     *  entirely: a transient blip on a background refresh shouldn't replace
-     *  a working board with an error, or stomp on an error message the user
-     *  hasn't read yet -- the next tick just tries again. */
-    const refreshTasksSilently = useCallback(async () => {
-        if (pollInFlight.current) return
-        pollInFlight.current = true
-        const startedAt = Date.now()
-        try {
-            const t = await fetchTasks()
-            if (!mountedRef.current) return
-            // A mutation was applied after this fetch was issued, so its
-            // result is already the newer, authoritative state on screen --
-            // this response is stale and would revert it. `>=` so a
-            // same-millisecond tie favors the mutation, not the poll.
-            if (lastMutationAt.current >= startedAt) return
-            setTasks(t)
-            stampSeenForNewTasks(t)
-        } catch {
-            // Swallowed by design -- see doc comment above.
-        } finally {
-            pollInFlight.current = false
-        }
-    }, [stampSeenForNewTasks])
-
-    // Poll every 30s while the tab is visible, so two people are less likely
-    // to both go for the same unclaimed task. Pauses entirely while hidden
-    // (no point burning requests on a backgrounded tab) and does one
-    // immediate refresh on becoming visible again, so a tab left open for an
-    // hour doesn't sit on an hour-old board until the next tick.
-    useEffect(() => {
-        const POLL_MS = 30000
-        let intervalId: ReturnType<typeof setInterval> | null = null
-
-        function start() {
-            if (intervalId !== null) return
-            intervalId = setInterval(() => { void refreshTasksSilently() }, POLL_MS)
-        }
-        function stop() {
-            if (intervalId !== null) { clearInterval(intervalId); intervalId = null }
-        }
-        function onVisibilityChange() {
-            if (document.visibilityState === "hidden") {
-                stop()
-            } else {
-                void refreshTasksSilently()
-                start()
-            }
-        }
-
-        if (document.visibilityState === "visible") start()
-        document.addEventListener("visibilitychange", onVisibilityChange)
-        return () => {
-            stop()
-            document.removeEventListener("visibilitychange", onVisibilityChange)
-        }
-    }, [refreshTasksSilently])
-
-    const applyTask = useCallback((updated: Task) => {
-        lastMutationAt.current = Date.now()
-        setTasks(prev => {
-            const idx = prev.findIndex(t => t.id === updated.id)
-            if (idx === -1) return [...prev, updated]
-            const next = [...prev]
-            next[idx] = updated
-            return next
-        })
-    }, [])
-
-    const removeTask = useCallback((id: string) => {
-        lastMutationAt.current = Date.now()
-        setTasks(prev => prev.filter(t => t.id !== id))
-    }, [])
-
-    // Notes live in their own thread endpoint (see TaskNotes), so their count
-    // is nudged locally rather than re-fetching the whole task on every post/delete.
-    const bumpNoteCount = useCallback((taskId: string, delta: number) => {
-        // Stamped like `applyTask`/`removeTask`: this runs only after `addNote`
-        // /`deleteNote` already succeeded server-side, so it's a real mutation
-        // and an older in-flight poll must not revert the count behind it.
-        lastMutationAt.current = Date.now()
-        setTasks(prev => prev.map(t => t.id === taskId ? { ...t, note_count: t.note_count + delta } : t))
-        // Keep our own "seen" baseline in step with an edit *we* just made
-        // locally (posting or deleting a note in the open thread), so it
-        // doesn't register as unread to the very person who made it --
-        // without this, posting your own note pushes note_count above the
-        // stamped baseline and the chip/header immediately read "unread".
-        // Only nudges an existing baseline: a task with no entry yet hasn't
-        // been looked at, so there's nothing to keep in step with (the
-        // initial-load stamp in `load()` handles that case). A note someone
-        // *else* posts only ever reaches this client through a fresh
-        // `fetchTasks()`, which doesn't go through this path, so it's
-        // unaffected and still correctly reads as unread.
-        setSeen(prev => {
-            if (prev[taskId] === undefined) return prev
-            const next = { ...prev, [taskId]: Math.max(0, prev[taskId] + delta) }
-            saveSeenMap(next)
-            return next
-        })
-    }, [])
-
-    function canEditTask(task: Task): boolean {
-        return canAssign || task.created_by === user.id
-    }
-
-    function unread(task: Task): number {
-        return Math.max(0, task.note_count - (seen[task.id] ?? 0))
-    }
-
-    async function runAction(fn: () => Promise<Task>) {
-        setActionError(null)
-        try {
-            applyTask(await fn())
-        } catch (err) {
-            setActionError(err instanceof Error ? err.message : "Something went wrong")
-        }
-    }
-
-    async function handleDelete(task: Task) {
-        if (!window.confirm(`Delete "${task.title}"? This can't be undone.`)) return
-        setActionError(null)
-        try {
-            await deleteTask(task.id)
-            removeTask(task.id)
-        } catch (err) {
-            setActionError(err instanceof Error ? err.message : "Failed to delete task")
-        }
-    }
-
-    /** Claim is a special case of `runAction`: polling narrows the window
-     *  where two people go for the same unclaimed task, but can't close it,
-     *  so `claimTask` still 409s ("Task is already assigned") when someone
-     *  beats you to it. On that failure, silently refresh alongside the
-     *  error banner so the row immediately shows who actually got it,
-     *  instead of leaving the board looking like the claim should have
-     *  worked. Only claim does this -- other actions keep going through the
-     *  plain `runAction` with no extra refetch. */
-    async function handleClaim(taskId: string) {
-        setActionError(null)
-        try {
-            applyTask(await claimTask(taskId))
-        } catch (err) {
-            setActionError(err instanceof Error ? err.message : "Something went wrong")
-            void refreshTasksSilently()
-        }
-    }
 
     /** Expand/collapse a row (the whole row, or its notes chip, clicking it).
      *  Opening a row with unread notes schedules the 900ms read-stamp from
@@ -474,40 +106,15 @@ export default function TasksPage() {
     }
 
     function applyExpand(task: Task, nextId: string | null) {
-        if (markReadTimer.current) { clearTimeout(markReadTimer.current); markReadTimer.current = null }
         setMenuOpenId(null)
         setStatusMenuOpenId(null)
         setExpandedId(nextId)
-        if (nextId === task.id && unread(task) > 0) {
-            const taskId = task.id
-            markReadTimer.current = setTimeout(() => {
-                // Read `note_count` fresh off `tasksRef` at fire-time, not a
-                // snapshot captured when the timer was scheduled: if the
-                // viewer posts (or deletes) a note of their own during the
-                // 900ms window, `bumpNoteCount` already nudged `seen` to
-                // account for that edit, and stamping a stale snapshot here
-                // would clobber it -- e.g. 3 unread out of 10, viewer posts
-                // one during the window (seen 7 -> 8, count 10 -> 11, still
-                // correctly 3 unread), then this timer firing with a
-                // captured "10" would set seen back to 10, making the
-                // viewer's own just-posted 11th note read as unread. Using
-                // the live count and never moving the baseline backward
-                // (`Math.max`) keeps both edits' effects: everything visible
-                // at open time is marked read, *and* whatever the viewer
-                // added in the meantime is too.
-                const current = tasksRef.current.find(t => t.id === taskId)
-                const latestCount = current ? current.note_count : task.note_count
-                setSeen(prev => {
-                    const next = { ...prev, [taskId]: Math.max(prev[taskId] ?? 0, latestCount) }
-                    saveSeenMap(next)
-                    return next
-                })
-                markReadTimer.current = null
-            }, 900)
+        if (nextId === task.id) {
+            board.markNotesRead(task)
+        } else {
+            board.cancelMarkNotesRead()
         }
     }
-
-    const todayMs = startOfTodayMs()
 
     // Rail counts and the header's quick-filter chips read the whole board,
     // independent of the active bucket/who/status/quick filters -- an
@@ -524,21 +131,10 @@ export default function TasksPage() {
     const reviewCount = tasks.filter(t => t.status === "review").length
     const totalLabel = `${allCount} ${allCount === 1 ? "task" : "tasks"}`
 
-    const visibleTasks = useMemo(() => tasks.filter(t => {
-        if (bucketFilter !== "all" && t.bucket !== bucketFilter) return false
-        if (statusFilter !== "all" && t.status !== statusFilter) return false
-        if (whoFilter === "me") {
-            if (t.assignee_id !== user.id && !t.contributors.some(c => c.id === user.id)) return false
-        } else if (whoFilter === "unclaimed") {
-            if (t.assignee_id) return false
-        } else if (whoFilter !== "everyone") {
-            if (t.assignee_id !== whoFilter) return false
-        }
-        if (quick === "unclaimed" && t.assignee_id) return false
-        if (quick === "overdue" && !isOverdue(t, todayMs)) return false
-        if (quick === "review" && t.status !== "review") return false
-        return true
-    }), [tasks, bucketFilter, statusFilter, whoFilter, quick, user.id, todayMs])
+    const visibleTasks = useMemo(
+        () => tasks.filter(t => matchesFilter(t, { bucket: bucketFilter, status: statusFilter, who: whoFilter, quick }, user.id, todayMs)),
+        [tasks, bucketFilter, statusFilter, whoFilter, quick, user.id, todayMs],
+    )
 
     const groups = useMemo<SubteamGroup[]>(() => {
         const result: SubteamGroup[] = []
@@ -603,7 +199,7 @@ export default function TasksPage() {
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
                         <div style={{ width: 150 }}>
-                            <Dropdown value={whoFilter} onChange={v => setWhoFilter(v as WhoFilter)} options={whoOptions} triggerClassName={dropdownTriggerClassName} />
+                            <Dropdown value={whoFilter} onChange={v => setWhoFilter(v as WhoFilter)} options={whoOptions} triggerClassName={dropdownTriggerClassName} searchable />
                         </div>
                         <div style={{ width: 150 }}>
                             <Dropdown value={statusFilter} onChange={v => setStatusFilter(v as StatusFilter)} options={statusOptions} triggerClassName={dropdownTriggerClassName} menuAlign="right" />
@@ -633,7 +229,7 @@ export default function TasksPage() {
                         people={people}
                         defaultBucket={defaultBucket}
                         dropdownTriggerClassName={dropdownTriggerClassName}
-                        onCreated={task => { applyTask(task); setComposing(false) }}
+                        onCreated={task => { board.applyTask(task); setComposing(false) }}
                         onClose={() => setComposing(false)}
                         onError={setActionError}
                     />
@@ -701,18 +297,18 @@ export default function TasksPage() {
                                                         onOpenForNote={() => openForNote(task)}
                                                         onToggleMenu={() => setMenuOpenId(id => id === task.id ? null : task.id)}
                                                         onToggleStatusMenu={() => setStatusMenuOpenId(id => (id === task.id ? null : task.id))}
-                                                        onSetStatus={status => void runAction(() => updateTask(task.id, { status }))}
-                                                        onClaim={() => void handleClaim(task.id)}
-                                                        onOwnerChange={personId => void runAction(() => updateTask(task.id, { assignee_id: personId || null }))}
-                                                        onAddSelf={() => void runAction(() => addContributor(task.id))}
-                                                        onAddOther={personId => void runAction(() => addContributor(task.id, personId))}
-                                                        onRemoveContributor={personId => void runAction(() => removeContributor(task.id, personId))}
-                                                        onLeave={() => void runAction(() => leaveTask(task.id))}
-                                                        onMarkReviewed={() => void runAction(() => reviewTask(task.id))}
-                                                        onUnreview={() => void runAction(() => unreviewTask(task.id))}
+                                                        onSetStatus={status => void board.runAction(() => updateTask(task.id, { status }))}
+                                                        onClaim={() => void board.handleClaim(task.id)}
+                                                        onOwnerChange={personId => void board.runAction(() => updateTask(task.id, { assignee_id: personId || null }))}
+                                                        onAddSelf={() => void board.runAction(() => addContributor(task.id))}
+                                                        onAddOther={personId => void board.runAction(() => addContributor(task.id, personId))}
+                                                        onRemoveContributor={personId => void board.runAction(() => removeContributor(task.id, personId))}
+                                                        onLeave={() => void board.runAction(() => leaveTask(task.id))}
+                                                        onMarkReviewed={() => void board.runAction(() => reviewTask(task.id))}
+                                                        onUnreview={() => void board.runAction(() => unreviewTask(task.id))}
                                                         onEdit={() => setEditingTask(task)}
-                                                        onDelete={() => void handleDelete(task)}
-                                                        onNoteCountChange={bumpNoteCount}
+                                                        onDelete={() => void board.handleDelete(task)}
+                                                        onNoteCountChange={board.bumpNoteCount}
                                                     />
                                                 ))}
                                             </div>
@@ -738,7 +334,7 @@ export default function TasksPage() {
                     canAssign={canAssign}
                     people={people}
                     onClose={() => setEditingTask(null)}
-                    onSaved={task => { applyTask(task); setEditingTask(null) }}
+                    onSaved={task => { board.applyTask(task); setEditingTask(null) }}
                     onError={setActionError}
                 />
             )}
@@ -896,7 +492,7 @@ function ComposeForm({ canAssign, people, defaultBucket, dropdownTriggerClassNam
                     {canAssign && (
                         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                             <span style={composeLabelStyle}>Assign to</span>
-                            <Dropdown value={assigneeId} onChange={setAssigneeId} options={assigneeOptions(people)} triggerClassName={dropdownTriggerClassName} />
+                            <Dropdown value={assigneeId} onChange={setAssigneeId} options={assigneeOptions(people)} triggerClassName={dropdownTriggerClassName} searchable />
                         </div>
                     )}
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
@@ -1250,7 +846,7 @@ function TaskRow({
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                             <span style={detailLabelStyle}>Owner</span>
                             {canAssign ? (
-                                <Dropdown value={task.assignee_id ?? ""} onChange={onOwnerChange} options={assigneeOptions(people)} triggerClassName={dropdownTriggerClassName} />
+                                <Dropdown value={task.assignee_id ?? ""} onChange={onOwnerChange} options={assigneeOptions(people)} triggerClassName={dropdownTriggerClassName} searchable />
                             ) : (
                                 <div style={{ display: "flex", alignItems: "center", gap: 9, minHeight: 38, flexWrap: "wrap" }}>
                                     {task.assignee_id && (
@@ -1378,6 +974,12 @@ function ContributorsSection({ task, canAssign, currentUserId, people, dropdownT
                 })}
                 {showAddContributor && (
                     addingContributor ? (
+                        /* `defaultOpen`: this picker only exists because the
+                           user just clicked "+ Add", so it opens straight into
+                           the roster instead of making them click it a second
+                           time. Dismissing it without choosing anyone puts the
+                           "+ Add" pill back, rather than stranding a closed
+                           picker that would need that second click anyway. */
                         <div style={{ width: 170 }} onClick={e => e.stopPropagation()}>
                             <Dropdown
                                 value=""
@@ -1385,6 +987,9 @@ function ContributorsSection({ task, canAssign, currentUserId, people, dropdownT
                                 options={addOtherOptions}
                                 placeholder="Add…"
                                 triggerClassName={dropdownTriggerClassName}
+                                searchable
+                                defaultOpen
+                                onOpenChange={isOpen => { if (!isOpen) setAddingContributor(false) }}
                             />
                         </div>
                     ) : (
@@ -1673,7 +1278,7 @@ function EditTaskModal({ task, canAssign, people, onClose, onSaved, onError }: E
                         <label className="flex flex-col gap-1">
                             <span className="text-xs font-medium theme-subtext-color">Assign to</span>
                             <div className={dropdownWrapClass} style={dropdownWrapStyle}>
-                                <Dropdown value={assigneeId} onChange={setAssigneeId} options={assigneeOptions(people)} triggerClassName="px-3 py-2 text-sm theme-text" />
+                                <Dropdown value={assigneeId} onChange={setAssigneeId} options={assigneeOptions(people)} triggerClassName="px-3 py-2 text-sm theme-text" searchable />
                             </div>
                         </label>
                     )}

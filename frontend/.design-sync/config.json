@@ -12,7 +12,7 @@
   },
   "docsDir": ".design-sync/docs",
   "dtsPropsFor": {
-    "Dropdown": "value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; disabled?: boolean; placeholder?: string; className?: string; triggerClassName?: string; menuAlign?: \"left\" | \"right\"; resizable?: boolean; initialMaxHeight?: number;",
+    "Dropdown": "value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; disabled?: boolean; placeholder?: string; className?: string; triggerClassName?: string; menuAlign?: \"left\" | \"right\"; resizable?: boolean; initialMaxHeight?: number; searchable?: boolean; searchPlaceholder?: string; label?: string; defaultOpen?: boolean; onOpenChange?: (open: boolean) => void;",
     "TimeWheel": "label: string; value: string; onChange: (v: string) => void;"
   },
   "cssEntry": ".design-sync/.cache/tw/ds.css",
