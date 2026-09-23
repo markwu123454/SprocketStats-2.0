@@ -51,7 +51,7 @@ interface SubteamGroup {
 export default function TasksPageDesktop() {
     const user = useOnboardedUser()
     const board = useTaskBoard()
-    const { tasks, people, loading, loadError, actionError, setActionError, canAssign, mySubteam, canEditTask, todayMs, unread } = board
+    const { tasks, people, loading, loadError, actionError, setActionError, canAssign, mySubteam, canEditTask, canChangeStatus, todayMs, unread } = board
 
     // Links can pre-set the filters via router state -- e.g. the dashboard's
     // "Your tasks" card opens on every bucket filtered to the viewer, since
@@ -141,11 +141,18 @@ export default function TasksPageDesktop() {
         for (const bucket of TASK_BUCKETS) {
             const bucketTasks = visibleTasks.filter(t => t.bucket === bucket)
             if (bucketTasks.length === 0) continue
-            const areaNames = Array.from(new Set(bucketTasks.map(t => t.area))).sort((a, b) => a.localeCompare(b))
-            const areas = areaNames.map(area => ({
-                area,
-                tasks: bucketTasks.filter(t => t.area === area).sort(sortWithinArea),
-            }))
+            // Group case-insensitively (the backend normalizes new writes, but
+            // older rows may differ only in case); show the first spelling seen.
+            const byArea = new Map<string, { area: string; tasks: Task[] }>()
+            for (const t of bucketTasks) {
+                const key = t.area.toLowerCase()
+                const group = byArea.get(key)
+                if (group) group.tasks.push(t)
+                else byArea.set(key, { area: t.area, tasks: [t] })
+            }
+            const areas = Array.from(byArea.values())
+                .sort((a, b) => a.area.localeCompare(b.area))
+                .map(g => ({ area: g.area, tasks: g.tasks.sort(sortWithinArea) }))
             result.push({
                 bucket,
                 label: bucketLabel(bucket),
@@ -282,6 +289,7 @@ export default function TasksPageDesktop() {
                                                         task={task}
                                                         isFirst={i === 0}
                                                         canEdit={canEditTask(task)}
+                                                        canChangeStatus={canChangeStatus(task)}
                                                         canAssign={canAssign}
                                                         people={people}
                                                         currentUser={user}
@@ -545,6 +553,7 @@ interface TaskRowProps {
     task: Task
     isFirst: boolean
     canEdit: boolean
+    canChangeStatus: boolean
     canAssign: boolean
     people: Person[]
     currentUser: OnboardedUser
@@ -575,7 +584,7 @@ interface TaskRowProps {
 }
 
 function TaskRow({
-    task, isFirst, canEdit, canAssign, people, currentUser, todayMs, unread, expanded, menuOpen, statusMenuOpen, draft,
+    task, isFirst, canEdit, canChangeStatus, canAssign, people, currentUser, todayMs, unread, expanded, menuOpen, statusMenuOpen, draft,
     dropdownTriggerClassName, onDraftChange, onToggleRow, onOpenForNote, onToggleMenu, onToggleStatusMenu, onSetStatus,
     onClaim, onOwnerChange, onAddSelf, onAddOther, onRemoveContributor, onLeave, onMarkReviewed, onUnreview, onEdit, onDelete,
     onNoteCountChange,
@@ -585,7 +594,7 @@ function TaskRow({
     const due = rowDue(task, todayMs)
     const priorityColor = done ? tint("--theme-border", 70) : PRIORITY_COLOR[task.priority]
     const isFinisher = task.finished_by === currentUser.id
-    const disabledTitle = "Only the creator or a lead can update this task"
+    const disabledTitle = "Only the creator, a lead, or someone on this task can update its status"
 
     const avatarPeople = task.assignee_id
         ? [{ id: task.assignee_id, name: task.assignee_name ?? "Assigned" }, ...task.contributors.map(c => ({ id: c.id, name: c.display_name }))]
@@ -594,12 +603,15 @@ function TaskRow({
     const chipUnread = unread > 0
     const noteColor = chipUnread ? "var(--theme-text-contrast)" : (task.note_count > 0 ? "var(--theme-text)" : "var(--theme-subtext-color)")
 
+    // Anyone may send a review task back to doing; other moves need status rights.
+    const canToggleCheck = canChangeStatus || review
+
     const menuItems: MenuAction[] = []
     if (canEdit) menuItems.push({ label: "Edit task", onClick: onEdit })
     menuItems.push({ label: "Add a note", onClick: onOpenForNote })
-    if (canEdit && (task.status === "todo" || task.status === "doing")) menuItems.push({ label: "Mark ready for review", onClick: () => onSetStatus("review") })
-    if (canEdit && (task.status === "doing" || task.status === "review")) menuItems.push({ label: "Send back to To do", onClick: () => onSetStatus("todo") })
-    if (canEdit && done) menuItems.push({ label: "Send back for review", onClick: onUnreview })
+    if (canChangeStatus && (task.status === "todo" || task.status === "doing")) menuItems.push({ label: "Mark ready for review", onClick: () => onSetStatus("review") })
+    if (canChangeStatus && (task.status === "doing" || task.status === "review")) menuItems.push({ label: "Send back to To do", onClick: () => onSetStatus("todo") })
+    if (canAssign && done) menuItems.push({ label: "Send back for review", onClick: onUnreview })
     if (canEdit) menuItems.push({ label: "Delete task", onClick: onDelete, danger: true })
 
     return (
@@ -617,9 +629,9 @@ function TaskRow({
 
                 <button
                     type="button"
-                    onClick={e => { e.stopPropagation(); if (done || !canEdit) return; onSetStatus(review ? "doing" : "review") }}
-                    disabled={done || !canEdit}
-                    title={canEdit ? undefined : disabledTitle}
+                    onClick={e => { e.stopPropagation(); if (done || !canToggleCheck) return; onSetStatus(review ? "doing" : "review") }}
+                    disabled={done || !canToggleCheck}
+                    title={canToggleCheck ? undefined : disabledTitle}
                     className="disabled:cursor-not-allowed"
                     style={{
                         width: 17, height: 17, flex: "none", borderRadius: 5, display: "grid", placeItems: "center",
@@ -627,8 +639,8 @@ function TaskRow({
                         color: done ? "var(--theme-bg)" : "var(--theme-text-contrast)",
                         border: `1.5px solid ${done || review ? "var(--theme-text-contrast)" : "var(--theme-border)"}`,
                         background: done ? "var(--theme-text-contrast)" : (review ? "var(--ag-grid-selected-bg)" : "transparent"),
-                        opacity: canEdit ? 1 : 0.6,
-                        cursor: canEdit && !done ? "pointer" : "default",
+                        opacity: canToggleCheck ? 1 : 0.6,
+                        cursor: canToggleCheck && !done ? "pointer" : "default",
                     }}
                 >
                     {done || review ? "✓" : ""}
@@ -700,21 +712,21 @@ function TaskRow({
                         <span style={{ position: "relative", display: "flex" }} data-task-popover>
                             <button
                                 type="button"
-                                onClick={e => { e.stopPropagation(); if (canEdit) onToggleStatusMenu() }}
-                                disabled={!canEdit}
-                                title={canEdit ? undefined : disabledTitle}
+                                onClick={e => { e.stopPropagation(); if (canChangeStatus) onToggleStatusMenu() }}
+                                disabled={!canChangeStatus}
+                                title={canChangeStatus ? undefined : disabledTitle}
                                 className="hover:border-(--theme-text-contrast) disabled:cursor-not-allowed"
                                 style={{
                                     minWidth: 118, height: 28, boxSizing: "border-box", padding: "0 10px", borderRadius: 7,
                                     fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6,
                                     border: "1px solid var(--theme-border)", background: "var(--theme-bg)", color: "var(--theme-text)",
-                                    opacity: canEdit ? 1 : 0.6,
+                                    opacity: canChangeStatus ? 1 : 0.6,
                                 }}
                             >
                                 <span>{STATUS_LABEL[task.status]}</span>
                                 <span style={{ fontSize: 8, opacity: 0.7 }}>▾</span>
                             </button>
-                            {statusMenuOpen && canEdit && (
+                            {statusMenuOpen && canChangeStatus && (
                                 <span style={{
                                     position: "absolute", top: 32, right: 0, zIndex: 30, border: "1px solid var(--theme-border)",
                                     borderRadius: 9, background: "var(--theme-bg)", padding: 5, display: "flex", flexDirection: "column",
@@ -747,14 +759,12 @@ function TaskRow({
                         <span style={{ display: "flex", alignItems: "center", gap: 6, flex: "none" }}>
                             <button
                                 type="button"
-                                onClick={e => { e.stopPropagation(); if (canEdit) onSetStatus("doing") }}
-                                disabled={!canEdit}
-                                title={canEdit ? undefined : disabledTitle}
-                                className="hover:border-(--theme-text-contrast) disabled:cursor-not-allowed"
+                                onClick={e => { e.stopPropagation(); onSetStatus("doing") }}
+                                className="hover:border-(--theme-text-contrast)"
                                 style={{
                                     height: 28, boxSizing: "border-box", padding: "0 11px", borderRadius: 7, fontSize: 12, fontWeight: 600,
                                     display: "grid", placeItems: "center", whiteSpace: "nowrap", border: "1px solid var(--theme-border)",
-                                    color: "var(--theme-text)", opacity: canEdit ? 1 : 0.6,
+                                    color: "var(--theme-text)",
                                 }}
                             >
                                 Reopen
@@ -873,10 +883,18 @@ function TaskRow({
                                             Claim task
                                         </button>
                                     )}
-                                    {/* Member-side "Release" is dropped entirely here: the mockup lets a
-                                        member clear their own assignment, but there's no backend route for
-                                        that (assignee changes always require tasks.assign) -- it would 403.
-                                        A member who owns the task just sees their name with no controls. */}
+                                    {/* Releasing goes through the leave route, which hands the task to
+                                        the earliest contributor or leaves it unassigned. */}
+                                    {task.assignee_id === currentUser.id && task.status !== "done" && (
+                                        <button
+                                            type="button"
+                                            onClick={e => { e.stopPropagation(); onLeave() }}
+                                            className="hover:text-[#dc2626]"
+                                            style={{ font: "inherit", border: "none", background: "transparent", padding: 0, cursor: "pointer", fontSize: 12, color: "var(--theme-subtext-color)" }}
+                                        >
+                                            Release
+                                        </button>
+                                    )}
                                     {task.assignee_id && task.assignee_id !== currentUser.id && (
                                         <span style={{ fontSize: 11.5, color: "var(--theme-subtext-color)", opacity: 0.8 }}>Only leads can reassign</span>
                                     )}

@@ -355,6 +355,7 @@ const PICKER_CHOICES: SettableStatus[] = ["todo", "doing", "review"]
 
 function TaskCard({ task, board, user, people, todayMs, pickerOpen, notesOpen, onTogglePicker, onToggleNotes, onToggleMenu }: TaskCardProps) {
     const canEdit = board.canEditTask(task)
+    const canChangeStatus = board.canChangeStatus(task)
     const done = task.status === "done"
     const review = task.status === "review"
     const due = rowDue(task, todayMs)
@@ -375,7 +376,10 @@ function TaskCard({ task, board, user, people, todayMs, pickerOpen, notesOpen, o
     // Status can only be changed from the card for todo/doing/review; a done
     // task reaches its status through "Reopen" (unreviewTask) instead, same
     // as the desktop row disabling its badge when `done`.
-    const canTogglePicker = canEdit && !done
+    // Anyone may send a review task back to doing, so everyone gets the
+    // picker on a review task -- just without the options they can't use.
+    const canTogglePicker = (canChangeStatus || review) && !done
+    const pickerChoices = canChangeStatus ? PICKER_CHOICES : PICKER_CHOICES.filter(c => c === "doing" || c === task.status)
 
     function pick(status: SettableStatus) {
         onTogglePicker()
@@ -399,8 +403,8 @@ function TaskCard({ task, board, user, people, todayMs, pickerOpen, notesOpen, o
             )
         }
     } else if (done) {
-        if (canEdit) primary = <button type="button" onClick={() => void board.runAction(() => unreviewTask(task.id))} style={primaryNeutralStyle}>Reopen</button>
-    } else if (canEdit) {
+        if (board.canAssign) primary = <button type="button" onClick={() => void board.runAction(() => unreviewTask(task.id))} style={primaryNeutralStyle}>Reopen</button>
+    } else if (canChangeStatus) {
         primary = <button type="button" onClick={() => void board.runAction(() => updateTask(task.id, { status: "review" }))} style={primaryNeutralStyle}>Submit for review</button>
     }
 
@@ -425,7 +429,7 @@ function TaskCard({ task, board, user, people, todayMs, pickerOpen, notesOpen, o
 
             {pickerOpen && canTogglePicker && (
                 <div style={pickerGridStyle}>
-                    {PICKER_CHOICES.map(choice => (
+                    {pickerChoices.map(choice => (
                         <button key={choice} type="button" onClick={() => pick(choice)} style={pickerOptionStyle(choice === task.status)}>
                             {STATUS_LABEL[choice]}
                         </button>
@@ -492,6 +496,11 @@ function TaskCard({ task, board, user, people, todayMs, pickerOpen, notesOpen, o
                         ) : !isAssignee && !isContributor && (
                             <button type="button" onClick={() => void board.runAction(() => addContributor(task.id))} style={joinBtnStyle}>
                                 + Join as {user.given_name}
+                            </button>
+                        )}
+                        {isAssignee && (
+                            <button type="button" onClick={() => void board.runAction(() => leaveTask(task.id))} style={joinBtnStyle}>
+                                Release task
                             </button>
                         )}
                     </div>

@@ -100,6 +100,14 @@ class FakeStore:
     async def list_task_people(self):
         return list(self.users.values())
 
+    async def find_task_area(self, area, exclude_task_id=None):
+        matches = [
+            t for t in self.tasks.values()
+            if t["area"].lower() == area.lower() and t["id"] != exclude_task_id
+        ]
+        matches.sort(key=lambda t: t["created_at"])
+        return matches[0]["area"] if matches else None
+
     async def create_task(self, title, area, bucket, priority, due_date, assignee_id, created_by):
         tid = self.add_task(
             title=title, area=area, bucket=bucket, priority=priority,
@@ -212,7 +220,7 @@ class FakeStore:
 def store(monkeypatch):
     fake = FakeStore()
     for name in (
-        "list_tasks", "get_task", "list_task_people", "create_task",
+        "list_tasks", "get_task", "list_task_people", "find_task_area", "create_task",
         "update_task", "claim_task", "review_task", "unreview_task",
         "delete_task", "get_user", "add_contributor", "remove_contributor",
         "release_assignee", "list_task_notes", "get_task_note",
@@ -332,6 +340,90 @@ def test_moving_to_review_does_not_overwrite_existing_finished_by(app, store):
     resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"status": "review"})
     assert resp.status_code == 200
     assert resp.json()["finished_by"] == "original-finisher"
+
+
+def test_moving_unassigned_task_to_review_assigns_the_mover(app, store):
+    task_id = store.add_task(status="todo", assignee_id=None, created_by="member-1")
+
+    resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"status": "review"})
+    assert resp.status_code == 200
+    assert resp.json()["assignee_id"] == "member-1"
+
+
+def test_moving_assigned_task_to_review_keeps_the_assignee(app, store):
+    task_id = store.add_task(status="doing", assignee_id="someone-else", created_by="member-1")
+
+    resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"status": "review"})
+    assert resp.status_code == 200
+    assert resp.json()["assignee_id"] == "someone-else"
+
+
+# ── the assignee and contributors may change status, and only status ───────
+
+def test_assignee_can_change_status(app, store):
+    task_id = store.add_task(status="doing", assignee_id="member-1")
+
+    resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"status": "review"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "review"
+
+
+def test_contributor_can_change_status(app, store):
+    task_id = store.add_task(status="doing", assignee_id="someone-else")
+    store.contributors[task_id] = ["member-1"]
+
+    resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"status": "todo"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "todo"
+
+
+def test_assignee_cannot_edit_other_fields(app, store):
+    task_id = store.add_task(status="doing", assignee_id="member-1")
+
+    resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"status": "review", "title": "Renamed"})
+    assert resp.status_code == 403
+
+
+def test_uninvolved_member_cannot_change_status(app, store):
+    task_id = store.add_task(status="doing", assignee_id="someone-else")
+
+    resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"status": "review"})
+    assert resp.status_code == 403
+
+
+def test_anyone_can_send_review_task_back_to_doing(app, store):
+    task_id = store.add_task(status="review", assignee_id="someone-else", finished_by="someone-else")
+
+    resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"status": "doing"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "doing"
+
+
+def test_uninvolved_member_cannot_send_review_task_to_todo(app, store):
+    task_id = store.add_task(status="review", assignee_id="someone-else")
+
+    resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"status": "todo"})
+    assert resp.status_code == 403
+
+
+def test_assignee_leaving_hands_task_to_first_contributor(app, store):
+    task_id = store.add_task(status="doing", assignee_id="member-1")
+    store.contributors[task_id] = ["helper-1", "helper-2"]
+
+    resp = _as(app, MEMBER).delete(f"/tasks/{task_id}/contributors/me")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["assignee_id"] == "helper-1"
+    assert [c["id"] for c in body["contributors"]] == ["helper-2"]
+
+
+def test_assignee_leaving_with_no_contributors_unassigns(app, store):
+    task_id = store.add_task(status="doing", assignee_id="member-1")
+
+    resp = _as(app, MEMBER).delete(f"/tasks/{task_id}/contributors/me")
+    assert resp.status_code == 200
+    assert resp.json()["assignee_id"] is None
+    assert resp.json()["status"] == "todo"
 
 
 # ── done is only reachable through /review, never a bare PATCH ─────────────
@@ -480,11 +572,33 @@ def test_create_defaults_blank_area_to_general(app, store):
     assert resp.json()["area"] == "General"
 
 
+def test_create_reuses_existing_area_casing(app, store):
+    store.add_task(area="Wiring Harness")
+    resp = _as(app, MEMBER).post("/tasks", json={"title": "T", "bucket": "cad", "area": "wiring harness"})
+    assert resp.status_code == 200
+    assert resp.json()["area"] == "Wiring Harness"
+
+
+def test_update_reuses_existing_area_casing(app, store):
+    store.add_task(area="Wiring Harness")
+    task_id = store.add_task(area="Other", created_by="member-1")
+    resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"area": "WIRING HARNESS"})
+    assert resp.status_code == 200
+    assert resp.json()["area"] == "Wiring Harness"
+
+
+def test_update_can_recase_an_area_only_it_uses(app, store):
+    task_id = store.add_task(area="wiring", created_by="member-1")
+    resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"area": "Wiring"})
+    assert resp.status_code == 200
+    assert resp.json()["area"] == "Wiring"
+
+
 # ── Unreview ────────────────────────────────────────────────────────────────
 
 def test_unreview_requires_done_status(app, store):
     task_id = store.add_task(status="review", created_by="member-1")
-    resp = _as(app, MEMBER).post(f"/tasks/{task_id}/unreview")
+    resp = _as(app, CAPTAIN).post(f"/tasks/{task_id}/unreview")
     assert resp.status_code == 400
 
 
@@ -496,11 +610,23 @@ def test_unreview_forbidden_for_non_authority_non_creator(app, store):
     assert resp.status_code == 403
 
 
+def test_unreview_forbidden_for_creator_without_authority(app, store):
+    task_id = store.add_task(status="done", created_by="member-1", reviewed_by="captain-1")
+    resp = _as(app, MEMBER).post(f"/tasks/{task_id}/unreview")
+    assert resp.status_code == 403
+
+
+def test_patch_cannot_move_done_task_without_authority(app, store):
+    task_id = store.add_task(status="done", created_by="member-1", assignee_id="member-1")
+    resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"status": "doing"})
+    assert resp.status_code == 403
+
+
 def test_unreview_keeps_finished_by_but_clears_reviewed_by(app, store):
     task_id = store.add_task(
         status="done", created_by="member-1", finished_by="other-user", reviewed_by="captain-1"
     )
-    resp = _as(app, MEMBER).post(f"/tasks/{task_id}/unreview")
+    resp = _as(app, CAPTAIN).post(f"/tasks/{task_id}/unreview")
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "review"

@@ -104,6 +104,29 @@ async def list_task_people() -> list[asyncpg.Record]:
             raise HTTPException(status_code=500, detail="Failed to fetch people")
 
 
+async def find_task_area(area: str, exclude_task_id: str | None = None) -> str | None:
+    """Return the stored spelling of an existing area matching `area`
+    case-insensitively, or None. `exclude_task_id` skips one task, so a task
+    that is the only one in its area can still have that area's casing fixed.
+    """
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchval(
+                """
+                SELECT area FROM tasks
+                WHERE lower(area) = lower($1)
+                  AND ($2::uuid IS NULL OR id <> $2::uuid)
+                ORDER BY created_at ASC
+                LIMIT 1
+                """,
+                area,
+                exclude_task_id,
+            )
+        except Exception as e:
+            logger.error("find_task_area failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to look up area")
+
+
 async def create_task(
     title: str,
     area: str,
@@ -439,6 +462,7 @@ __all__ = [
     "list_tasks",
     "get_task",
     "list_task_people",
+    "find_task_area",
     "create_task",
     "update_task",
     "claim_task",
