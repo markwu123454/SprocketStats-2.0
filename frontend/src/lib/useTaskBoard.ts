@@ -47,6 +47,8 @@ export interface TaskBoard {
     canAssign: boolean
     mySubteam: TaskBucket | null
     canEditTask: (task: Task) => boolean
+    /** Edit rights, plus the task's assignee and contributors (status only). */
+    canChangeStatus: (task: Task) => boolean
 
     /** ms at local midnight today — pass to isOverdue/rowDue/matchesFilter. */
     todayMs: number
@@ -265,6 +267,10 @@ export function useTaskBoard(): TaskBoard {
         return canAssign || task.created_by === user.id
     }
 
+    function canChangeStatus(task: Task): boolean {
+        return canEditTask(task) || task.assignee_id === user.id || task.contributors.some(c => c.id === user.id)
+    }
+
     function unread(task: Task): number {
         return Math.max(0, task.note_count - (seen[task.id] ?? 0))
     }
@@ -350,7 +356,7 @@ export function useTaskBoard(): TaskBoard {
 
     return {
         tasks, people, loading, loadError, actionError, setActionError,
-        canAssign, mySubteam, canEditTask,
+        canAssign, mySubteam, canEditTask, canChangeStatus,
         todayMs, unread,
         runAction, handleClaim, handleDelete, applyTask, bumpNoteCount,
         markNotesRead, cancelMarkNotesRead,

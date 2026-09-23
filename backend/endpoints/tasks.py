@@ -75,10 +75,25 @@ def _authorize_edit(user: dict, task) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't have permission to edit this task")
 
 
+def _is_on_task(user: dict, task) -> bool:
+    """True if `user` is `task`'s assignee or one of its contributors."""
+    if task["assignee_id"] == user["sub"]:
+        return True
+    return any(c["id"] == user["sub"] for c in _decode_contributors(task["contributors"]))
+
+
 async def _validate_assignee(assignee_id: str | None) -> None:
     """Raise 400 if `assignee_id` is non-null and doesn't name a real user."""
     if assignee_id is not None and await db.get_user(assignee_id) is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown assignee_id")
+
+
+async def _normalize_area(raw: str | None, task_id: str | None = None) -> str:
+    """Strip `raw` (blank -> "General") and, if another task already uses the
+    same area in different casing, adopt that spelling so areas never split
+    on case alone."""
+    area = (raw or "").strip() or "General"
+    return await db.find_task_area(area, task_id) or area
 
 
 def _decode_contributors(value) -> list[dict]:
@@ -119,7 +134,7 @@ async def create_task(body: TaskCreate, user: dict = Depends(require_task_access
     if not title:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Title is required")
 
-    area = (body.area or "").strip() or "General"
+    area = await _normalize_area(body.area)
 
     if body.bucket not in task_buckets():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown bucket: {body.bucket}")
@@ -140,7 +155,10 @@ async def create_task(body: TaskCreate, user: dict = Depends(require_task_access
 
 @router.patch("/{task_id}")
 async def update_task(task_id: str, body: TaskUpdate, user: dict = Depends(require_task_access)):
-    """Edit a task. Caller must be in the authority set or the task's creator;
+    """Edit a task. Caller must be in the authority set or the task's creator,
+    except that the assignee and contributors may send a status-only change,
+    and anyone may send a `review` task back to `doing`. Moving a `done` task
+    back always requires the authority set;
     changing `assignee_id` additionally always requires the authority set, even
     for the task's own creator. `status` can never be set to `done` here --
     only `/tasks/{id}/review` may finish a review.
@@ -148,10 +166,21 @@ async def update_task(task_id: str, body: TaskUpdate, user: dict = Depends(requi
     existing = await db.get_task(task_id)
     if existing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    _authorize_edit(user, existing)
 
     changes = body.model_dump(exclude_unset=True)
     is_authority = has_task_authority(user.get("role"))
+    status_only = set(changes) <= {"status"}
+    # Anyone may send a review task back to doing; the assignee and
+    # contributors may move it between any open statuses. Editing anything
+    # else stays with the creator / authority set.
+    reopening_review = status_only and existing["status"] == "review" and changes.get("status") == "doing"
+    if not (reopening_review or (status_only and _is_on_task(user, existing))):
+        _authorize_edit(user, existing)
+
+    if "status" in changes and existing["status"] == "done" and not is_authority:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Only the authority set may move a done task back"
+        )
 
     if "assignee_id" in changes and not is_authority:
         raise HTTPException(
@@ -172,7 +201,7 @@ async def update_task(task_id: str, body: TaskUpdate, user: dict = Depends(requi
         fields["title"] = title
 
     if "area" in changes:
-        fields["area"] = (changes["area"] or "").strip() or "General"
+        fields["area"] = await _normalize_area(changes["area"], task_id)
 
     if "bucket" in changes:
         bucket = changes["bucket"]
@@ -213,6 +242,11 @@ async def update_task(task_id: str, body: TaskUpdate, user: dict = Depends(requi
             # reassign credit for finishing it.
             if existing["finished_by"] is None:
                 fields["finished_by"] = user["sub"]
+            # Moving an unassigned task straight to review makes the mover its
+            # owner, so a review-stage task always has someone attached to it.
+            effective_assignee = changes["assignee_id"] if "assignee_id" in changes else existing["assignee_id"]
+            if existing["status"] != "review" and effective_assignee is None and not releasing_assignee:
+                fields["assignee_id"] = user["sub"]
         else:  # todo / doing
             fields["finished_by"] = None
             fields["reviewed_by"] = None
@@ -300,7 +334,9 @@ async def remove_contributor(task_id: str, user_id: str, user: dict = Depends(re
     """Remove someone from a task's contributor list; a no-op if they weren't
     one. The literal `user_id` `"me"` resolves to the caller, so removing
     yourself needs no authority. Removing someone else requires the authority
-    set."""
+    set. If the caller removes themselves while they're the assignee, the
+    task is released (the earliest contributor takes over, else it goes
+    back to unassigned)."""
     target = user["sub"] if user_id == "me" else user_id
 
     if target != user["sub"] and not has_task_authority(user.get("role")):
@@ -312,7 +348,10 @@ async def remove_contributor(task_id: str, user_id: str, user: dict = Depends(re
     if existing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
-    row = await db.remove_contributor(task_id, target)
+    if target == user["sub"] and existing["assignee_id"] == target:
+        row = await db.release_assignee(task_id)
+    else:
+        row = await db.remove_contributor(task_id, target)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return _row_to_task(row)
@@ -342,11 +381,14 @@ async def review_task(task_id: str, user: dict = Depends(require_task_access)):
 @router.post("/{task_id}/unreview")
 async def unreview_task(task_id: str, user: dict = Depends(require_task_access)):
     """Reopen a done task for re-review (-> `review`, clears `reviewed_by`).
-    Authority set or the task's creator only."""
+    Authority set only."""
     existing = await db.get_task(task_id)
     if existing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    _authorize_edit(user, existing)
+    if not has_task_authority(user.get("role")):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Only the authority set may move a done task back"
+        )
     if existing["status"] != "done":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only a done task can be unreviewed")
 
