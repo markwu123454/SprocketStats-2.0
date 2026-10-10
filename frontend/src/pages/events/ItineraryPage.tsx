@@ -7,6 +7,7 @@ import { can } from "@/lib/permissions"
 import { patchEventContent, type ItineraryItem } from "@/lib/eventApi"
 import {
     buildDt,
+    currentItineraryIndex,
     dayKey,
     replaceDay,
     saveErrorMessage,
@@ -14,6 +15,7 @@ import {
     type ItineraryRowDraft,
 } from "@/lib/eventContent"
 import ItineraryDayEditor from "@/components/events/ItineraryDayEditor"
+import { DANGER_RED, tintColor } from "@/lib/taskFormat"
 
 // Sentinel `editingDay` value for "adding a brand-new day" (distinct from
 // `null`, which means nothing is being edited).
@@ -25,17 +27,20 @@ function formatTime(iso: string): string {
 
 type Row =
     | { type: "day";  label: string; day: string }
-    | { type: "item"; item: ItineraryItem; isPast: boolean }
-    | { type: "now" }
+    | { type: "item"; item: ItineraryItem; isPast: boolean; isCurrent: boolean }
 
-function buildRows(items: ItineraryItem[], now: number): Row[] {
+// `currentIndex` (from `currentItineraryIndex`) is an index into `items`,
+// not into the returned rows — it's looked up by position as we walk the
+// same array. The current item is never dimmed as "past" even though its
+// `dt` has, by definition, already happened.
+function buildRows(items: ItineraryItem[], now: number, currentIndex: number): Row[] {
     const rows: Row[] = []
     let currentDay = ""
-    let nowInserted = false
 
     for (let i = 0; i < items.length; i++) {
-        const item    = items[i]
-        const isPast  = new Date(item.dt).getTime() <= now
+        const item      = items[i]
+        const isCurrent = i === currentIndex
+        const isPast    = !isCurrent && new Date(item.dt).getTime() <= now
         const dayLabel = new Date(item.dt).toLocaleDateString("en-US", {
             weekday: "long", month: "long", day: "numeric",
         })
@@ -45,18 +50,7 @@ function buildRows(items: ItineraryItem[], now: number): Row[] {
             rows.push({ type: "day", label: dayLabel, day: dayKey(item.dt) })
         }
 
-        // Insert NOW line before the first future item (but only if there's at least one past item)
-        if (!isPast && !nowInserted && i > 0) {
-            rows.push({ type: "now" })
-            nowInserted = true
-        }
-
-        rows.push({ type: "item", item, isPast })
-    }
-
-    // All items are past — append NOW at the end
-    if (!nowInserted && items.some(i => new Date(i.dt).getTime() <= now)) {
-        rows.push({ type: "now" })
+        rows.push({ type: "item", item, isPast, isCurrent })
     }
 
     return rows
@@ -66,7 +60,7 @@ export default function ItineraryPage() {
     const { eventKey, info, loading, updateInfo } = useEventContext()
     const user = useOnboardedUser()
     const isEditor = can(user.permissions, "events.edit")
-    const nowRef = useRef<HTMLDivElement>(null)
+    const currentItemRef = useRef<HTMLDivElement>(null)
 
     // Only one day (including "add a new day") is ever in edit mode at once.
     const [editingDay, setEditingDay] = useState<string | null>(null)
@@ -74,8 +68,8 @@ export default function ItineraryPage() {
     const [saveError, setSaveError] = useState<string | null>(null)
 
     useEffect(() => {
-        if (nowRef.current) {
-            nowRef.current.scrollIntoView({ behavior: "smooth", block: "center" })
+        if (currentItemRef.current) {
+            currentItemRef.current.scrollIntoView({ behavior: "smooth", block: "center" })
         }
     }, [loading])
 
@@ -143,7 +137,9 @@ export default function ItineraryPage() {
         }
     }
 
-    const rows = info?.itinerary?.length ? buildRows(info.itinerary, Date.now()) : []
+    const itinerary = info?.itinerary ?? []
+    const currentIndex = itinerary.length > 0 ? currentItineraryIndex(itinerary, new Date()) : -1
+    const rows = itinerary.length > 0 ? buildRows(itinerary, Date.now(), currentIndex) : []
 
     const elements: ReactNode[] = []
     let currentRenderedDay = ""
@@ -176,8 +172,15 @@ export default function ItineraryPage() {
             return
         }
         if (currentRenderedDay === editingDay) return // this day's rows are replaced by its editor above
-        if (row.type === "now") elements.push(<NowLine key={i} ref={nowRef} />)
-        else elements.push(<ItemRow key={i} item={row.item} isPast={row.isPast} />)
+        elements.push(
+            <ItemRow
+                key={i}
+                item={row.item}
+                isPast={row.isPast}
+                isCurrent={row.isCurrent}
+                ref={row.isCurrent ? currentItemRef : undefined}
+            />,
+        )
     })
 
     return (
@@ -254,47 +257,43 @@ function DayHeader({ label, day, showPencil, onEdit }: { label: string; day: str
     )
 }
 
-const NowLine = forwardRef<HTMLDivElement>((_, ref) => (
-    <div
-        ref={ref}
-        className="flex items-center gap-2 px-4 py-1.5 border-y"
-        style={{
-            borderColor: "#ef4444",
-            background: "#ef444410",
-        }}
-    >
-        <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#ef4444" }} />
-        <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "#ef4444" }}>
-            Now
-        </span>
-    </div>
-))
-
-function ItemRow({ item, isPast }: { item: ItineraryItem; isPast: boolean }) {
-    return (
-        <div
-            className="flex items-start gap-3 px-4 py-3 border-b last:border-0 transition-opacity"
-            style={{
-                borderColor: "var(--theme-border)",
-                opacity: isPast ? 0.4 : 1,
-            }}
-        >
-            <span
-                className="text-sm font-mono w-16 shrink-0 pt-0.5"
-                style={{ color: "var(--theme-subtext-color)" }}
+const ItemRow = forwardRef<HTMLDivElement, { item: ItineraryItem; isPast: boolean; isCurrent: boolean }>(
+    function ItemRow({ item, isPast, isCurrent }, ref) {
+        return (
+            <div
+                ref={ref}
+                className="flex items-start gap-3 px-4 py-3 border-b last:border-0 transition-opacity"
+                style={{
+                    borderColor: "var(--theme-border)",
+                    background: isCurrent ? tintColor(DANGER_RED, 10) : undefined,
+                    opacity: isPast ? 0.4 : 1,
+                }}
             >
-                {formatTime(item.dt)}
-            </span>
-            <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium" style={{ color: "var(--theme-text)" }}>
-                    {item.label}
+                <span
+                    className="text-sm font-mono w-16 shrink-0 pt-0.5"
+                    style={{ color: isCurrent ? DANGER_RED : "var(--theme-subtext-color)" }}
+                >
+                    {formatTime(item.dt)}
                 </span>
-                {item.detail && (
-                    <span className="text-xs" style={{ color: "var(--theme-subtext-color)" }}>
-                        {item.detail}
+                <div className="flex flex-col gap-0.5 min-w-0">
+                    <span className="text-sm font-medium" style={{ color: isCurrent ? DANGER_RED : "var(--theme-text)" }}>
+                        {item.label}
+                    </span>
+                    {item.detail && (
+                        <span className="text-xs" style={{ color: "var(--theme-subtext-color)" }}>
+                            {item.detail}
+                        </span>
+                    )}
+                </div>
+                {isCurrent && (
+                    <span
+                        className="ml-auto shrink-0 text-[10px] font-bold tracking-widest uppercase"
+                        style={{ color: DANGER_RED }}
+                    >
+                        Now
                     </span>
                 )}
             </div>
-        </div>
-    )
-}
+        )
+    },
+)

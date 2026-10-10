@@ -219,7 +219,7 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                 </p>
             )}
 
-            {hasHub && (
+            {hasHub && checkedIn === false && (
                 <Link
                     to={`/events/${eventKey}`}
                     className="inline-flex items-center min-h-11 self-start rounded-lg text-sm theme-text-contrast hover:underline outline-none focus:ring-2"
