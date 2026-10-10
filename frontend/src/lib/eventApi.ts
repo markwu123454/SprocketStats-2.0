@@ -1,3 +1,5 @@
+import type { AssignableRole } from "@/lib/rosterRoles"
+
 const API = import.meta.env.VITE_BACKEND_URL
 
 export interface CompEventLinks {
@@ -79,9 +81,53 @@ export interface EventUpdate {
     nexus: NexusData | null
 }
 
-async function apiFetch<T>(path: string): Promise<T> {
-    const res = await fetch(`${API}${path}`, { credentials: "include" })
-    if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status })
+export interface CheckInStatus {
+    checked_in: boolean
+}
+
+export interface CheckInResult {
+    checked_in: true
+    roster: RosterMember[]
+}
+
+export interface CheckInBody {
+    role: AssignableRole
+    phone: string | null
+}
+
+export interface RosterRoleUpdateResult {
+    roster: RosterMember[]
+}
+
+export type EventContentPatch = Partial<Pick<EventInfo, "itinerary" | "packing_list" | "instructions">>
+
+export type EventContent = Pick<
+    EventInfo,
+    "event_key" | "event_name" | "links" | "itinerary" | "packing_list" | "instructions" | "roster"
+>
+
+// FastAPI's own 422 (request validation failure, e.g. a bad phone number)
+// sends `detail` as an ARRAY of error objects, not a string -- every other
+// error path here (404, 403, app-raised 400s, ...) sends a plain string.
+// Without this, an array `detail` stringifies to "[object Object]" wherever
+// `.message` gets shown to the user.
+interface ApiErrorBody {
+    detail?: string | { msg?: string }[]
+}
+
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+    const res = await fetch(`${API}${path}`, {
+        credentials: "include",
+        headers: init?.body ? { "Content-Type": "application/json" } : undefined,
+        ...init,
+    })
+    if (!res.ok) {
+        const data = await res.json().catch(() => null) as ApiErrorBody | null
+        const detail = data?.detail
+        const message = Array.isArray(detail) ? detail[0]?.msg : detail
+        throw Object.assign(new Error(message ?? `HTTP ${res.status}`), { status: res.status })
+    }
+    if (res.status === 204) return undefined as T
     return res.json() as Promise<T>
 }
 
@@ -91,4 +137,23 @@ export function fetchEventInfo(eventKey: string) {
 
 export function fetchEventUpdate(eventKey: string) {
     return apiFetch<EventUpdate>(`/events/${eventKey}/update`)
+}
+
+export function fetchCheckInStatus(eventKey: string): Promise<CheckInStatus> {
+    return apiFetch<CheckInStatus>(`/events/${eventKey}/check-in`)
+}
+
+export function checkInToEvent(eventKey: string, body: CheckInBody): Promise<CheckInResult> {
+    return apiFetch<CheckInResult>(`/events/${eventKey}/check-in`, { method: "POST", body: JSON.stringify(body) })
+}
+
+export function updateRosterRole(eventKey: string, userId: string, role: AssignableRole): Promise<RosterRoleUpdateResult> {
+    return apiFetch<RosterRoleUpdateResult>(`/events/${eventKey}/roster/${userId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ role }),
+    })
+}
+
+export function patchEventContent(eventKey: string, patch: EventContentPatch): Promise<EventContent> {
+    return apiFetch<EventContent>(`/events/${eventKey}/content`, { method: "PATCH", body: JSON.stringify(patch) })
 }

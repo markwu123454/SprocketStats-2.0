@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from "react"
+import { useState, useEffect, useContext, useCallback } from "react"
 import { useParams, Outlet, NavLink, Link } from "react-router-dom"
 import { Home, Calendar, Users, Package, Trophy, ArrowLeft, CalendarClock } from "lucide-react"
 import { useBootstrapped, BootstrapContext } from "@/contexts/bootstrapContext"
@@ -55,8 +55,12 @@ export default function EventShell() {
 
     const isLoading = loading && !knownInvalid
 
+    const updateInfo = useCallback((patch: Partial<EventInfo>) => {
+        setInfo(prev => prev ? { ...prev, ...patch } : prev)
+    }, [])
+
     return (
-        <EventContext.Provider value={{ eventKey: eventKey ?? "", info, loading: isLoading }}>
+        <EventContext.Provider value={{ eventKey: eventKey ?? "", info, loading: isLoading, updateInfo }}>
             <div className="h-full flex flex-col">
                 <div
                     className="sticky top-0 z-10 border-b theme-border"

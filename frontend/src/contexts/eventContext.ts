@@ -5,6 +5,7 @@ export interface EventContextValue {
     eventKey: string
     info: EventInfo | null
     loading: boolean
+    updateInfo: (patch: Partial<EventInfo>) => void
 }
 
 export const EventContext = createContext<EventContextValue | null>(null)

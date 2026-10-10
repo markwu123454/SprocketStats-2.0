@@ -35,15 +35,30 @@ function parseEventDate(value: string): Date {
     return /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00`) : new Date(value)
 }
 
+// A date-only `end` (or an omitted `end`, which defaults to `start`) has to
+// count through the END of that local day -- otherwise the last day of a
+// multi-day event (and the whole of a single-day date-only event) reads as
+// "done" the instant local midnight passes, instead of staying "current"
+// until the day is actually over. An `end` with an explicit time is taken
+// exactly as given -- no bump.
+function parseEventEndDate(value: string): Date {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date(value)
+    const d = new Date(`${value}T00:00`)
+    d.setHours(23, 59, 59, 999)
+    return d
+}
+
 export function resolveEvent(entry: EventEntry, now: Date): ResolvedEvent {
     const start = parseEventDate(entry.start)
-    const end = entry.end ? parseEventDate(entry.end) : start
+    const end = parseEventEndDate(entry.end ?? entry.start)
 
     let status: EventStatus
     if (now < start) status = "upcoming"
     else if (now <= end) status = "current"
     else status = "done"
 
+    // `end`'s time-of-day was bumped above, but its date (year/month/day) is
+    // untouched, so these label computations are unaffected by the fix.
     const startLabel = `${MONTHS[start.getMonth()]} ${start.getDate()}`
     let dateLabel: string
     if (start.toDateString() === end.toDateString()) dateLabel = startLabel
@@ -62,4 +77,14 @@ export function resolveEvents(events: EventEntry[], now: Date = new Date()): Res
 export function resolveEventByUrl(events: EventEntry[], url: string, now: Date = new Date()): ResolvedEvent | undefined {
     const entry = events.find((e) => e.url === url)
     return entry ? resolveEvent(entry, now) : undefined
+}
+
+// Picks the one event to show on the dashboard's active-event card: among
+// everything currently happening, a TBA-linked event (it has a hub page with
+// check-in/matches) wins over one that's merely on the schedule, since that's
+// the only kind of "current" event the card can actually act on.
+export function pickActiveEvent(events: EventEntry[], now: Date = new Date()): ResolvedEvent | null {
+    const current = resolveEvents(events, now).filter((e) => e.status === "current")
+    if (current.length === 0) return null
+    return current.find((e) => e.tbaKey) ?? current[0]
 }
