@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, field_validator, model_validator
 
@@ -35,13 +35,19 @@ class RosterMember(BaseModel):
     display_name: str
     role: str
     phone: str | None = None
+    # Dates the member expects to attend, as "YYYY-MM-DD" strings, or `None`
+    # if never given. No validation here -- this field only exists so the
+    # legacy PUT /content round-trip (CompEventContent.model_dump()) doesn't
+    # silently drop `days` off of roster entries that already have it; the
+    # actual validation lives on CheckInRequest/RosterUpdate below.
+    days: list[str] | None = None
 
 
 # ── Roster role set ─────────────────────────────────────────────────────────
 #
 # The only roles a user may pick for themselves at check-in, or a privileged
 # editor may assign via the roster-role PATCH -- both use the same four.
-# Defined once here so CheckInRequest/RosterRoleUpdate can't drift from each
+# Defined once here so CheckInRequest/RosterUpdate can't drift from each
 # other. A roster entry can also hold a role outside this set (e.g.
 # "chaperone", "captain", "lead" -- see ROLE_ORDER in
 # frontend/src/pages/events/RosterPage.tsx), but only via hand-seeding
@@ -55,14 +61,54 @@ ASSIGNABLE_ROLES = ["drive_team", "pit_crew", "attending", "mentor"]
 # floor on digit count so "----" can't pass as a phone number.
 _PHONE_ALLOWED_CHARS = re.compile(r"^[0-9+\-() .]+$")
 
+# Strict "YYYY-MM-DD" shape -- checked before date.fromisoformat so a full
+# datetime string (or any other ISO-8601 variant Python's parser is lenient
+# about) is rejected rather than silently truncated.
+_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _validate_days(v: list[str] | None, *, allow_none: bool) -> list[str] | None:
+    """Shared `days` validation for CheckInRequest and RosterUpdate.
+
+    1-31 entries, each exactly "YYYY-MM-DD" and a real calendar date;
+    duplicates removed and the result sorted ascending (which, for this
+    fixed-width form, is also chronological order). `None` is passed through
+    unchanged when `allow_none` (check-in, where omitting `days` is valid and
+    means "not given yet"); otherwise (the roster-role PATCH, where `days`
+    can't be cleared) `None` -- whether defaulted or sent explicitly as
+    `null` -- is rejected the same as an empty list.
+
+    The lenient in-range-of-the-event check is a separate, async step (it
+    needs a DB lookup) -- see `endpoints.events._enforce_days_in_range`.
+    """
+    if v is None:
+        if allow_none:
+            return None
+        raise ValueError("days must not be empty")
+    if not v:
+        raise ValueError("days must not be empty")
+    if len(v) > 31:
+        raise ValueError("days must have at most 31 entries")
+    cleaned: list[str] = []
+    for d in v:
+        if not isinstance(d, str) or not _DAY_RE.fullmatch(d):
+            raise ValueError(f"invalid day {d!r}: must be in YYYY-MM-DD form")
+        try:
+            date.fromisoformat(d)
+        except ValueError as e:
+            raise ValueError(f"invalid day {d!r}: must be in YYYY-MM-DD form") from e
+        cleaned.append(d)
+    return sorted(set(cleaned))
+
 
 class CheckInRequest(BaseModel):
     """Optional body for `POST /{event_key}/check-in`. Omitting the body, or
     omitting `role`, means `"attending"`; omitting/blanking `phone` means
-    `None`."""
+    `None`; omitting/nulling `days` means `None` (no days chosen yet)."""
 
     role: str = "attending"
     phone: str | None = None
+    days: list[str] | None = None
 
     @field_validator("role")
     @classmethod
@@ -87,26 +133,42 @@ class CheckInRequest(BaseModel):
             raise ValueError("phone must contain at least 7 digits")
         return v
 
+    @field_validator("days")
+    @classmethod
+    def _days_valid(cls, v: list[str] | None) -> list[str] | None:
+        return _validate_days(v, allow_none=True)
 
-class RosterRoleUpdate(BaseModel):
-    """Body for `PATCH /{event_key}/roster/{user_id}` -- sets that member's
-    role (one of the same ASSIGNABLE_ROLES offered at check-in) and nothing
-    else."""
 
-    role: str
+class RosterUpdate(BaseModel):
+    """Body for `PATCH /{event_key}/roster/{user_id}` -- any subset of
+    `role` (one of ASSIGNABLE_ROLES) and `days` (same shape/rules as
+    CheckInRequest.days, but can't be cleared: sending `null` or `[]` is
+    rejected rather than treated as "no change"). At least one field is
+    required; enforced by the endpoint, like `CompEventContentPatch`."""
+
+    role: str | None = None
+    days: list[str] | None = None
 
     @field_validator("role")
     @classmethod
-    def _role_valid(cls, v: str) -> str:
+    def _role_valid(cls, v: str | None) -> str:
+        # Only runs when `role` is actually sent (omitted -> default `None`
+        # skips validation), so an explicit `null` is the one way to reach
+        # here with `v is None` -- correctly rejected by the membership test.
         if v not in ASSIGNABLE_ROLES:
             raise ValueError(f"role must be one of {ASSIGNABLE_ROLES}")
         return v
 
+    @field_validator("days")
+    @classmethod
+    def _days_valid(cls, v: list[str] | None) -> list[str]:
+        return _validate_days(v, allow_none=False)
+
 
 class RosterMemberNotFound(Exception):
-    """Raised by `set_roster_role` when `event_key` exists but has no roster
-    entry with the given `user_id` (a hand-seeded entry with a null `user_id`
-    is never addressable this way -- that's intended)."""
+    """Raised by `update_roster_member` when `event_key` exists but has no
+    roster entry with the given `user_id` (a hand-seeded entry with a null
+    `user_id` is never addressable this way -- that's intended)."""
 
 
 class CompEventContent(BaseModel):
@@ -331,48 +393,93 @@ async def is_on_roster(event_key: str, user_id: str) -> bool | None:
     return any(entry.get("user_id") == user_id for entry in roster)
 
 
-async def set_roster_role(event_key: str, user_id: str, role: str) -> list | None:
-    """Atomically set one roster member's `role`, in place -- no
-    read-modify-write.
+# Columns `update_roster_member` may set on one roster entry.
+_ROSTER_UPDATABLE_COLUMNS = {"role", "days"}
 
-    Rebuilds the roster array with `jsonb_agg`, replacing only the element
-    whose `user_id` matches via `jsonb_set(e, '{role}', ...)`; every other
-    entry (and every other field of the matched entry -- display_name,
-    phone) passes through unchanged. The `roster @> [{"user_id": ...}]` guard
-    both targets the UPDATE and doubles as an existence check, the same way
-    `add_roster_member`'s guard does.
 
+async def update_roster_member(event_key: str, user_id: str, fields: dict) -> list | None:
+    """Atomically set one or more fields on one roster member, in place --
+    no read-modify-write.
+
+    Mirrors `update_comp_event_content`'s dynamic-SET-from-whitelist
+    pattern, but at the single-roster-entry level: builds a
+    `jsonb_set(jsonb_set(e, '{col1}', ...), '{col2}', ...)` chain over only
+    the columns present in `fields`, applied (via the `CASE WHEN` below) to
+    the one array element whose `user_id` matches; every other field of that
+    entry (e.g. `days` when only `role` was sent, or vice versa), and every
+    other entry, passes straight through unchanged. The
+    `roster @> [{"user_id": ...}]` guard both targets the UPDATE and doubles
+    as an existence check, the same way `add_roster_member`'s guard does.
+
+    :param fields: Column -> new value, restricted to
+        `_ROSTER_UPDATABLE_COLUMNS`. `role` is a plain string; `days` is a
+        list already produced by `RosterUpdate`'s validator.
     :returns: The full updated roster, or `None` if `event_key` doesn't exist.
+    :raises ValueError: If `fields` is empty or names a column outside the
+        whitelist -- callers should treat an empty `fields` dict as a no-op
+        *before* calling this, not rely on it here.
     :raises RosterMemberNotFound: If the event exists but no roster entry has
         this `user_id`.
     """
-    async with db_connection(DB_NAME) as conn:
-        row = await conn.fetchrow(
-            """
-            UPDATE comp_events
-            SET roster = (
-                SELECT jsonb_agg(
-                    CASE WHEN e->>'user_id' = $2 THEN jsonb_set(e, '{role}', to_jsonb($3::text))
-                         ELSE e END
-                    ORDER BY ord
-                )
-                FROM jsonb_array_elements(COALESCE(roster, '[]'::jsonb)) WITH ORDINALITY AS t(e, ord)
+    if not fields:
+        raise ValueError("update_roster_member requires at least one field to set")
+    unknown = set(fields) - _ROSTER_UPDATABLE_COLUMNS
+    if unknown:
+        raise ValueError(f"update_roster_member got unknown column(s): {sorted(unknown)}")
+
+    params: list = [event_key, user_id]
+    expr = "e"
+    for col, val in fields.items():
+        params.append(val)
+        n = len(params)
+        # `role` is plain text and needs wrapping into a jsonb scalar;
+        # `days` is already a list, which the jsonb codec hands to Postgres
+        # as a jsonb value directly.
+        value_expr = f"to_jsonb(${n}::text)" if col == "role" else f"${n}::jsonb"
+        expr = f"jsonb_set({expr}, '{{{col}}}', {value_expr})"
+    params.append([{"user_id": user_id}])
+    guard_n = len(params)
+
+    query = f"""
+        UPDATE comp_events
+        SET roster = (
+            SELECT jsonb_agg(
+                CASE WHEN e->>'user_id' = $2 THEN {expr} ELSE e END
+                ORDER BY ord
             )
-            WHERE event_key = $1
-              AND COALESCE(roster, '[]'::jsonb) @> $4::jsonb
-            RETURNING roster
-            """,
-            event_key,
-            user_id,
-            role,
-            [{"user_id": user_id}],
+            FROM jsonb_array_elements(COALESCE(roster, '[]'::jsonb)) WITH ORDINALITY AS t(e, ord)
         )
+        WHERE event_key = $1
+          AND COALESCE(roster, '[]'::jsonb) @> ${guard_n}::jsonb
+        RETURNING roster
+    """
+    async with db_connection(DB_NAME) as conn:
+        row = await conn.fetchrow(query, *params)
     if row is not None:
         return row["roster"]
     existing = await get_comp_event(event_key)
     if existing is None:
         return None
     raise RosterMemberNotFound(user_id)
+
+
+async def get_event_schedule(event_key: str) -> dict | None:
+    """Return `{"start_time", "end_time"}` for the `events` row matching
+    `event_key` (looked up by `tba_key`), or `None` if there's no such row.
+
+    Used by check-in's and the roster-role PATCH's lenient day-range check
+    (see `endpoints.events._enforce_days_in_range`). `start_time`/`end_time`
+    are TEXT and may be a bare date or a full datetime string, or `end_time`
+    may be null (single-day event) -- parsing them into dates, and deciding
+    what an unparseable or missing value means, is entirely the caller's
+    job; this is a plain, single-query lookup with no date logic of its own.
+    """
+    async with db_connection(DB_NAME) as conn:
+        row = await conn.fetchrow(
+            "SELECT start_time, end_time FROM events WHERE tba_key = $1",
+            event_key,
+        )
+        return dict(row) if row else None
 
 
 # ── Control panel write path: itinerary / packing_list / instructions ──────

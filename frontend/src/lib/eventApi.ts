@@ -31,6 +31,9 @@ export interface RosterMember {
     display_name: string
     role: string
     phone: string | null
+    // Sorted ascending; null for people on the roster from before this field
+    // existed, or added by hand rather than through check-in.
+    days: string[] | null
 }
 
 export interface TBAMatch {
@@ -93,9 +96,15 @@ export interface CheckInResult {
 export interface CheckInBody {
     role: AssignableRole
     phone: string | null
+    days: string[]
 }
 
-export interface RosterRoleUpdateResult {
+export interface RosterMemberPatch {
+    role?: AssignableRole
+    days?: string[]
+}
+
+export interface RosterUpdateResult {
     roster: RosterMember[]
 }
 
@@ -147,10 +156,10 @@ export function checkInToEvent(eventKey: string, body: CheckInBody): Promise<Che
     return apiFetch<CheckInResult>(`/events/${eventKey}/check-in`, { method: "POST", body: JSON.stringify(body) })
 }
 
-export function updateRosterRole(eventKey: string, userId: string, role: AssignableRole): Promise<RosterRoleUpdateResult> {
-    return apiFetch<RosterRoleUpdateResult>(`/events/${eventKey}/roster/${userId}`, {
+export function updateRosterMember(eventKey: string, userId: string, patch: RosterMemberPatch): Promise<RosterUpdateResult> {
+    return apiFetch<RosterUpdateResult>(`/events/${eventKey}/roster/${userId}`, {
         method: "PATCH",
-        body: JSON.stringify({ role }),
+        body: JSON.stringify(patch),
     })
 }
 

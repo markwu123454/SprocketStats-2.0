@@ -1,15 +1,17 @@
 import asyncio
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
 
 import db
 from core.external import nexus, tba
+from core.permissions import can, get_permissions_for_role
 from core.security import get_current_user, require_access, require_active
 from db.comp_events import (
     CheckInRequest,
     CompEventContent,
     CompEventContentPatch,
-    RosterRoleUpdate,
+    RosterUpdate,
 )
 
 router = APIRouter()
@@ -19,6 +21,39 @@ TEAM_KEY = "frc3473"
 # Bound at module level (like require_meeting_time in endpoints/meeting_hours.py)
 # so tests can override it directly instead of forging a role on a real user.
 require_event_edit = require_access(permissions="events.edit")
+
+
+def _parse_schedule_date(value: str | None) -> date | None:
+    """Parse a `get_event_schedule` TEXT value (bare date or full datetime
+    string) into a `date`, or `None` if it's missing/unparseable -- in which
+    case the caller treats the range check as not applicable."""
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
+async def _enforce_days_in_range(event_key: str, days: list[str]) -> None:
+    """422 if any of `days` falls outside `event_key`'s scheduled dates.
+
+    Shared by check-in and the roster-role PATCH so the same lenient rule
+    applies either way: looks up the `events` row for this event_key; if
+    there isn't one, or its start (and end, defaulting to start when
+    end_time is null) don't both parse to dates, the check is skipped
+    entirely rather than blocking the request.
+    """
+    schedule = await db.get_event_schedule(event_key)
+    if schedule is None:
+        return
+    start = _parse_schedule_date(schedule.get("start_time"))
+    end_raw = schedule.get("end_time")
+    end = _parse_schedule_date(end_raw) if end_raw else start
+    if start is None or end is None:
+        return
+    if any(date.fromisoformat(d) < start or date.fromisoformat(d) > end for d in days):
+        raise HTTPException(status_code=422, detail="Days must be within the event's dates")
 
 
 @router.get("")
@@ -54,10 +89,13 @@ async def check_in(
 ):
     """Self check-in: append the caller to `event_key`'s roster, with their
     chosen role (one of CheckInRequest's self-selectable roles; defaults to
-    "attending" with no body or no `role`) and an optional phone number.
-    Idempotent -- calling it again just confirms the existing entry (role and
-    phone are NOT overwritten) rather than duplicating or changing it."""
+    "attending" with no body or no `role`), an optional phone number, and the
+    days they expect to attend (omitted/null -> not given yet). Idempotent --
+    calling it again just confirms the existing entry (role, phone, and days
+    are NOT overwritten) rather than duplicating or changing it."""
     checkin = body or CheckInRequest()
+    if checkin.days is not None:
+        await _enforce_days_in_range(event_key, checkin.days)
     member = {
         "user_id": str(user["sub"]),
         # display_name is null for an account that hasn't finished onboarding
@@ -68,6 +106,7 @@ async def check_in(
         "display_name": user.get("display_name") or user.get("name") or user.get("email"),
         "role": checkin.role,
         "phone": checkin.phone,
+        "days": checkin.days,
     }
     roster = await db.add_roster_member(event_key, member)
     if roster is None:
@@ -76,20 +115,40 @@ async def check_in(
 
 
 @router.patch("/{event_key}/roster/{user_id}")
-async def patch_roster_role(
+async def patch_roster_member(
     event_key: str,
     user_id: str,
-    body: RosterRoleUpdate,
-    _: dict = Depends(require_event_edit),
+    body: RosterUpdate,
+    user: dict = Depends(require_active),
 ):
-    """Privileged role change: set one roster member's role to one of the
-    same ASSIGNABLE_ROLES offered at check-in, leaving their display_name/
-    phone and every other entry untouched. Can't move a member to (or off of)
-    a role outside that set -- e.g. "chaperone"/"captain"/"lead", which only
-    exist via hand-seeding or PUT /content. A roster entry with a null
-    user_id (hand-seeded) is never addressable this way."""
+    """Update one roster member's `role` and/or `days` (any subset; at least
+    one required). Two independent authorizations, both enforced before
+    anything is written:
+
+    - `role` (one of ASSIGNABLE_ROLES; can't move a member to/off a role
+      outside it, e.g. "chaperone"/"captain"/"lead") requires the caller's
+      role to carry `events.edit`.
+    - `days` may be changed by the member themselves (`user_id` is their own
+      `sub`), or by anyone with `events.edit`.
+
+    Either way, only the sent fields change -- display_name/phone and every
+    other entry are untouched. A roster entry with a null user_id
+    (hand-seeded) is never addressable this way."""
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    has_event_edit = can(get_permissions_for_role(user.get("role")), "events.edit")
+    if "role" in fields and not has_event_edit:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    if "days" in fields and user_id != str(user["sub"]) and not has_event_edit:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    if "days" in fields:
+        await _enforce_days_in_range(event_key, fields["days"])
+
     try:
-        roster = await db.set_roster_role(event_key, user_id, body.role)
+        roster = await db.update_roster_member(event_key, user_id, fields)
     except db.RosterMemberNotFound:
         raise HTTPException(status_code=404, detail="Roster member not found")
     if roster is None:

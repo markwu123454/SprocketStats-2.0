@@ -163,6 +163,13 @@
     transition-duration: 0s !important;
 }
 
+/* RosterPage's narrow per-day attendance columns (`headerClass: "day-col-header"`):
+   AG Grid's header label is a flex row packed to the start by default -- center
+   it so a short label like "Thu 19" sits over its centered checkmark column. */
+.day-col-header .ag-header-cell-label {
+    justify-content: center;
+}
+
 /* AG Grid scroll containers — unlayered so it beats AG Grid's own injected styles */
 .ag-body-viewport,
 .ag-center-cols-viewport,

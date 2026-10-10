@@ -129,6 +129,43 @@ export function validateInstruction(heading: string, body: string): string | nul
     return null
 }
 
+/** Format a Date using LOCAL getters into the same no-suffix shape as `dt`
+ *  ("YYYY-MM-DDTHH:MM:SS"), so it can be compared against itinerary `dt`
+ *  strings lexicographically (== chronologically) without any UTC detour
+ *  (unlike `toISOString`, which is UTC and would shift the clock). */
+function localDtString(d: Date): string {
+    const pad = (n: number, len = 2) => String(n).padStart(len, "0")
+    return `${pad(d.getFullYear(), 4)}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+/** Index of the itinerary item that is currently "happening" right now —
+ *  the latest item whose `dt` is at or before `now`, as long as that item's
+ *  local day is today. An item that's merely the most recently started one
+ *  from a day that's already over isn't "current"; it's just old. Returns
+ *  -1 when nothing qualifies: nothing has started yet, or the latest
+ *  started item was on an earlier day than today. Items don't need to be
+ *  sorted — this scans `items` in its own order and returns an index into
+ *  it as given. Ties at the same `dt` resolve to the last matching index,
+ *  matching how a backend that appends same-time rows would order them. */
+export function currentItineraryIndex(items: ItineraryItem[], now: Date): number {
+    const nowStr = localDtString(now)
+    const today = dayKey(nowStr)
+
+    let bestIndex = -1
+    let bestDt = ""
+    for (let i = 0; i < items.length; i++) {
+        const dt = items[i].dt
+        if (dt > nowStr) continue
+        if (dt >= bestDt) {
+            bestDt = dt
+            bestIndex = i
+        }
+    }
+
+    if (bestIndex === -1 || dayKey(bestDt) !== today) return -1
+    return bestIndex
+}
+
 /** Decide what to show the user after a failed save/delete. `apiFetch` (in
  *  `lib/eventApi.ts`) throws an `Error` carrying a `.status` for any non-2xx
  *  response, with `.message` set to the backend's own `detail` when one was
