@@ -1,8 +1,7 @@
 import { useState } from "react"
 import { useEventContext } from "@/contexts/eventContext"
 import type { TBAMatch, ItineraryItem } from "@/lib/eventApi"
-
-const TEAM_KEY = "frc3473"
+import { getAlliance, matchLabel, formatUnix, nextMatchFor, TEAM_KEY } from "@/lib/eventMatches"
 
 const SISTER_TEAMS  = ["frc968", "frc3476", "frc5857", "frc7157"]
 const NOTABLE_TEAMS = ["frc4414", "frc5199", "frc6995"]
@@ -15,24 +14,6 @@ const SERVICES = [
     { key: "twitch"     as const, label: "Twitch",             favicon: "https://www.twitch.tv/favicon.ico"           },
 ]
 
-function getAlliance(m: TBAMatch, teamKey: string): "red" | "blue" | null {
-    if (m.alliances.red.team_keys.includes(teamKey)) return "red"
-    if (m.alliances.blue.team_keys.includes(teamKey)) return "blue"
-    return null
-}
-
-function matchLabel(m: TBAMatch): string {
-    if (m.comp_level === "qm") return `Qual ${m.match_number}`
-    if (m.comp_level === "sf") return `Semi ${m.set_number}M${m.match_number}`
-    if (m.comp_level === "f")  return `Final M${m.match_number}`
-    return `${m.comp_level} ${m.match_number}`
-}
-
-function formatUnix(unix: number | null): string {
-    if (!unix) return "TBD"
-    return new Date(unix * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-}
-
 function formatIso(iso: string): string {
     return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
 }
@@ -42,15 +23,6 @@ function getTimelineSlice(items: ItineraryItem[]) {
     const passed   = items.filter(i => new Date(i.dt).getTime() <= now)
     const upcoming = items.filter(i => new Date(i.dt).getTime() > now)
     return { current: passed[passed.length - 1] ?? null, upcoming: upcoming.slice(0, 2) }
-}
-
-function nextMatchFor(matches: TBAMatch[], teamKey: string): TBAMatch | null {
-    const now = Date.now() / 1000
-    const sorted = matches
-        .filter(m => getAlliance(m, teamKey) !== null && !m.actual_time)
-        .filter(m => (m.predicted_time ?? m.scheduled_time ?? 0) > now - 600)
-        .sort((a, b) => (a.predicted_time ?? a.scheduled_time ?? 0) - (b.predicted_time ?? b.scheduled_time ?? 0))
-    return sorted[0] ?? null
 }
 
 export default function EventHubPage() {

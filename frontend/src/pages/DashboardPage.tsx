@@ -4,7 +4,8 @@ import { useOnboardedUser } from "@/contexts/authContext"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
-import { resolveEvent, type EventEntry } from "@/lib/events"
+import ActiveEventCard from "@/components/events/ActiveEventCard"
+import { pickActiveEvent, type EventEntry } from "@/lib/events"
 import type { EventInfo } from "@/lib/eventApi"
 import { can } from "@/lib/permissions"
 import type { TasksPageState } from "@/pages/TasksPageRouter"
@@ -60,12 +61,20 @@ export default function DashboardPage() {
     const [meetings, setMeetings]   = useBootstrapped<MeetingHours[] | null>("meetings", null)
     const [rawEvents]               = useBootstrapped<EventEntry[]>("events", [])
     const [currentEvent]            = useBootstrapped<EventInfo | null>("current_event", null)
+    const [eventKeys]               = useBootstrapped<string[]>("event_keys", [])
     const [codeVisible, setCodeVisible] = useState(false)
     const [tasks, setTasks] = useState<Task[] | null>(null)
 
-    const eventEntry   = rawEvents.find(e => e.tbaKey === currentEvent?.event_key)
-    const resolvedEvent = eventEntry ? resolveEvent(eventEntry, new Date()) : null
     const canViewTasks = can(user.permissions, "tasks.view")
+
+    // The one event the active-event card can show. `current_event` from
+    // bootstrap is only ever used as a seed (passed down to ActiveEventCard)
+    // for this event's matches/check-in state -- which event to show is
+    // decided purely by schedule.
+    const active  = pickActiveEvent(rawEvents)
+    const key     = active?.tbaKey
+    const hasHub  = !!key && eventKeys.includes(key)
+    const seeded  = currentEvent?.event_key === key ? currentEvent : null
 
     useEffect(() => {
         let cancelled = false
@@ -119,36 +128,10 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            {/* Current event card */}
-            {currentEvent && (
-                <Link
-                    to={`/events/${currentEvent.event_key}`}
-                    className="rounded-xl border p-5 flex items-center gap-4 backdrop-blur-sm transition-colors hover:border-(--theme-text-contrast)"
-                    style={cardStyle}
-                >
-                    <div className="flex-1 min-w-0">
-                        {resolvedEvent && (
-                            <span
-                                className="text-[10px] font-bold tracking-wider uppercase block mb-0.5"
-                                style={{
-                                    color: resolvedEvent.status === "current" ? "var(--theme-text-contrast)" : "var(--theme-subtext-color)",
-                                }}
-                            >
-                                {resolvedEvent.status === "current" ? "Happening now" : resolvedEvent.status === "upcoming" ? "Upcoming" : "Completed"}
-                            </span>
-                        )}
-                        <p className="text-base font-bold theme-text truncate">{currentEvent.event_name}</p>
-                        {resolvedEvent && (
-                            <p className="text-sm theme-subtext-color mt-0.5">{resolvedEvent.dateLabel} · {resolvedEvent.location}</p>
-                        )}
-                    </div>
-                    <div
-                        className="shrink-0 flex items-center justify-center w-9 h-9 rounded-full"
-                        style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
-                    >
-                        <ChevronRight size={18} />
-                    </div>
-                </Link>
+            {/* Active event card -- only rendered when an event is currently happening.
+                There is no separate "upcoming event" card by design. */}
+            {active && (
+                <ActiveEventCard active={active} hasHub={hasHub} eventKey={key} seed={seeded} userId={user.id} />
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
