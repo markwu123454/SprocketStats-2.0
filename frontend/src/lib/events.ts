@@ -1,3 +1,5 @@
+import type { RosterMember } from "@/lib/eventApi"
+
 export type EventStatus = "done" | "current" | "upcoming"
 
 export interface EventEntry {
@@ -25,6 +27,7 @@ export const STATUS_META: Record<EventStatus, { label: string; dotFilled: boolea
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
 // `new Date("2026-10-09")` (date-only, no time) is parsed as UTC midnight,
 // while `new Date("2027-01-09T09:00")` (has a time) is parsed as local time.
@@ -87,4 +90,55 @@ export function pickActiveEvent(events: EventEntry[], now: Date = new Date()): R
     const current = resolveEvents(events, now).filter((e) => e.status === "current")
     if (current.length === 0) return null
     return current.find((e) => e.tbaKey) ?? current[0]
+}
+
+function toLocalDateString(d: Date): string {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, "0")
+    const day = String(d.getDate()).padStart(2, "0")
+    return `${y}-${m}-${day}`
+}
+
+// The check-in form's day picker and the roster's per-day columns both need
+// the event's own list of calendar days -- local "YYYY-MM-DD" strings from
+// `start` through `end` inclusive (end defaults to start, same as
+// `resolveEvent`). `start`/`end` may be date-only or datetimes; only the
+// calendar date matters here, so `parseEventDate` (not the end-of-day
+// variant) is enough -- we only ever read its Y/M/D, never its time. Capped
+// at 31 days defensively (matches the backend's own check-in day limit).
+export function eventDays(entry: EventEntry): string[] {
+    const start = parseEventDate(entry.start)
+    const end = parseEventDate(entry.end ?? entry.start)
+    const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+    const last = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+
+    const days: string[] = []
+    while (cursor <= last && days.length < 31) {
+        days.push(toLocalDateString(cursor))
+        cursor.setDate(cursor.getDate() + 1)
+    }
+    return days
+}
+
+// Label for a single local "YYYY-MM-DD" day, e.g. "2026-03-19" -> "Thu, Mar 19".
+// Builds the Date from the string's own parts with the local constructor
+// (never `new Date(str)`) so it can't read back a day early/late in any
+// timezone behind UTC.
+export function eventDayLabel(day: string): string {
+    const [y, m, d] = day.split("-").map(Number)
+    const date = new Date(y, m - 1, d)
+    return `${WEEKDAYS[date.getDay()]}, ${MONTHS[date.getMonth()]} ${date.getDate()}`
+}
+
+// RosterPage's fallback when there's no bootstrap schedule entry for the
+// event to run `eventDays` on: the sorted, de-duplicated union of every day
+// already present across the roster's own `days` arrays (members with a
+// null `days` contribute nothing). Still empty when nobody has any days on
+// file, which is the signal to render no day columns at all.
+export function unionRosterDays(roster: RosterMember[]): string[] {
+    const days = new Set<string>()
+    for (const member of roster) {
+        for (const day of member.days ?? []) days.add(day)
+    }
+    return [...days].sort()
 }

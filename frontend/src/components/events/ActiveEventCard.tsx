@@ -2,7 +2,8 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { Check } from "lucide-react"
 import Dropdown from "@/components/ui/Dropdown"
-import { STATUS_META, type ResolvedEvent } from "@/lib/events"
+import DayChips from "@/components/events/DayChips"
+import { eventDays, STATUS_META, type ResolvedEvent } from "@/lib/events"
 import {
     checkInToEvent, fetchCheckInStatus, fetchEventUpdate,
     type EventInfo, type TBAMatch,
@@ -42,10 +43,17 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
     )
     const [showForm, setShowForm] = useState(false)
     const [role, setRole] = useState<AssignableRole>("attending")
+    // All days selected by default. Deliberately not reset on cancel -- if
+    // the user has already picked specific days and backs out, reopening
+    // the form keeps that selection rather than silently reverting it.
+    const [days, setDays] = useState<string[]>(() => eventDays(active))
+    const [daysError, setDaysError] = useState<string | null>(null)
     const [phone, setPhone] = useState("")
     const [phoneError, setPhoneError] = useState<string | null>(null)
     const [checkingIn, setCheckingIn] = useState(false)
     const [checkInError, setCheckInError] = useState<string | null>(null)
+
+    const eventDayList = eventDays(active)
 
     // Match data for the next-match row -- seeded from bootstrap, then kept
     // fresh with a 60s poll (only runs once `hasHub` is true).
@@ -76,13 +84,19 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
         return () => { cancelled = true }
     }, [hasHub, eventKey])
 
+    function toggleDay(day: string) {
+        setDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day])
+        setDaysError(null)
+    }
+
     function handleCheckIn() {
         const err = validatePhone(phone)
         if (err) { setPhoneError(err); return }
+        if (days.length === 0) { setDaysError("Pick at least one day."); return }
         if (!eventKey) return
         setCheckingIn(true)
         setCheckInError(null)
-        checkInToEvent(eventKey, { role, phone: phone.trim() === "" ? null : phone.trim() })
+        checkInToEvent(eventKey, { role, phone: phone.trim() === "" ? null : phone.trim(), days: [...days].sort() })
             .then(() => { setCheckedIn(true); setCheckingIn(false); setShowForm(false) })
             .catch((err: unknown) => {
                 setCheckingIn(false)
@@ -99,6 +113,7 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
         setShowForm(false)
         setCheckInError(null)
         setPhoneError(null)
+        setDaysError(null)
     }
 
     const nextMatch = matches ? nextMatchFor(matches, TEAM_KEY) : null
@@ -161,6 +176,15 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                             triggerClassName="rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-border theme-text"
                         />
                     </div>
+
+                    <DayChips
+                        label="Days you'll be there"
+                        days={eventDayList}
+                        selected={days}
+                        onToggle={toggleDay}
+                        disabled={checkingIn}
+                        error={daysError}
+                    />
 
                     <div className="flex flex-col gap-1">
                         <label htmlFor="checkin-phone" className="text-sm font-semibold theme-text">

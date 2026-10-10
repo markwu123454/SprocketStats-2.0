@@ -1,18 +1,24 @@
-"""Endpoint-level tests for the check-in and content-PATCH routes on the
-Events router (endpoints/events.py).
+"""Endpoint-level tests for the check-in, roster-update, and content-PATCH
+routes on the Events router (endpoints/events.py).
 
 Runs with no real database: every `db.*` call the router makes is
-monkeypatched to an in-memory FakeStore that mimics the `comp_events` table's
-relevant shape closely enough to exercise the business rules the endpoints
-enforce -- idempotent check-in, roster/links/event_name never touched by the
-content PATCH, and the 404-never-creates rule.
+monkeypatched to an in-memory FakeStore that mimics the `comp_events` and
+`events` tables' relevant shape closely enough to exercise the business rules
+the endpoints enforce -- idempotent check-in (role/phone/days all held fixed
+on repeat calls), roster/links/event_name never touched by the content PATCH,
+the 404-never-creates rule, and the day-range check against a schedule row.
 
 Auth is bypassed via a FastAPI dependency override on `require_active` (the
-login-only gate on the check-in routes) the same way test_tasks_endpoints.py
-does it. The one 403-permissions test exercises the *real* `require_access`
-dependency bound to `require_event_edit` instead of overriding it, so it only
-overrides `get_current_user` and stubs out the account-state ban/approval
-check (irrelevant to what that test is checking).
+login-only gate on the check-in and roster-update routes) the same way
+test_tasks_endpoints.py does it; the roster-update route's `events.edit`
+authorization is plain inline logic, so overriding `require_active` to supply
+a real caller is enough to exercise it for real -- no dependency-override
+trick needed. The content-PATCH and PUT routes are different: they're gated
+by `require_access(...)` instances (one named, `require_event_edit`; one
+anonymous), so their permission-denied/round-trip tests instead override only
+`get_current_user` and stub out the account-state ban/approval check, letting
+the real permission dependency run against a role that does/doesn't hold the
+needed capability.
 """
 
 import pytest
@@ -27,14 +33,18 @@ from endpoints.events import router as events_router
 
 MEMBER = {"sub": "member-1", "role": "cad_member", "display_name": "Member One"}
 LEAD = {"sub": "lead-1", "role": "cad_lead", "display_name": "Lead One"}
+CAPTAIN = {"sub": "captain-1", "role": "captain", "display_name": "Captain One"}
 
 
 class FakeStore:
-    """In-memory stand-in for the `comp_events` table, shaped like the real
-    `db.comp_events` functions (see backend/db/comp_events.py)."""
+    """In-memory stand-in for the `comp_events` and `events` tables, shaped
+    like the real `db.comp_events` functions (see backend/db/comp_events.py)."""
 
     def __init__(self):
         self.events: dict[str, dict] = {}
+        # event_key -> {"start_time": ..., "end_time": ...}, mirroring the
+        # `events` table row `get_event_schedule` looks up by tba_key.
+        self.schedules: dict[str, dict] = {}
 
     def add_event(self, event_key: str, **overrides) -> str:
         row = {
@@ -50,11 +60,28 @@ class FakeStore:
         self.events[event_key] = row
         return event_key
 
+    def add_schedule(self, event_key: str, start_time: str, end_time: str | None = None) -> None:
+        self.schedules[event_key] = {"start_time": start_time, "end_time": end_time}
+
     # -- db.comp_events-shaped async methods, monkeypatched onto `db` --
 
     async def get_comp_event(self, event_key):
         row = self.events.get(event_key)
         return dict(row) if row else None
+
+    async def upsert_comp_event(self, event_key, content):
+        data = content.model_dump()
+        row = {
+            "event_key": event_key,
+            "event_name": data["event_name"],
+            "links": data.get("links"),
+            "itinerary": data.get("itinerary"),
+            "packing_list": data.get("packing_list"),
+            "instructions": data.get("instructions"),
+            "roster": data.get("roster"),
+        }
+        self.events[event_key] = row
+        return dict(row)
 
     async def add_roster_member(self, event_key, member):
         row = self.events.get(event_key)
@@ -81,24 +108,30 @@ class FakeStore:
         row.update(fields)
         return dict(row)
 
-    async def set_roster_role(self, event_key, user_id, role):
+    async def update_roster_member(self, event_key, user_id, fields):
+        if not fields:
+            raise ValueError("update_roster_member requires at least one field to set")
         row = self.events.get(event_key)
         if row is None:
             return None
         roster = row.get("roster") or []
         for entry in roster:
             if entry.get("user_id") == user_id:
-                entry["role"] = role
+                entry.update(fields)
                 return roster
         raise db.RosterMemberNotFound(user_id)
+
+    async def get_event_schedule(self, event_key):
+        schedule = self.schedules.get(event_key)
+        return dict(schedule) if schedule else None
 
 
 @pytest.fixture
 def store(monkeypatch):
     fake = FakeStore()
     for name in (
-        "get_comp_event", "add_roster_member", "is_on_roster", "update_comp_event_content",
-        "set_roster_role",
+        "get_comp_event", "upsert_comp_event", "add_roster_member", "is_on_roster",
+        "update_comp_event_content", "update_roster_member", "get_event_schedule",
     ):
         monkeypatch.setattr(db, name, getattr(fake, name))
     return fake
@@ -151,7 +184,8 @@ def test_check_in_adds_caller_once(app, store):
     body = resp.json()
     assert body["checked_in"] is True
     assert body["roster"] == [
-        {"user_id": "member-1", "display_name": "Member One", "role": "attending", "phone": None}
+        {"user_id": "member-1", "display_name": "Member One",
+         "role": "attending", "phone": None, "days": None}
     ]
 
 
@@ -259,22 +293,121 @@ def test_check_in_second_call_with_different_role_does_not_change_entry(app, sto
     assert entry["phone"] == "555-000-1111"
 
 
-# ── PATCH roster/{user_id}: privileged role change ──────────────────────
+# ── Check-in: chosen days ────────────────────────────────────────────────
 
-def test_patch_roster_role_changes_only_that_member(app, store):
+def test_check_in_days_omitted_is_null(app, store):
+    store.add_event("2026test")
+    resp = _as(app, MEMBER).post("/events/2026test/check-in")
+    assert resp.status_code == 200
+    assert resp.json()["roster"][0]["days"] is None
+
+
+def test_check_in_days_stored_sorted_and_deduplicated(app, store):
+    store.add_event("2026test")
+    resp = _as(app, MEMBER).post(
+        "/events/2026test/check-in",
+        json={"days": ["2026-03-21", "2026-03-20", "2026-03-21"]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["roster"][0]["days"] == ["2026-03-20", "2026-03-21"]
+
+
+def test_check_in_days_empty_list_422(app, store):
+    store.add_event("2026test")
+    resp = _as(app, MEMBER).post("/events/2026test/check-in", json={"days": []})
+    assert resp.status_code == 422
+
+
+def test_check_in_days_malformed_date_422(app, store):
+    store.add_event("2026test")
+    resp = _as(app, MEMBER).post("/events/2026test/check-in", json={"days": ["03/20/2026"]})
+    assert resp.status_code == 422
+
+
+def test_check_in_days_datetime_string_422(app, store):
+    store.add_event("2026test")
+    resp = _as(app, MEMBER).post(
+        "/events/2026test/check-in", json={"days": ["2026-03-20T10:00:00"]}
+    )
+    assert resp.status_code == 422
+
+
+def test_check_in_days_too_many_422(app, store):
+    store.add_event("2026test")
+    days = [f"2026-01-{d:02d}" for d in range(1, 33)]  # 32 distinct days
+    resp = _as(app, MEMBER).post("/events/2026test/check-in", json={"days": days})
+    assert resp.status_code == 422
+
+
+def test_check_in_days_out_of_range_422(app, store):
+    store.add_event("2026test")
+    store.add_schedule("2026test", start_time="2026-03-20", end_time="2026-03-21")
+    resp = _as(app, MEMBER).post("/events/2026test/check-in", json={"days": ["2026-03-22"]})
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "Days must be within the event's dates"
+
+
+def test_check_in_days_in_range_accepted(app, store):
+    store.add_event("2026test")
+    store.add_schedule("2026test", start_time="2026-03-20", end_time="2026-03-21")
+    resp = _as(app, MEMBER).post("/events/2026test/check-in", json={"days": ["2026-03-20"]})
+    assert resp.status_code == 200
+    assert resp.json()["roster"][0]["days"] == ["2026-03-20"]
+
+
+def test_check_in_days_range_check_skipped_without_schedule_row(app, store):
+    # No store.add_schedule call for this event -- get_event_schedule returns
+    # None, so any day is accepted regardless of how far-fetched it is.
+    store.add_event("2026test")
+    resp = _as(app, MEMBER).post("/events/2026test/check-in", json={"days": ["1999-01-01"]})
+    assert resp.status_code == 200
+    assert resp.json()["roster"][0]["days"] == ["1999-01-01"]
+
+
+def test_check_in_days_single_day_event_null_end_accepts_only_that_day(app, store):
+    store.add_event("2026test")
+    store.add_schedule("2026test", start_time="2026-03-20", end_time=None)
+    ok = _as(app, MEMBER).post("/events/2026test/check-in", json={"days": ["2026-03-20"]})
+    assert ok.status_code == 200
+
+    store.events["2026test"]["roster"] = []  # reset for the second call
+    bad = _as(app, MEMBER).post("/events/2026test/check-in", json={"days": ["2026-03-21"]})
+    assert bad.status_code == 422
+
+
+def test_check_in_repeat_call_keeps_original_days(app, store):
+    store.add_event("2026test")
+    client = _as(app, MEMBER)
+    resp1 = client.post("/events/2026test/check-in", json={"days": ["2026-03-20"]})
+    resp2 = client.post("/events/2026test/check-in", json={"days": ["2026-03-21"]})
+    assert resp1.status_code == 200
+    assert resp2.status_code == 200
+    assert len(resp2.json()["roster"]) == 1
+    assert resp2.json()["roster"][0]["days"] == ["2026-03-20"]
+
+
+# ── PATCH roster/{user_id}: role and/or days ────────────────────────────
+#
+# The route's dependency is just `require_active` (login) now -- `_as(app,
+# user)` supplies the real caller, and the endpoint's own inline
+# `events.edit` check runs for real against that user's actual role. No
+# dependency-override trick is needed to exercise it, unlike the
+# `require_event_edit`-gated content PATCH below.
+
+def test_patch_roster_role_changes_only_role_field(app, store):
     store.add_event(
         "2026test",
         roster=[
             {"user_id": "u1", "display_name": "User One",
-             "role": "attending", "phone": "555-1111111"},
+             "role": "attending", "phone": "555-1111111", "days": ["2026-03-20"]},
             {"user_id": "u2", "display_name": "User Two", "role": "pit_crew", "phone": None},
         ],
     )
     resp = _as(app, LEAD).patch("/events/2026test/roster/u1", json={"role": "drive_team"})
     assert resp.status_code == 200
     roster = resp.json()["roster"]
-    assert roster[0] == {"user_id": "u1", "display_name": "User One",
-                          "role": "drive_team", "phone": "555-1111111"}
+    assert roster[0] == {"user_id": "u1", "display_name": "User One", "role": "drive_team",
+                          "phone": "555-1111111", "days": ["2026-03-20"]}
     # Order and the other member are untouched.
     assert roster[1] == {"user_id": "u2", "display_name": "User Two",
                           "role": "pit_crew", "phone": None}
@@ -314,7 +447,7 @@ def test_patch_roster_role_rejects_non_assignable_roster_roles(app, store, role)
     assert resp.status_code == 422
 
 
-def test_patch_roster_role_404_unknown_member(app, store):
+def test_patch_roster_404_unknown_member(app, store):
     store.add_event(
         "2026test",
         roster=[{"user_id": "u1", "display_name": "User One", "role": "attending", "phone": None}],
@@ -324,33 +457,149 @@ def test_patch_roster_role_404_unknown_member(app, store):
     assert resp.json()["detail"] == "Roster member not found"
 
 
-def test_patch_roster_role_404_unknown_event(app, store):
+def test_patch_roster_404_unknown_event(app, store):
     resp = _as(app, LEAD).patch("/events/does-not-exist/roster/u1", json={"role": "mentor"})
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Event not found"
 
 
-def test_patch_roster_role_403_for_role_without_events_edit(app, store, monkeypatch):
-    # Same real-dependency approach as test_patch_403_for_role_without_events_edit:
-    # override only get_current_user and stub out account_state, so the real
-    # require_access/require_event_edit permission check actually runs.
+def test_patch_roster_400_empty_body(app, store):
     store.add_event(
         "2026test",
         roster=[{"user_id": "u1", "display_name": "User One", "role": "attending", "phone": None}],
     )
+    resp = _as(app, LEAD).patch("/events/2026test/roster/u1", json={})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "No fields to update"
 
-    async def _noop_assert_active(sub):
-        return None
 
-    monkeypatch.setattr(account_state, "assert_active", _noop_assert_active)
-
-    fastapi_app = FastAPI()
-    fastapi_app.include_router(events_router, prefix="/events")
-    fastapi_app.dependency_overrides[get_current_user] = lambda: MEMBER
-    client = TestClient(fastapi_app)
-
-    resp = client.patch("/events/2026test/roster/u1", json={"role": "mentor"})
+def test_patch_roster_role_change_403_without_events_edit(app, store):
+    store.add_event(
+        "2026test",
+        roster=[{"user_id": "u1", "display_name": "User One", "role": "attending", "phone": None}],
+    )
+    resp = _as(app, MEMBER).patch("/events/2026test/roster/u1", json={"role": "mentor"})
     assert resp.status_code == 403
+    assert resp.json()["detail"] == "Insufficient permissions"
+
+
+# ── PATCH roster/{user_id}: days (self-service, or events.edit for anyone) ──
+
+def test_patch_roster_self_can_change_own_days(app, store):
+    store.add_event(
+        "2026test",
+        roster=[{"user_id": "member-1", "display_name": "Member One",
+                 "role": "attending", "phone": "555-1111111", "days": ["2026-03-20"]}],
+    )
+    resp = _as(app, MEMBER).patch(
+        "/events/2026test/roster/member-1", json={"days": ["2026-03-21"]}
+    )
+    assert resp.status_code == 200
+    entry = resp.json()["roster"][0]
+    assert entry["days"] == ["2026-03-21"]
+    # role/phone/display_name untouched by a days-only change.
+    assert entry["role"] == "attending"
+    assert entry["phone"] == "555-1111111"
+    assert entry["display_name"] == "Member One"
+
+
+def test_patch_roster_self_cannot_change_own_role_without_events_edit(app, store):
+    store.add_event(
+        "2026test",
+        roster=[{"user_id": "member-1", "display_name": "Member One",
+                 "role": "attending", "phone": None}],
+    )
+    resp = _as(app, MEMBER).patch("/events/2026test/roster/member-1", json={"role": "mentor"})
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Insufficient permissions"
+
+
+def test_patch_roster_member_cannot_change_someone_elses_days(app, store):
+    store.add_event(
+        "2026test",
+        roster=[{"user_id": "someone-else", "display_name": "Someone Else",
+                 "role": "attending", "phone": None}],
+    )
+    resp = _as(app, MEMBER).patch(
+        "/events/2026test/roster/someone-else", json={"days": ["2026-03-20"]}
+    )
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Insufficient permissions"
+
+
+def test_patch_roster_lead_can_change_someone_elses_days(app, store):
+    store.add_event(
+        "2026test",
+        roster=[{"user_id": "u1", "display_name": "User One",
+                 "role": "attending", "phone": None, "days": None}],
+    )
+    resp = _as(app, LEAD).patch("/events/2026test/roster/u1", json={"days": ["2026-03-20"]})
+    assert resp.status_code == 200
+    assert resp.json()["roster"][0]["days"] == ["2026-03-20"]
+
+
+def test_patch_roster_lead_can_change_role_and_days_together(app, store):
+    store.add_event(
+        "2026test",
+        roster=[{"user_id": "u1", "display_name": "User One",
+                 "role": "attending", "phone": None, "days": None}],
+    )
+    resp = _as(app, LEAD).patch(
+        "/events/2026test/roster/u1", json={"role": "mentor", "days": ["2026-03-20"]}
+    )
+    assert resp.status_code == 200
+    entry = resp.json()["roster"][0]
+    assert entry["role"] == "mentor"
+    assert entry["days"] == ["2026-03-20"]
+
+
+def test_patch_roster_combined_fields_fail_together_and_write_nothing(app, store):
+    # MEMBER is the roster member (so the days half would be allowed alone),
+    # but also wants to change their own role (not allowed without
+    # events.edit) in the same request. Both halves must pass -- the role
+    # check fails, so nothing is written, including the days half.
+    store.add_event(
+        "2026test",
+        roster=[{"user_id": "member-1", "display_name": "Member One",
+                 "role": "attending", "phone": None, "days": ["2026-03-01"]}],
+    )
+    resp = _as(app, MEMBER).patch(
+        "/events/2026test/roster/member-1",
+        json={"role": "mentor", "days": ["2026-03-20"]},
+    )
+    assert resp.status_code == 403
+    # Nothing was written.
+    assert store.events["2026test"]["roster"][0]["days"] == ["2026-03-01"]
+    assert store.events["2026test"]["roster"][0]["role"] == "attending"
+
+
+def test_patch_roster_days_empty_list_422(app, store):
+    store.add_event(
+        "2026test",
+        roster=[{"user_id": "u1", "display_name": "User One", "role": "attending", "phone": None}],
+    )
+    resp = _as(app, LEAD).patch("/events/2026test/roster/u1", json={"days": []})
+    assert resp.status_code == 422
+
+
+def test_patch_roster_days_malformed_422(app, store):
+    store.add_event(
+        "2026test",
+        roster=[{"user_id": "u1", "display_name": "User One", "role": "attending", "phone": None}],
+    )
+    resp = _as(app, LEAD).patch("/events/2026test/roster/u1", json={"days": ["not-a-date"]})
+    assert resp.status_code == 422
+
+
+def test_patch_roster_days_out_of_range_422(app, store):
+    store.add_event(
+        "2026test",
+        roster=[{"user_id": "u1", "display_name": "User One", "role": "attending", "phone": None}],
+    )
+    store.add_schedule("2026test", start_time="2026-03-20", end_time="2026-03-21")
+    resp = _as(app, LEAD).patch("/events/2026test/roster/u1", json={"days": ["2026-03-22"]})
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "Days must be within the event's dates"
 
 
 # ── PATCH content: only the sent field changes ──────────────────────────
@@ -417,6 +666,40 @@ def test_patch_403_for_role_without_events_edit(app, store, monkeypatch):
         json={"itinerary": [{"dt": "2026-01-01T09:00:00", "label": "A", "detail": None}]},
     )
     assert resp.status_code == 403
+
+
+# ── PUT content: legacy round-trip keeps roster.days ────────────────────
+
+def test_put_content_round_trip_keeps_roster_days(app, store, monkeypatch):
+    # PUT /{event_key}/content is gated by its own anonymous
+    # require_access(permissions="control_panel.upcoming_event") dependency
+    # (not a named module-level export like require_event_edit), so there's
+    # no object to override directly -- same workaround as the 403 tests
+    # above: override get_current_user to a role that actually holds that
+    # permission (captain), and stub out account_state.
+    async def _noop_assert_active(sub):
+        return None
+
+    monkeypatch.setattr(account_state, "assert_active", _noop_assert_active)
+
+    fastapi_app = FastAPI()
+    fastapi_app.include_router(events_router, prefix="/events")
+    fastapi_app.dependency_overrides[get_current_user] = lambda: CAPTAIN
+    client = TestClient(fastapi_app)
+
+    body = {
+        "event_name": "Test Event",
+        "roster": [
+            {"user_id": "u1", "display_name": "User One", "role": "attending",
+             "phone": None, "days": ["2026-03-20", "2026-03-21"]},
+        ],
+    }
+    resp = client.put("/events/2026test/content", json=body)
+    assert resp.status_code == 200
+    assert resp.json()["roster"] == [
+        {"user_id": "u1", "display_name": "User One", "role": "attending",
+         "phone": None, "days": ["2026-03-20", "2026-03-21"]}
+    ]
 
 
 # ── Validation ───────────────────────────────────────────────────────────
