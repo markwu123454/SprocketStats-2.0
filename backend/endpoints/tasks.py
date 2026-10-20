@@ -17,7 +17,10 @@ router = APIRouter()
 # write-capable routers in this codebase.
 require_task_access = require_active
 
-_VALID_PRIORITIES = {"high", "med", "low"}
+_VALID_PRIORITIES = {"critical", "high", "med", "low"}
+# "Perish if not done" -- sits above high, and only the authority set may set
+# it (or take it off), so it stays a signal from leads rather than noise.
+_AUTHORITY_PRIORITIES = {"critical"}
 # `done` is deliberately excluded -- it is reachable only through /review, never
 # a bare PATCH (see the contract's state-transition rules).
 _PATCHABLE_STATUSES = {"todo", "doing", "review"}
@@ -142,6 +145,10 @@ async def create_task(body: TaskCreate, user: dict = Depends(require_task_access
     priority = body.priority or "med"
     if priority not in _VALID_PRIORITIES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown priority: {priority}")
+    if priority in _AUTHORITY_PRIORITIES and not has_task_authority(user.get("role")):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Only the authority set may set this priority"
+        )
 
     if body.assignee_id is not None and not has_task_authority(user.get("role")):
         raise HTTPException(
@@ -213,6 +220,14 @@ async def update_task(task_id: str, body: TaskUpdate, user: dict = Depends(requi
         priority = changes["priority"]
         if priority not in _VALID_PRIORITIES:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown priority: {priority}")
+        # Resending the unchanged value is fine (edit forms send every field).
+        touches_authority_priority = priority != existing["priority"] and (
+            priority in _AUTHORITY_PRIORITIES or existing["priority"] in _AUTHORITY_PRIORITIES
+        )
+        if touches_authority_priority and not is_authority:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Only the authority set may set or clear this priority"
+            )
         fields["priority"] = priority
 
     if "due_date" in changes:

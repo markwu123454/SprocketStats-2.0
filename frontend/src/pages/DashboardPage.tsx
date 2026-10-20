@@ -52,7 +52,7 @@ function isOverdue(dateStr: string): boolean {
     return parseLocalDate(dateStr) < today
 }
 
-const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, med: 1, low: 2 }
+const PRIORITY_RANK: Record<TaskPriority, number> = { critical: 0, high: 1, med: 2, low: 3 }
 
 const cardStyle = { background: "var(--theme-bg)", borderColor: "var(--theme-border)" }
 
@@ -191,7 +191,9 @@ export default function DashboardPage() {
                                         if (task.assignee_id !== user.id && task.contributors.some(c => c.id === user.id)) {
                                             metaParts.push(<span key="contributing">Contributing</span>)
                                         }
-                                        if (task.priority === "high") {
+                                        if (task.priority === "critical") {
+                                            metaParts.push(<span key="priority" style={{ color: DANGER_RED, fontWeight: 800, textTransform: "uppercase" }}>☠ {PRIORITY_LABEL.critical}</span>)
+                                        } else if (task.priority === "high") {
                                             metaParts.push(<span key="priority" style={{ color: DANGER_RED }}>{PRIORITY_LABEL.high}</span>)
                                         }
                                         if (task.due_date) {

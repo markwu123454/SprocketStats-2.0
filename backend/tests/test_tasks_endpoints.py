@@ -566,6 +566,42 @@ def test_create_rejects_unknown_priority(app, store):
     assert resp.status_code == 400
 
 
+def test_create_critical_priority_requires_authority(app, store):
+    resp = _as(app, MEMBER).post("/tasks", json={"title": "T", "bucket": "cad", "priority": "critical"})
+    assert resp.status_code == 403
+
+
+def test_authority_can_create_critical_priority(app, store):
+    resp = _as(app, LEAD).post("/tasks", json={"title": "T", "bucket": "cad", "priority": "critical"})
+    assert resp.status_code == 200
+    assert resp.json()["priority"] == "critical"
+
+
+def test_creator_cannot_raise_to_critical(app, store):
+    task_id = store.add_task(created_by="member-1")
+    resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"priority": "critical"})
+    assert resp.status_code == 403
+
+
+def test_creator_cannot_lower_critical(app, store):
+    task_id = store.add_task(created_by="member-1", priority="critical")
+    resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"priority": "low"})
+    assert resp.status_code == 403
+
+
+def test_creator_can_resend_unchanged_critical(app, store):
+    task_id = store.add_task(created_by="member-1", priority="critical")
+    resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"title": "Renamed", "priority": "critical"})
+    assert resp.status_code == 200
+
+
+def test_authority_can_lower_critical(app, store):
+    task_id = store.add_task(priority="critical")
+    resp = _as(app, LEAD).patch(f"/tasks/{task_id}", json={"priority": "high"})
+    assert resp.status_code == 200
+    assert resp.json()["priority"] == "high"
+
+
 def test_create_defaults_blank_area_to_general(app, store):
     resp = _as(app, MEMBER).post("/tasks", json={"title": "T", "bucket": "cad", "area": "  "})
     assert resp.status_code == 200

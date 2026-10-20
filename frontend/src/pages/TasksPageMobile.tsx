@@ -12,7 +12,7 @@ import {
     type CreateTaskInput, type Person, type Task, type TaskNote, type TaskPriority, type UpdateTaskInput,
 } from "@/lib/tasksApi"
 import {
-    DANGER_RED, PRIORITY_COLOR, PRIORITY_ORDER, AVATAR_INK, TASK_SORT_OPTIONS,
+    DANGER_RED, PRIORITY_COLOR, AVATAR_INK, TASK_SORT_OPTIONS, CRITICAL_BADGE_STYLE, priorityChoices,
     tint, tintColor, avatarBg, initialOf, formatRelativeTime, formatPosted, rowDue, assigneeOptions, compareTasks, compareDone,
     matchesFilter, type SettableStatus, type StatusFilter, type TaskFilter, type TaskSort, type TasksPageState, type WhoFilter,
     areaSuggestions, TASK_FIELD_HELP,
@@ -526,6 +526,7 @@ function TaskCard({ task, board, user, people, todayMs, highlighted, pickerOpen,
     const canEdit = board.canEditTask(task)
     const canChangeStatus = board.canChangeStatus(task)
     const done = task.status === "done"
+    const critical = task.priority === "critical" && !done
     const review = task.status === "review"
     const due = rowDue(task, todayMs)
     const unreadCount = board.unread(task)
@@ -578,7 +579,7 @@ function TaskCard({ task, board, user, people, todayMs, highlighted, pickerOpen,
     }
 
     return (
-        <div data-task-id={task.id} style={cardStyle(highlighted)}>
+        <div data-task-id={task.id} style={cardStyle(highlighted, critical)}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
                 <span style={titleStyle}>{task.title}</span>
                 {canTogglePicker ? (
@@ -613,7 +614,9 @@ function TaskCard({ task, board, user, people, todayMs, highlighted, pickerOpen,
                         {task.note_count > 0 && <span>{task.note_count}</span>}
                     </span>
                 </button>
-                <span style={priorityPillStyle(task.priority)}>{PRIORITY_LABEL[task.priority]} priority</span>
+                {critical
+                    ? <span style={CRITICAL_BADGE_STYLE}>☠ {PRIORITY_LABEL.critical}</span>
+                    : <span style={priorityPillStyle(task.priority)}>{PRIORITY_LABEL[task.priority]} priority</span>}
                 <span style={bucketPillStyle}>{bucketLabel(task.bucket)} · {task.area}</span>
                 <span><span style={{ color: due.color }}>{due.text}</span> · {formatPosted(task.created_at)}</span>
                 <span>{ownerLine(task)}</span>
@@ -695,9 +698,12 @@ function ownerLine(task: Task): string {
     return task.assignee_name ?? "Unassigned"
 }
 
-function cardStyle(highlighted: boolean): CSSProperties {
+function cardStyle(highlighted: boolean, critical: boolean): CSSProperties {
     return {
-        padding: 14, borderRadius: 16, border: `1px solid ${tint("--theme-border", 75)}`, background: "var(--theme-button-bg)",
+        padding: 14, borderRadius: 16,
+        // "Perish if not done" gets a red frame and wash so it can't be scrolled past.
+        border: critical ? `2px solid ${DANGER_RED}` : `1px solid ${tint("--theme-border", 75)}`,
+        background: critical ? `linear-gradient(${tintColor(DANGER_RED, 12)}, ${tintColor(DANGER_RED, 12)}), var(--theme-button-bg)` : "var(--theme-button-bg)",
         display: "flex", flexDirection: "column", gap: 10,
         // The highlight is an outline plus an inset wash (box-shadow, unlike a
         // background gradient, can transition), so it fades out rather than
@@ -1075,8 +1081,15 @@ function TaskFormSheet({ mode, task, board, people, defaultBucket, onClose }: Ta
                 </Field>
 
                 <Field label="Priority" help={TASK_FIELD_HELP.priority}>
+                    {/* "Perish if not done" gets its own full-width row above the
+                        three regular segments -- four labels don't fit across a phone. */}
+                    {priorityChoices(board.canAssign, task?.priority).includes("critical") && (
+                        <button type="button" onClick={() => setPriority("critical")} style={{ ...prioritySegStyle(priority === "critical", true), width: "100%", marginBottom: 6 }}>
+                            ☠ {PRIORITY_LABEL.critical}
+                        </button>
+                    )}
                     <div style={{ display: "flex", gap: 6 }}>
-                        {PRIORITY_ORDER.map(p => (
+                        {priorityChoices(board.canAssign, task?.priority).filter(p => p !== "critical").map(p => (
                             <button key={p} type="button" onClick={() => setPriority(p)} style={prioritySegStyle(p === priority)}>
                                 {PRIORITY_LABEL[p]}
                             </button>
@@ -1126,12 +1139,14 @@ const sheetInputStyle: CSSProperties = {
     width: "100%", boxSizing: "border-box", minHeight: 46, padding: "0 14px", borderRadius: 12, border: `1px solid ${tint("--theme-border", 80)}`,
     background: "var(--theme-button-bg)", color: "var(--theme-text)", fontSize: 15, fontFamily: "inherit", outline: "none",
 }
-function prioritySegStyle(selected: boolean): CSSProperties {
+function prioritySegStyle(selected: boolean, critical = false): CSSProperties {
+    const accent = critical ? DANGER_RED : "var(--theme-text-contrast)"
     return {
         flex: 1, minHeight: 44, borderRadius: 12, cursor: "pointer", fontFamily: "inherit", fontSize: 13.5, fontWeight: 700,
-        border: selected ? "1px solid var(--theme-text-contrast)" : `1px solid ${tint("--theme-border", 75)}`,
-        background: selected ? tint("--theme-text-contrast", 16) : "var(--theme-button-bg)",
-        color: selected ? "var(--theme-text-contrast)" : "var(--theme-text)",
+        border: selected ? `1px solid ${accent}` : `1px solid ${critical ? tintColor(DANGER_RED, 55) : tint("--theme-border", 75)}`,
+        background: selected ? (critical ? DANGER_RED : tint("--theme-text-contrast", 16)) : "var(--theme-button-bg)",
+        color: selected ? (critical ? "#fff" : accent) : (critical ? DANGER_RED : "var(--theme-text)"),
+        textTransform: critical ? "uppercase" : "none", letterSpacing: critical ? "0.05em" : "normal",
     }
 }
 const claimToggleRowStyle: CSSProperties = {

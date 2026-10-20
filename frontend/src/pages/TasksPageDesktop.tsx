@@ -12,7 +12,7 @@ import {
     type CreateTaskInput, type Person, type Task, type TaskNote, type TaskPriority, type UpdateTaskInput,
 } from "@/lib/tasksApi"
 import {
-    DANGER_RED, PRIORITY_ORDER, PRIORITY_COLOR, AVATAR_INK,
+    DANGER_RED, PRIORITY_COLOR, AVATAR_INK, CRITICAL_BADGE_STYLE, priorityChoices,
     tint, tintColor, avatarBg, initialOf, formatRelativeTime, formatPosted, isOverdue, rowDue, assigneeOptions,
     compareTasks, compareDone, matchesFilter, areaSuggestions, TASK_SORT_OPTIONS, TASK_FIELD_HELP,
     type SettableStatus, type WhoFilter, type Quick, type TaskSort, type TasksPageState,
@@ -601,7 +601,7 @@ function ComposeForm({ tasks, canAssign, people, defaultBucket, dropdownTriggerC
                     )}
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                         <span style={composeLabelStyle}>Priority <HelpTip text={TASK_FIELD_HELP.priority} /></span>
-                        <Dropdown value={priority} onChange={v => setPriority(v as TaskPriority)} options={PRIORITY_ORDER.map(p => ({ value: p, label: PRIORITY_LABEL[p] }))} triggerClassName={dropdownTriggerClassName} />
+                        <Dropdown value={priority} onChange={v => setPriority(v as TaskPriority)} options={priorityChoices(canAssign).map(p => ({ value: p, label: PRIORITY_LABEL[p] }))} triggerClassName={dropdownTriggerClassName} />
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
                         <span style={composeLabelStyle}>Due <HelpTip text={TASK_FIELD_HELP.due} /></span>
@@ -691,6 +691,7 @@ function TaskRow({
     const review = task.status === "review"
     const due = rowDue(task, todayMs)
     const priorityColor = done ? tint("--theme-border", 70) : PRIORITY_COLOR[task.priority]
+    const critical = task.priority === "critical" && !done
     const isFinisher = task.finished_by === currentUser.id
     const disabledTitle = "Only the creator, a lead, or someone on this task can update its status"
 
@@ -727,10 +728,10 @@ function TaskRow({
                 style={{
                     display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px 12px",
                     minHeight: 54, padding: "6px 12px 6px 0", cursor: "pointer",
-                    background: expanded ? "var(--ag-grid-hover-bg)" : "transparent",
+                    background: expanded ? "var(--ag-grid-hover-bg)" : (critical ? tintColor(DANGER_RED, 10) : "transparent"),
                 }}
             >
-                <span style={{ width: 3, alignSelf: "stretch", flex: "none", borderRadius: "0 3px 3px 0", background: priorityColor }} />
+                <span style={{ width: critical ? 5 : 3, alignSelf: "stretch", flex: "none", borderRadius: "0 3px 3px 0", background: priorityColor }} />
 
                 <button
                     type="button"
@@ -761,9 +762,13 @@ function TaskRow({
                     <span style={{ flex: "none", fontSize: 12, whiteSpace: "nowrap", color: "var(--theme-subtext-color)" }}>
                         <span style={{ color: due.color }}>{due.text}</span> · {formatPosted(task.created_at)}
                     </span>
-                    <span style={{ flex: "none", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap", color: "var(--theme-subtext-color)", opacity: 0.75 }}>
-                        {PRIORITY_LABEL[task.priority]}
-                    </span>
+                    {critical ? (
+                        <span style={{ ...CRITICAL_BADGE_STYLE, flex: "none", alignSelf: "center" }}>☠ {PRIORITY_LABEL.critical}</span>
+                    ) : (
+                        <span style={{ flex: "none", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap", color: "var(--theme-subtext-color)", opacity: 0.75 }}>
+                            {PRIORITY_LABEL[task.priority]}
+                        </span>
+                    )}
                 </span>
 
                 <span style={{ display: "flex", alignItems: "center", gap: 10, flex: "none", marginLeft: "auto" }}>
@@ -1394,7 +1399,7 @@ function EditTaskModal({ task, tasks, canAssign, people, onClose, onSaved, onErr
                                 <Dropdown
                                     value={priority}
                                     onChange={v => setPriority(v as TaskPriority)}
-                                    options={PRIORITY_ORDER.map(p => ({ value: p, label: PRIORITY_LABEL[p] }))}
+                                    options={priorityChoices(canAssign, task.priority).map(p => ({ value: p, label: PRIORITY_LABEL[p] }))}
                                     triggerClassName="px-3 py-2 text-sm theme-text"
                                 />
                             </div>

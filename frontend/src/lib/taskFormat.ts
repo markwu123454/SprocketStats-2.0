@@ -25,12 +25,29 @@ export function tintColor(color: string, pct: number): string {
     return `color-mix(in oklch, ${color} ${pct}%, transparent)`
 }
 
-export const PRIORITY_ORDER: TaskPriority[] = ["high", "med", "low"]
+export const PRIORITY_ORDER: TaskPriority[] = ["critical", "high", "med", "low"]
 // Priority stripe / label colors. Medium and low are fixed pastel accents
 // (SPEC "Colors": "deliberate, theme-independent accents") — kept literal in
 // every season. High is folded into DANGER_RED rather than the mockup's own
 // #f87171 ("one red, not two").
-export const PRIORITY_COLOR: Record<TaskPriority, string> = { high: DANGER_RED, med: "#f5d547", low: "#45908d" }
+// Critical shares the danger red, but is drawn louder everywhere it appears
+// (filled badge, tinted row) -- see `CRITICAL_BADGE_STYLE`.
+export const PRIORITY_COLOR: Record<TaskPriority, string> = { critical: DANGER_RED, high: DANGER_RED, med: "#f5d547", low: "#45908d" }
+
+/** Filled, can't-miss badge for a "Perish if not done" task. */
+export const CRITICAL_BADGE_STYLE = {
+    display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap",
+    fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase",
+    background: DANGER_RED, color: "#fff", boxShadow: `0 0 0 3px ${tintColor(DANGER_RED, 22)}`,
+} as const
+
+/** Priorities a viewer may pick in a form. "critical" is leads-only; a
+ *  non-lead editing a task that's already critical sees it locked there. */
+export function priorityChoices(canAssign: boolean, current?: TaskPriority): TaskPriority[] {
+    if (canAssign) return PRIORITY_ORDER
+    if (current === "critical") return ["critical"]
+    return PRIORITY_ORDER.filter(p => p !== "critical")
+}
 
 export type SettableStatus = Exclude<TaskStatus, "done">
 
@@ -98,7 +115,7 @@ export function assigneeOptions(people: Person[]) {
     return [{ value: "", label: "Unassigned" }, ...people.map(p => ({ value: p.id, label: p.display_name }))]
 }
 
-const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, med: 1, low: 2 }
+const PRIORITY_RANK: Record<TaskPriority, number> = { critical: 0, high: 1, med: 2, low: 3 }
 
 function compareDue(a: Task, b: Task): number {
     if (a.due_date === b.due_date) return 0
@@ -193,6 +210,6 @@ export const TASK_FIELD_HELP = {
     area: "The project this belongs to inside the subteam, like Drivetrain. Tasks with the same area are grouped together. Pick an existing one or type a new name; blank means General.",
     bucket: "Which subteam's board this task shows up on.",
     assignee: "Who owns this task. Leave it Unassigned so anyone can claim it.",
-    priority: "How urgent it is. The board lists High first, then Medium, then Low.",
+    priority: "How urgent it is. The board lists Perish if not done first (leads only), then High, Medium, and Low.",
     due: "When it should be done by. After this date the task shows as overdue.",
 } as const
