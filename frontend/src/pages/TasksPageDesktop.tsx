@@ -273,7 +273,15 @@ export default function TasksPageDesktop() {
 
     return (
         <div className="px-4 py-6">
-            <div className="flex flex-col gap-[18px]" style={{ maxWidth: 1180, margin: "0 auto" }}>
+            {/* One solid, blurred panel holds the whole board so it reads
+                against the page's map background ("Task board visibility"
+                design, option 1a). */}
+            <div className="flex flex-col gap-5" style={{
+                maxWidth: 1180, margin: "0 auto", padding: 24, borderRadius: 14,
+                background: "color-mix(in oklch, var(--theme-bg) 94%, transparent)",
+                backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+                border: "1px solid var(--theme-border)", boxShadow: "0 20px 50px rgba(0,0,0,.45)",
+            }}>
 
                 <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
                     <div>
@@ -326,12 +334,14 @@ export default function TasksPageDesktop() {
                     />
                 )}
 
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start" }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 24, alignItems: "flex-start" }}>
 
+                    {/* The panel already separates the board from the map, so the
+                        rail drops its own card for a plain divider. */}
                     <aside style={{
-                        flex: "1 1 200px", maxWidth: 240, minWidth: 180, boxSizing: "border-box",
-                        border: "1px solid var(--theme-border)", borderRadius: 12, background: "var(--theme-button-bg)",
-                        padding: 12, display: "flex", flexDirection: "column", gap: 2,
+                        flex: "1 1 190px", maxWidth: 240, minWidth: 180, boxSizing: "border-box",
+                        paddingRight: 20, borderRight: "1px solid var(--theme-border)",
+                        display: "flex", flexDirection: "column", gap: 2,
                     }}>
                         <div style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--theme-subtext-color)", padding: "4px 8px 8px" }}>Subteam</div>
                         <RailRow active={bucketFilter === "all"} label="All tasks" count={allCount} onClick={() => setBucketFilter("all")} />
