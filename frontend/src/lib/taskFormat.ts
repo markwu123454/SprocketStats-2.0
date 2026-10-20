@@ -25,18 +25,30 @@ export function tintColor(color: string, pct: number): string {
     return `color-mix(in oklch, ${color} ${pct}%, transparent)`
 }
 
-export const PRIORITY_ORDER: TaskPriority[] = ["high", "med", "low"]
+export const PRIORITY_ORDER: TaskPriority[] = ["critical", "high", "med", "low"]
 // Priority stripe / label colors. Medium and low are fixed pastel accents
 // (SPEC "Colors": "deliberate, theme-independent accents") — kept literal in
 // every season. High is folded into DANGER_RED rather than the mockup's own
 // #f87171 ("one red, not two").
-export const PRIORITY_COLOR: Record<TaskPriority, string> = { high: DANGER_RED, med: "#f5d547", low: "#45908d" }
+// Critical shares the danger red, but is drawn louder everywhere it appears
+// (filled badge, tinted row) -- see `CRITICAL_BADGE_STYLE`.
+export const PRIORITY_COLOR: Record<TaskPriority, string> = { critical: DANGER_RED, high: DANGER_RED, med: "#f5d547", low: "#45908d" }
 
-// Sort order for rows *within* an area card: open work first, then whatever
-// needs a look, done last. Distinct from the old cycling order (which never
-// included "done" — a bare PATCH can't reach it) since this is pure display
-// sorting, not a set of reachable states.
-export const STATUS_SORT_ORDER: TaskStatus[] = ["todo", "doing", "review", "done"]
+/** Filled, can't-miss badge for a "Perish if not done" task. */
+export const CRITICAL_BADGE_STYLE = {
+    display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap",
+    fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase",
+    background: DANGER_RED, color: "#fff", boxShadow: `0 0 0 3px ${tintColor(DANGER_RED, 22)}`,
+} as const
+
+/** Priorities a viewer may pick in a form. "critical" is leads-only; a
+ *  non-lead editing a task that's already critical sees it locked there. */
+export function priorityChoices(canAssign: boolean, current?: TaskPriority): TaskPriority[] {
+    if (canAssign) return PRIORITY_ORDER
+    if (current === "critical") return ["critical"]
+    return PRIORITY_ORDER.filter(p => p !== "critical")
+}
+
 export type SettableStatus = Exclude<TaskStatus, "done">
 
 // The 5 avatar background pastels + the fixed dark-ink initial color, picked
@@ -103,18 +115,53 @@ export function assigneeOptions(people: Person[]) {
     return [{ value: "", label: "Unassigned" }, ...people.map(p => ({ value: p.id, label: p.display_name }))]
 }
 
-export function sortWithinArea(a: Task, b: Task): number {
-    const byStatus = STATUS_SORT_ORDER.indexOf(a.status) - STATUS_SORT_ORDER.indexOf(b.status)
-    if (byStatus !== 0) return byStatus
+const PRIORITY_RANK: Record<TaskPriority, number> = { critical: 0, high: 1, med: 2, low: 3 }
+
+function compareDue(a: Task, b: Task): number {
     if (a.due_date === b.due_date) return 0
     if (a.due_date === null) return 1
     if (b.due_date === null) return -1
     return a.due_date.localeCompare(b.due_date)
 }
 
+/** How the board orders rows inside a group: by priority (high → low, then
+ *  soonest due) by default, or by due date (soonest first, then priority). */
+export type TaskSort = "priority" | "due"
+export const TASK_SORT_OPTIONS: { value: TaskSort; label: string }[] = [
+    { value: "priority", label: "Sort: Priority" },
+    { value: "due", label: "Sort: Due date" },
+]
+
+export function compareTasks(sort: TaskSort): (a: Task, b: Task) => number {
+    return (a, b) => {
+        const byPriority = PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
+        const primary = sort === "priority" ? byPriority || compareDue(a, b) : compareDue(a, b) || byPriority
+        return primary || a.title.localeCompare(b.title)
+    }
+}
+
+/** Done tasks sit in their own collapsed section, most recently finished first. */
+export function compareDone(a: Task, b: Task): number {
+    return b.updated_at.localeCompare(a.updated_at)
+}
+
+/** "Posted Oct 3" from a task's `created_at` timestamp. */
+export function formatPosted(iso: string): string {
+    const d = new Date(iso)
+    return `Posted ${MONTHS[d.getMonth()]} ${d.getDate()}`
+}
+
+/** Router `state` accepted by `/tasks` to pre-set its filters. `taskId`
+ *  opens (and scrolls to) that one task -- e.g. from the dashboard card. */
+export interface TasksPageState {
+    bucket?: string
+    who?: WhoFilter
+    taskId?: string
+}
+
 export type WhoFilter = "everyone" | "me" | "unclaimed" | string // string branch = a person id
 export type StatusFilter = "all" | TaskStatus
-export type Quick = null | "unclaimed" | "overdue" | "review"
+export type Quick = null | "unclaimed" | "overdue" | "review" | "todo" | "doing"
 
 export interface TaskFilter {
     bucket: string          // "all" | bucket slug
@@ -140,5 +187,29 @@ export function matchesFilter(
     if (filter.quick === "unclaimed" && task.assignee_id) return false
     if (filter.quick === "overdue" && !isOverdue(task, todayMs)) return false
     if (filter.quick === "review" && task.status !== "review") return false
+    if (filter.quick === "todo" && task.status !== "todo") return false
+    if (filter.quick === "doing" && task.status !== "doing") return false
     return true
 }
+
+/** Distinct existing area names in `bucket` (first spelling seen, case-
+ *  insensitive), alphabetical -- the new/edit task form's area suggestions. */
+export function areaSuggestions(tasks: Task[], bucket: string): string[] {
+    const byKey = new Map<string, string>()
+    for (const t of tasks) {
+        if (t.bucket !== bucket || !t.area.trim()) continue
+        const key = t.area.trim().toLowerCase()
+        if (!byKey.has(key)) byKey.set(key, t.area.trim())
+    }
+    return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b))
+}
+
+/** One-line explanations behind the "?" next to each task form label. */
+export const TASK_FIELD_HELP = {
+    title: "A short description of the work. This is what everyone sees on the board.",
+    area: "The project this belongs to inside the subteam, like Drivetrain. Tasks with the same area are grouped together. Pick an existing one or type a new name; blank means General.",
+    bucket: "Which subteam's board this task shows up on.",
+    assignee: "Who owns this task. Leave it Unassigned so anyone can claim it.",
+    priority: "How urgent it is. The board lists Perish if not done first (leads only), then High, Medium, and Low.",
+    due: "When it should be done by. After this date the task shows as overdue.",
+} as const

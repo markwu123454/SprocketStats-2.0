@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from "react"
 import { useLocation } from "react-router-dom"
-import { Pencil, X } from "lucide-react"
+import { ChevronDown, ChevronRight, Pencil, X } from "lucide-react"
 import { useOnboardedUser, type OnboardedUser } from "@/contexts/authContext"
 import Dropdown from "@/components/ui/Dropdown"
+import AreaInput from "@/components/tasks/AreaInput"
+import HelpTip from "@/components/tasks/HelpTip"
 import { BUCKET_OPTIONS, TASK_BUCKETS, bucketLabel } from "@/lib/taskBuckets"
 import {
     addContributor, addNote, createTask, deleteNote, fetchNotes, leaveTask, removeContributor, reviewTask, unreviewTask, updateTask,
@@ -10,24 +12,18 @@ import {
     type CreateTaskInput, type Person, type Task, type TaskNote, type TaskPriority, type UpdateTaskInput,
 } from "@/lib/tasksApi"
 import {
-    DANGER_RED, PRIORITY_ORDER, PRIORITY_COLOR, AVATAR_INK,
-    tint, tintColor, avatarBg, initialOf, formatRelativeTime, isOverdue, rowDue, assigneeOptions, sortWithinArea,
-    matchesFilter, type SettableStatus, type WhoFilter, type StatusFilter, type Quick,
+    DANGER_RED, PRIORITY_COLOR, AVATAR_INK, CRITICAL_BADGE_STYLE, priorityChoices,
+    tint, tintColor, avatarBg, initialOf, formatRelativeTime, formatPosted, isOverdue, rowDue, assigneeOptions,
+    compareTasks, compareDone, matchesFilter, areaSuggestions, TASK_SORT_OPTIONS, TASK_FIELD_HELP,
+    type SettableStatus, type WhoFilter, type Quick, type TaskSort, type TasksPageState,
 } from "@/lib/taskFormat"
 import { useTaskBoard } from "@/lib/useTaskBoard"
-
-/** Router `state` accepted by `/tasks` to pre-set its filters. */
-export interface TasksPageState {
-    bucket?: string
-    who?: WhoFilter
-}
 
 interface SubteamGroup {
     bucket: string
     label: string
     countLabel: string
-    singleArea: boolean
-    areas: { area: string; tasks: Task[] }[]
+    areas: { key: string; area: string; tasks: Task[] }[]
 }
 
 /**
@@ -60,8 +56,13 @@ export default function TasksPageDesktop() {
 
     const [bucketFilter, setBucketFilter] = useState<string>(initialFilters?.bucket ?? mySubteam ?? "all")
     const [whoFilter, setWhoFilter] = useState<WhoFilter>(initialFilters?.who ?? "everyone")
-    const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
+    const [sort, setSort] = useState<TaskSort>("priority")
     const [quick, setQuick] = useState<Quick>(null)
+    // Areas are treated like buckets inside a subteam, so each one collapses
+    // on its own. Keyed `${bucket}:${area}` -- the same area name can live
+    // under two subteams. Done tasks get one collapsed drawer at the bottom.
+    const [collapsedAreas, setCollapsedAreas] = useState<Set<string>>(() => new Set())
+    const [doneOpen, setDoneOpen] = useState(false)
     const [showEmpties, setShowEmpties] = useState(false)
     const [composing, setComposing] = useState(false)
     const [editingTask, setEditingTask] = useState<Task | null>(null)
@@ -73,6 +74,35 @@ export default function TasksPageDesktop() {
     const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
     const [statusMenuOpenId, setStatusMenuOpenId] = useState<string | null>(null)
     const [drafts, setDrafts] = useState<Record<string, string>>({})
+
+    // `taskId` in router state (the dashboard's task links) opens that row
+    // once the board has loaded, scrolls to it and briefly highlights it.
+    const focusTaskId = initialFilters?.taskId ?? null
+    const focusHandled = useRef(false)
+    const [highlightId, setHighlightId] = useState<string | null>(null)
+    useEffect(() => {
+        if (focusHandled.current || !focusTaskId || loading) return
+        focusHandled.current = true
+        const task = tasks.find(t => t.id === focusTaskId)
+        if (!task) return
+        if (task.status === "done") setDoneOpen(true)
+        setCollapsedAreas(prev => {
+            const next = new Set(prev)
+            next.delete(`${task.bucket}:${task.area.toLowerCase()}`)
+            return next
+        })
+        applyExpand(task, task.id)
+        setHighlightId(task.id)
+        requestAnimationFrame(() => {
+            document.querySelector(`[data-task-id="${task.id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })
+        })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot on first load
+    }, [loading, tasks, focusTaskId])
+    useEffect(() => {
+        if (!highlightId) return
+        const timer = setTimeout(() => setHighlightId(null), 2000)
+        return () => clearTimeout(timer)
+    }, [highlightId])
 
     // Click anywhere outside an open row popover (status picker / overflow
     // menu) closes it. Their trigger + popover share a `data-task-popover`
@@ -116,9 +146,10 @@ export default function TasksPageDesktop() {
         }
     }
 
-    // Rail counts and the header's quick-filter chips read the whole board,
-    // independent of the active bucket/who/status/quick filters -- an
-    // at-a-glance overview, matching the mockup's own unfiltered computation.
+    // Rail counts read the whole board. The header's quick-filter chips read
+    // the selected subteam (or the whole board under "All tasks"), so inside
+    // a subteam "Unclaimed 3" means three of *that* subteam's tasks -- still
+    // independent of the who/quick filters, as an at-a-glance overview.
     const bucketCounts = useMemo(() => {
         const counts: Record<string, number> = Object.fromEntries(TASK_BUCKETS.map(b => [b, 0]))
         for (const t of tasks) if (t.bucket in counts) counts[t.bucket]++
@@ -126,44 +157,61 @@ export default function TasksPageDesktop() {
     }, [tasks])
     const allCount = tasks.length
     const hiddenCount = TASK_BUCKETS.filter(b => !bucketCounts[b]).length
-    const unclaimedCount = tasks.filter(t => !t.assignee_id).length
-    const overdueCount = tasks.filter(t => isOverdue(t, todayMs)).length
-    const reviewCount = tasks.filter(t => t.status === "review").length
-    const totalLabel = `${allCount} ${allCount === 1 ? "task" : "tasks"}`
+    const scopedTasks = bucketFilter === "all" ? tasks : tasks.filter(t => t.bucket === bucketFilter)
+    const scopedLive = scopedTasks.filter(t => t.status !== "done")
+    const unclaimedCount = scopedLive.filter(t => !t.assignee_id).length
+    const overdueCount = scopedLive.filter(t => isOverdue(t, todayMs)).length
+    const reviewCount = scopedLive.filter(t => t.status === "review").length
+    const todoCount = scopedLive.filter(t => t.status === "todo").length
+    const doingCount = scopedLive.filter(t => t.status === "doing").length
+    const totalLabel = `${scopedTasks.length} ${scopedTasks.length === 1 ? "task" : "tasks"}`
 
     const visibleTasks = useMemo(
-        () => tasks.filter(t => matchesFilter(t, { bucket: bucketFilter, status: statusFilter, who: whoFilter, quick }, user.id, todayMs)),
-        [tasks, bucketFilter, statusFilter, whoFilter, quick, user.id, todayMs],
+        () => tasks.filter(t => matchesFilter(t, { bucket: bucketFilter, status: "all", who: whoFilter, quick }, user.id, todayMs)),
+        [tasks, bucketFilter, whoFilter, quick, user.id, todayMs],
     )
+    const doneTasks = useMemo(() => visibleTasks.filter(t => t.status === "done").sort(compareDone), [visibleTasks])
 
     const groups = useMemo<SubteamGroup[]>(() => {
         const result: SubteamGroup[] = []
         for (const bucket of TASK_BUCKETS) {
-            const bucketTasks = visibleTasks.filter(t => t.bucket === bucket)
+            const bucketTasks = visibleTasks.filter(t => t.bucket === bucket && t.status !== "done")
             if (bucketTasks.length === 0) continue
             // Group case-insensitively (the backend normalizes new writes, but
             // older rows may differ only in case); show the first spelling seen.
-            const byArea = new Map<string, { area: string; tasks: Task[] }>()
+            const byArea = new Map<string, { key: string; area: string; tasks: Task[] }>()
             for (const t of bucketTasks) {
-                const key = t.area.toLowerCase()
+                const key = `${bucket}:${t.area.toLowerCase()}`
                 const group = byArea.get(key)
                 if (group) group.tasks.push(t)
-                else byArea.set(key, { area: t.area, tasks: [t] })
+                else byArea.set(key, { key, area: t.area, tasks: [t] })
             }
             const areas = Array.from(byArea.values())
                 .sort((a, b) => a.area.localeCompare(b.area))
-                .map(g => ({ area: g.area, tasks: g.tasks.sort(sortWithinArea) }))
+                .map(g => ({ ...g, tasks: g.tasks.sort(compareTasks(sort)) }))
             result.push({
                 bucket,
                 label: bucketLabel(bucket),
                 countLabel: bucketTasks.length === 1 ? "1 task" : `${bucketTasks.length} tasks`,
                 areas,
-                singleArea: areas.length === 1,
             })
         }
         return result
-    }, [visibleTasks])
-    const isEmpty = groups.length === 0
+    }, [visibleTasks, sort])
+    const isEmpty = groups.length === 0 && doneTasks.length === 0
+
+    function toggleArea(key: string) {
+        setCollapsedAreas(prev => {
+            const next = new Set(prev)
+            if (next.has(key)) next.delete(key)
+            else next.add(key)
+            return next
+        })
+    }
+
+    function toggleQuick(q: Exclude<Quick, null>) {
+        setQuick(cur => cur === q ? null : q)
+    }
 
     const whoOptions = [
         { value: "everyone", label: "Everyone" },
@@ -171,16 +219,49 @@ export default function TasksPageDesktop() {
         { value: "unclaimed", label: "Unassigned" },
         ...people.map(p => ({ value: p.id, label: p.display_name })),
     ]
-    const statusOptions = [
-        { value: "all", label: "Any status" },
-        { value: "todo", label: STATUS_LABEL.todo },
-        { value: "doing", label: STATUS_LABEL.doing },
-        { value: "review", label: STATUS_LABEL.review },
-        { value: "done", label: STATUS_LABEL.done },
-    ]
 
     const dropdownTriggerClassName = "rounded-lg border px-3 py-2 text-sm transition theme-bg theme-border theme-text"
     const defaultBucket = bucketFilter !== "all" ? bucketFilter : (mySubteam ?? "general")
+
+    function renderRow(task: Task, isFirst: boolean) {
+        return (
+            <TaskRow
+                key={task.id}
+                highlighted={highlightId === task.id}
+                task={task}
+                isFirst={isFirst}
+                canEdit={canEditTask(task)}
+                canChangeStatus={canChangeStatus(task)}
+                canAssign={canAssign}
+                people={people}
+                currentUser={user}
+                todayMs={todayMs}
+                unread={unread(task)}
+                expanded={expandedId === task.id}
+                menuOpen={menuOpenId === task.id}
+                statusMenuOpen={statusMenuOpenId === task.id}
+                draft={drafts[task.id] ?? ""}
+                dropdownTriggerClassName={dropdownTriggerClassName}
+                onDraftChange={v => setDrafts(prev => ({ ...prev, [task.id]: v }))}
+                onToggleRow={() => toggleExpand(task)}
+                onOpenForNote={() => openForNote(task)}
+                onToggleMenu={() => setMenuOpenId(id => id === task.id ? null : task.id)}
+                onToggleStatusMenu={() => setStatusMenuOpenId(id => (id === task.id ? null : task.id))}
+                onSetStatus={status => void board.runAction(() => updateTask(task.id, { status }))}
+                onClaim={() => void board.handleClaim(task.id)}
+                onOwnerChange={personId => void board.runAction(() => updateTask(task.id, { assignee_id: personId || null }))}
+                onAddSelf={() => void board.runAction(() => addContributor(task.id))}
+                onAddOther={personId => void board.runAction(() => addContributor(task.id, personId))}
+                onRemoveContributor={personId => void board.runAction(() => removeContributor(task.id, personId))}
+                onLeave={() => void board.runAction(() => leaveTask(task.id))}
+                onMarkReviewed={() => void board.runAction(() => reviewTask(task.id))}
+                onUnreview={() => void board.runAction(() => unreviewTask(task.id))}
+                onEdit={() => setEditingTask(task)}
+                onDelete={() => void board.handleDelete(task)}
+                onNoteCountChange={board.bumpNoteCount}
+            />
+        )
+    }
 
     if (loading) {
         return (
@@ -199,9 +280,11 @@ export default function TasksPageDesktop() {
                         <h1 style={{ margin: 0, fontSize: 28, lineHeight: 1.1, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--theme-h1-color)" }}>Task board</h1>
                         <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", fontSize: 12.5, color: "var(--theme-subtext-color)" }}>
                             <span style={{ whiteSpace: "nowrap", marginRight: 2 }}>{totalLabel}</span>
-                            <QuickChip label="Unclaimed" dot="#f5d547" count={unclaimedCount} active={quick === "unclaimed"} onClick={() => setQuick(q => q === "unclaimed" ? null : "unclaimed")} />
-                            <QuickChip label="Overdue" dot="#f87171" count={overdueCount} active={quick === "overdue"} onClick={() => setQuick(q => q === "overdue" ? null : "overdue")} />
-                            <QuickChip label="Needs review" dot="#9ad4c4" count={reviewCount} active={quick === "review"} onClick={() => setQuick(q => q === "review" ? null : "review")} />
+                            <QuickChip label="Unclaimed" dot="#f5d547" count={unclaimedCount} active={quick === "unclaimed"} onClick={() => toggleQuick("unclaimed")} />
+                            <QuickChip label="Overdue" dot="#f87171" count={overdueCount} active={quick === "overdue"} onClick={() => toggleQuick("overdue")} />
+                            <QuickChip label={STATUS_LABEL.todo} dot="#93c5fd" count={todoCount} active={quick === "todo"} onClick={() => toggleQuick("todo")} />
+                            <QuickChip label={STATUS_LABEL.doing} dot="#c4b5fd" count={doingCount} active={quick === "doing"} onClick={() => toggleQuick("doing")} />
+                            <QuickChip label="Needs review" dot="#9ad4c4" count={reviewCount} active={quick === "review"} onClick={() => toggleQuick("review")} />
                         </div>
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
@@ -209,7 +292,7 @@ export default function TasksPageDesktop() {
                             <Dropdown value={whoFilter} onChange={v => setWhoFilter(v as WhoFilter)} options={whoOptions} triggerClassName={dropdownTriggerClassName} searchable />
                         </div>
                         <div style={{ width: 150 }}>
-                            <Dropdown value={statusFilter} onChange={v => setStatusFilter(v as StatusFilter)} options={statusOptions} triggerClassName={dropdownTriggerClassName} menuAlign="right" />
+                            <Dropdown value={sort} onChange={v => setSort(v as TaskSort)} options={TASK_SORT_OPTIONS} triggerClassName={dropdownTriggerClassName} menuAlign="right" />
                         </div>
                         <button
                             onClick={() => setComposing(v => !v)}
@@ -232,6 +315,7 @@ export default function TasksPageDesktop() {
 
                 {composing && (
                     <ComposeForm
+                        tasks={tasks}
                         canAssign={canAssign}
                         people={people}
                         defaultBucket={defaultBucket}
@@ -274,62 +358,44 @@ export default function TasksPageDesktop() {
                                     <span style={{ fontSize: 11.5, color: "var(--theme-subtext-color)" }}>{group.countLabel}</span>
                                     <span style={{ flex: 1, height: 1, background: "var(--theme-border)" }} />
                                 </div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: group.singleArea ? 0 : 14 }}>
-                                    {group.areas.map(areaGroup => (
-                                        <div key={areaGroup.area}>
-                                            {!group.singleArea && (
-                                                <div style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--theme-subtext-color)", padding: "0 2px 6px" }}>
-                                                    {areaGroup.area}
-                                                </div>
-                                            )}
-                                            <div style={{ border: "1px solid var(--theme-border)", borderRadius: 12, background: "var(--theme-button-bg)" }}>
-                                                {areaGroup.tasks.map((task, i) => (
-                                                    <TaskRow
-                                                        key={task.id}
-                                                        task={task}
-                                                        isFirst={i === 0}
-                                                        canEdit={canEditTask(task)}
-                                                        canChangeStatus={canChangeStatus(task)}
-                                                        canAssign={canAssign}
-                                                        people={people}
-                                                        currentUser={user}
-                                                        todayMs={todayMs}
-                                                        unread={unread(task)}
-                                                        expanded={expandedId === task.id}
-                                                        menuOpen={menuOpenId === task.id}
-                                                        statusMenuOpen={statusMenuOpenId === task.id}
-                                                        draft={drafts[task.id] ?? ""}
-                                                        dropdownTriggerClassName={dropdownTriggerClassName}
-                                                        onDraftChange={v => setDrafts(prev => ({ ...prev, [task.id]: v }))}
-                                                        onToggleRow={() => toggleExpand(task)}
-                                                        onOpenForNote={() => openForNote(task)}
-                                                        onToggleMenu={() => setMenuOpenId(id => id === task.id ? null : task.id)}
-                                                        onToggleStatusMenu={() => setStatusMenuOpenId(id => (id === task.id ? null : task.id))}
-                                                        onSetStatus={status => void board.runAction(() => updateTask(task.id, { status }))}
-                                                        onClaim={() => void board.handleClaim(task.id)}
-                                                        onOwnerChange={personId => void board.runAction(() => updateTask(task.id, { assignee_id: personId || null }))}
-                                                        onAddSelf={() => void board.runAction(() => addContributor(task.id))}
-                                                        onAddOther={personId => void board.runAction(() => addContributor(task.id, personId))}
-                                                        onRemoveContributor={personId => void board.runAction(() => removeContributor(task.id, personId))}
-                                                        onLeave={() => void board.runAction(() => leaveTask(task.id))}
-                                                        onMarkReviewed={() => void board.runAction(() => reviewTask(task.id))}
-                                                        onUnreview={() => void board.runAction(() => unreviewTask(task.id))}
-                                                        onEdit={() => setEditingTask(task)}
-                                                        onDelete={() => void board.handleDelete(task)}
-                                                        onNoteCountChange={board.bumpNoteCount}
-                                                    />
-                                                ))}
+                                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                                    {group.areas.map(areaGroup => {
+                                        const collapsed = collapsedAreas.has(areaGroup.key)
+                                        return (
+                                            <div key={areaGroup.key}>
+                                                <SectionToggle
+                                                    label={areaGroup.area}
+                                                    count={areaGroup.tasks.length}
+                                                    open={!collapsed}
+                                                    onClick={() => toggleArea(areaGroup.key)}
+                                                />
+                                                {!collapsed && (
+                                                    <div style={{ border: "1px solid var(--theme-border)", borderRadius: 12, background: "var(--theme-button-bg)" }}>
+                                                        {areaGroup.tasks.map((task, i) => renderRow(task, i === 0))}
+                                                    </div>
+                                                )}
                                             </div>
-                                        </div>
-                                    ))}
+                                        )
+                                    })}
                                 </div>
                             </section>
                         ))}
 
+                        {doneTasks.length > 0 && (
+                            <section style={{ marginTop: 6 }}>
+                                <SectionToggle label="Done" count={doneTasks.length} open={doneOpen} onClick={() => setDoneOpen(v => !v)} strong />
+                                {doneOpen && (
+                                    <div style={{ border: "1px solid var(--theme-border)", borderRadius: 12, background: "var(--theme-button-bg)" }}>
+                                        {doneTasks.map((task, i) => renderRow(task, i === 0))}
+                                    </div>
+                                )}
+                            </section>
+                        )}
+
                         {isEmpty && (
                             <div style={{ border: "1px dashed var(--theme-border)", borderRadius: 12, padding: "40px 24px", textAlign: "center" }}>
                                 <div style={{ fontSize: 15, fontWeight: 600, color: "var(--theme-h1-color)" }}>Nothing matches these filters</div>
-                                <div style={{ marginTop: 6, fontSize: 13, color: "var(--theme-subtext-color)" }}>Try switching Who back to Everyone, or clear the status filter.</div>
+                                <div style={{ marginTop: 6, fontSize: 13, color: "var(--theme-subtext-color)" }}>Try switching Who back to Everyone, or clear the quick filter.</div>
                             </div>
                         )}
                     </div>
@@ -339,6 +405,7 @@ export default function TasksPageDesktop() {
             {editingTask && (
                 <EditTaskModal
                     task={editingTask}
+                    tasks={tasks}
                     canAssign={canAssign}
                     people={people}
                     onClose={() => setEditingTask(null)}
@@ -386,6 +453,33 @@ function RailRow({ active, label, count, onClick }: { active: boolean; label: st
     )
 }
 
+/** Collapsible header for an area (or the bottom "Done" drawer) -- areas are
+ *  treated like buckets inside a subteam, so each one folds away on its own. */
+function SectionToggle({ label, count, open, onClick, strong }: { label: string; count: number; open: boolean; onClick: () => void; strong?: boolean }) {
+    const Chevron = open ? ChevronDown : ChevronRight
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            aria-expanded={open}
+            className="hover:text-(--theme-h1-color)"
+            style={{
+                font: "inherit", border: "none", background: "transparent", cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 6, padding: strong ? "0 2px 8px" : "0 2px 6px",
+                width: strong ? "100%" : undefined,
+                fontSize: strong ? 10.5 : 11, letterSpacing: "0.1em", textTransform: "uppercase",
+                fontWeight: strong ? 700 : 500,
+                color: strong ? "var(--theme-h1-color)" : "var(--theme-subtext-color)",
+            }}
+        >
+            <Chevron size={13} />
+            <span>{label}</span>
+            <span style={{ letterSpacing: 0, fontWeight: 500, color: "var(--theme-subtext-color)", opacity: strong ? 1 : 0.75 }}>{count}</span>
+            {strong && <span style={{ flex: 1, height: 1, background: "var(--theme-border)" }} />}
+        </button>
+    )
+}
+
 function QuickChip({ label, dot, count, active, onClick }: { label: string; dot: string; count: number; active: boolean; onClick: () => void }) {
     const empty = count === 0
     const dotColor = empty && !active ? tint("--theme-border", 80) : dot
@@ -411,7 +505,7 @@ function QuickChip({ label, dot, count, active, onClick }: { label: string; dot:
     )
 }
 
-const composeLabelStyle: CSSProperties = { fontSize: 12.5, fontWeight: 700, color: "var(--theme-h1-color)" }
+const composeLabelStyle: CSSProperties = { fontSize: 12.5, fontWeight: 700, color: "var(--theme-h1-color)", display: "flex", alignItems: "center", gap: 6 }
 const composeInputStyle: CSSProperties = {
     height: 38, boxSizing: "border-box", width: "100%", padding: "0 12px", borderRadius: 8,
     border: "1px solid var(--theme-border)", background: "var(--theme-bg)", color: "var(--theme-text)",
@@ -423,6 +517,7 @@ const composeInputStyle: CSSProperties = {
 const composeInputFocusClass = "focus:border-(--theme-h1-color)"
 
 interface ComposeFormProps {
+    tasks: Task[]
     canAssign: boolean
     people: Person[]
     defaultBucket: string
@@ -432,7 +527,7 @@ interface ComposeFormProps {
     onError: (message: string) => void
 }
 
-function ComposeForm({ canAssign, people, defaultBucket, dropdownTriggerClassName, onCreated, onClose, onError }: ComposeFormProps) {
+function ComposeForm({ tasks, canAssign, people, defaultBucket, dropdownTriggerClassName, onCreated, onClose, onError }: ComposeFormProps) {
     const [title, setTitle] = useState("")
     const [area, setArea] = useState("")
     const [bucket, setBucket] = useState(defaultBucket)
@@ -473,7 +568,7 @@ function ComposeForm({ canAssign, people, defaultBucket, dropdownTriggerClassNam
             <form onSubmit={e => void handleSubmit(e)} onKeyDown={onFormKeyDown} style={{ display: "contents" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, gridColumn: "span 2", minWidth: 0 }}>
-                        <span style={composeLabelStyle}>Task</span>
+                        <span style={composeLabelStyle}>Task <HelpTip text={TASK_FIELD_HELP.title} /></span>
                         <input
                             value={title}
                             onChange={e => setTitle(e.target.value)}
@@ -484,31 +579,32 @@ function ComposeForm({ canAssign, people, defaultBucket, dropdownTriggerClassNam
                         />
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                        <span style={composeLabelStyle}>Area</span>
-                        <input
+                        <span style={composeLabelStyle}>Area <HelpTip text={TASK_FIELD_HELP.area} /></span>
+                        <AreaInput
                             value={area}
-                            onChange={e => setArea(e.target.value)}
+                            onChange={setArea}
+                            suggestions={areaSuggestions(tasks, bucket)}
                             placeholder="General"
                             className={composeInputFocusClass}
                             style={composeInputStyle}
                         />
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                        <span style={composeLabelStyle}>Subteam</span>
+                        <span style={composeLabelStyle}>Subteam <HelpTip text={TASK_FIELD_HELP.bucket} /></span>
                         <Dropdown value={bucket} onChange={setBucket} options={BUCKET_OPTIONS} triggerClassName={dropdownTriggerClassName} />
                     </div>
                     {canAssign && (
                         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                            <span style={composeLabelStyle}>Assign to</span>
+                            <span style={composeLabelStyle}>Assign to <HelpTip text={TASK_FIELD_HELP.assignee} /></span>
                             <Dropdown value={assigneeId} onChange={setAssigneeId} options={assigneeOptions(people)} triggerClassName={dropdownTriggerClassName} searchable />
                         </div>
                     )}
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                        <span style={composeLabelStyle}>Priority</span>
-                        <Dropdown value={priority} onChange={v => setPriority(v as TaskPriority)} options={PRIORITY_ORDER.map(p => ({ value: p, label: PRIORITY_LABEL[p] }))} triggerClassName={dropdownTriggerClassName} />
+                        <span style={composeLabelStyle}>Priority <HelpTip text={TASK_FIELD_HELP.priority} /></span>
+                        <Dropdown value={priority} onChange={v => setPriority(v as TaskPriority)} options={priorityChoices(canAssign).map(p => ({ value: p, label: PRIORITY_LABEL[p] }))} triggerClassName={dropdownTriggerClassName} />
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                        <span style={composeLabelStyle}>Due</span>
+                        <span style={composeLabelStyle}>Due <HelpTip text={TASK_FIELD_HELP.due} /></span>
                         <input
                             type="date"
                             value={dueDate}
@@ -552,6 +648,8 @@ const detailLabelStyle: CSSProperties = { fontSize: 10, letterSpacing: "0.1em", 
 interface TaskRowProps {
     task: Task
     isFirst: boolean
+    /** Briefly ringed after being opened from a dashboard link. */
+    highlighted: boolean
     canEdit: boolean
     canChangeStatus: boolean
     canAssign: boolean
@@ -584,7 +682,7 @@ interface TaskRowProps {
 }
 
 function TaskRow({
-    task, isFirst, canEdit, canChangeStatus, canAssign, people, currentUser, todayMs, unread, expanded, menuOpen, statusMenuOpen, draft,
+    task, isFirst, highlighted, canEdit, canChangeStatus, canAssign, people, currentUser, todayMs, unread, expanded, menuOpen, statusMenuOpen, draft,
     dropdownTriggerClassName, onDraftChange, onToggleRow, onOpenForNote, onToggleMenu, onToggleStatusMenu, onSetStatus,
     onClaim, onOwnerChange, onAddSelf, onAddOther, onRemoveContributor, onLeave, onMarkReviewed, onUnreview, onEdit, onDelete,
     onNoteCountChange,
@@ -593,6 +691,7 @@ function TaskRow({
     const review = task.status === "review"
     const due = rowDue(task, todayMs)
     const priorityColor = done ? tint("--theme-border", 70) : PRIORITY_COLOR[task.priority]
+    const critical = task.priority === "critical" && !done
     const isFinisher = task.finished_by === currentUser.id
     const disabledTitle = "Only the creator, a lead, or someone on this task can update its status"
 
@@ -615,17 +714,24 @@ function TaskRow({
     if (canEdit) menuItems.push({ label: "Delete task", onClick: onDelete, danger: true })
 
     return (
-        <div style={{ borderTop: isFirst ? "none" : "1px solid var(--ag-grid-row-border)" }}>
+        <div
+            data-task-id={task.id}
+            style={{
+                borderTop: isFirst ? "none" : "1px solid var(--ag-grid-row-border)",
+                boxShadow: highlighted ? "inset 0 0 0 2px var(--theme-text-contrast)" : "none",
+                transition: "box-shadow 0.6s ease",
+            }}
+        >
             <div
                 onClick={onToggleRow}
                 className="hover:bg-(--ag-grid-hover-bg)"
                 style={{
                     display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px 12px",
                     minHeight: 54, padding: "6px 12px 6px 0", cursor: "pointer",
-                    background: expanded ? "var(--ag-grid-hover-bg)" : "transparent",
+                    background: expanded ? "var(--ag-grid-hover-bg)" : (critical ? tintColor(DANGER_RED, 10) : "transparent"),
                 }}
             >
-                <span style={{ width: 3, alignSelf: "stretch", flex: "none", borderRadius: "0 3px 3px 0", background: priorityColor }} />
+                <span style={{ width: critical ? 5 : 3, alignSelf: "stretch", flex: "none", borderRadius: "0 3px 3px 0", background: priorityColor }} />
 
                 <button
                     type="button"
@@ -653,10 +759,16 @@ function TaskRow({
                     }}>
                         {task.title}
                     </span>
-                    <span style={{ flex: "none", fontSize: 12, whiteSpace: "nowrap", color: due.color }}>{due.text}</span>
-                    <span style={{ flex: "none", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap", color: "var(--theme-subtext-color)", opacity: 0.75 }}>
-                        {PRIORITY_LABEL[task.priority]}
+                    <span style={{ flex: "none", fontSize: 12, whiteSpace: "nowrap", color: "var(--theme-subtext-color)" }}>
+                        <span style={{ color: due.color }}>{due.text}</span> · {formatPosted(task.created_at)}
                     </span>
+                    {critical ? (
+                        <span style={{ ...CRITICAL_BADGE_STYLE, flex: "none", alignSelf: "center" }}>☠ {PRIORITY_LABEL.critical}</span>
+                    ) : (
+                        <span style={{ flex: "none", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap", color: "var(--theme-subtext-color)", opacity: 0.75 }}>
+                            {PRIORITY_LABEL[task.priority]}
+                        </span>
+                    )}
                 </span>
 
                 <span style={{ display: "flex", alignItems: "center", gap: 10, flex: "none", marginLeft: "auto" }}>
@@ -1204,6 +1316,7 @@ const dropdownWrapStyle: CSSProperties = { minHeight: 38, boxSizing: "border-box
 
 interface EditTaskModalProps {
     task: Task
+    tasks: Task[]
     canAssign: boolean
     people: Person[]
     onClose: () => void
@@ -1214,7 +1327,7 @@ interface EditTaskModalProps {
 /** Not part of the mockup (its seed-data prototype has no equivalent) --
  *  kept from the previous implementation essentially as-is per SPEC
  *  "Housekeeping" ("restyle rather than rewrite where the design allows"). */
-function EditTaskModal({ task, canAssign, people, onClose, onSaved, onError }: EditTaskModalProps) {
+function EditTaskModal({ task, tasks, canAssign, people, onClose, onSaved, onError }: EditTaskModalProps) {
     const [title, setTitle] = useState(task.title)
     const [area, setArea] = useState(task.area)
     const [bucket, setBucket] = useState(task.bucket)
@@ -1264,10 +1377,10 @@ function EditTaskModal({ task, canAssign, people, onClose, onSaved, onError }: E
                         <input value={title} onChange={e => setTitle(e.target.value)} className={fieldInputClass} style={fieldInputStyle} />
                     </label>
                     <div className="grid grid-cols-2 gap-3">
-                        <label className="flex flex-col gap-1">
+                        <div className="flex flex-col gap-1">
                             <span className="text-xs font-medium theme-subtext-color">Area</span>
-                            <input value={area} onChange={e => setArea(e.target.value)} className={fieldInputClass} style={fieldInputStyle} />
-                        </label>
+                            <AreaInput value={area} onChange={setArea} suggestions={areaSuggestions(tasks, bucket)} placeholder="General" className={fieldInputClass} style={fieldInputStyle} />
+                        </div>
                         <label className="flex flex-col gap-1">
                             <span className="text-xs font-medium theme-subtext-color">Due date</span>
                             <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={fieldInputClass} style={fieldInputStyle} />
@@ -1286,7 +1399,7 @@ function EditTaskModal({ task, canAssign, people, onClose, onSaved, onError }: E
                                 <Dropdown
                                     value={priority}
                                     onChange={v => setPriority(v as TaskPriority)}
-                                    options={PRIORITY_ORDER.map(p => ({ value: p, label: PRIORITY_LABEL[p] }))}
+                                    options={priorityChoices(canAssign, task.priority).map(p => ({ value: p, label: PRIORITY_LABEL[p] }))}
                                     triggerClassName="px-3 py-2 text-sm theme-text"
                                 />
                             </div>

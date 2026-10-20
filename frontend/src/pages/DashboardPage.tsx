@@ -52,7 +52,7 @@ function isOverdue(dateStr: string): boolean {
     return parseLocalDate(dateStr) < today
 }
 
-const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, med: 1, low: 2 }
+const PRIORITY_RANK: Record<TaskPriority, number> = { critical: 0, high: 1, med: 2, low: 3 }
 
 const cardStyle = { background: "var(--theme-bg)", borderColor: "var(--theme-border)" }
 
@@ -191,7 +191,9 @@ export default function DashboardPage() {
                                         if (task.assignee_id !== user.id && task.contributors.some(c => c.id === user.id)) {
                                             metaParts.push(<span key="contributing">Contributing</span>)
                                         }
-                                        if (task.priority === "high") {
+                                        if (task.priority === "critical") {
+                                            metaParts.push(<span key="priority" style={{ color: DANGER_RED, fontWeight: 800, textTransform: "uppercase" }}>☠ {PRIORITY_LABEL.critical}</span>)
+                                        } else if (task.priority === "high") {
                                             metaParts.push(<span key="priority" style={{ color: DANGER_RED }}>{PRIORITY_LABEL.high}</span>)
                                         }
                                         if (task.due_date) {
@@ -202,7 +204,12 @@ export default function DashboardPage() {
                                             )
                                         }
                                         return (
-                                            <div key={task.id} className="min-w-0">
+                                            <Link
+                                                key={task.id}
+                                                to="/tasks"
+                                                state={{ bucket: "all", who: "me", taskId: task.id } satisfies TasksPageState}
+                                                className="min-w-0 block rounded-md -mx-1.5 px-1.5 py-0.5 hover:bg-(--ag-grid-hover-bg)"
+                                            >
                                                 <p className="text-sm font-medium theme-text truncate">{task.title}</p>
                                                 <p className="text-xs theme-subtext-color flex items-center gap-1 flex-wrap">
                                                     {metaParts.map((part, i) => (
@@ -212,7 +219,7 @@ export default function DashboardPage() {
                                                         </span>
                                                     ))}
                                                 </p>
-                                            </div>
+                                            </Link>
                                         )
                                     })}
                                 </div>

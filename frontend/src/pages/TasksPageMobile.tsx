@@ -1,17 +1,21 @@
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react"
+import { useLocation } from "react-router-dom"
 import { ChevronDown, MessageSquare, Plus, Trash2, X } from "lucide-react"
 import { useOnboardedUser, type OnboardedUser } from "@/contexts/authContext"
 import Dropdown from "@/components/ui/Dropdown"
-import { BUCKET_OPTIONS, bucketLabel } from "@/lib/taskBuckets"
+import AreaInput from "@/components/tasks/AreaInput"
+import HelpTip from "@/components/tasks/HelpTip"
+import { BUCKET_OPTIONS, TASK_BUCKETS, bucketLabel } from "@/lib/taskBuckets"
 import {
     addContributor, addNote, createTask, deleteNote, fetchNotes, leaveTask, removeContributor, reviewTask, unreviewTask, updateTask,
     PRIORITY_LABEL, STATUS_LABEL,
     type CreateTaskInput, type Person, type Task, type TaskNote, type TaskPriority, type UpdateTaskInput,
 } from "@/lib/tasksApi"
 import {
-    DANGER_RED, PRIORITY_COLOR, PRIORITY_ORDER, AVATAR_INK,
-    tint, tintColor, avatarBg, initialOf, formatRelativeTime, rowDue, assigneeOptions, sortWithinArea,
-    matchesFilter, type SettableStatus, type StatusFilter, type TaskFilter, type WhoFilter,
+    DANGER_RED, PRIORITY_COLOR, AVATAR_INK, TASK_SORT_OPTIONS, CRITICAL_BADGE_STYLE, priorityChoices,
+    tint, tintColor, avatarBg, initialOf, formatRelativeTime, formatPosted, rowDue, assigneeOptions, compareTasks, compareDone,
+    matchesFilter, type SettableStatus, type TaskFilter, type TaskSort, type TasksPageState, type WhoFilter,
+    areaSuggestions, TASK_FIELD_HELP,
 } from "@/lib/taskFormat"
 import { useTaskBoard, type TaskBoard } from "@/lib/useTaskBoard"
 
@@ -39,11 +43,37 @@ function tintDark(token: string, pct: number): string {
 type Scope = "all" | "unclaimed" | "review"
 type ReviewTabKey = "review" | "done"
 
+/** One collapsible area section of the list. `key` folds the bucket in so
+ *  the same area name under two subteams collapses independently. */
+interface AreaGroup { key: string; area: string; tasks: Task[] }
+interface SubteamGroup { bucket: string; label: string; count: number; areas: AreaGroup[] }
+
+/** Areas group case-insensitively (older rows may differ only in case) --
+ *  same rule as the desktop board's area grouping. */
+function areaKey(task: Task): string {
+    return `${task.bucket}:${task.area.toLowerCase()}`
+}
+
+/** Splits an already-sorted list into area sections, alphabetical by area,
+ *  showing the first spelling seen. Rows keep their incoming order. */
+function groupByArea(list: Task[]): AreaGroup[] {
+    const byArea = new Map<string, AreaGroup>()
+    for (const t of list) {
+        const key = areaKey(t)
+        const group = byArea.get(key)
+        if (group) group.tasks.push(t)
+        else byArea.set(key, { key, area: t.area, tasks: [t] })
+    }
+    return Array.from(byArea.values()).sort((a, b) => a.area.localeCompare(b.area))
+}
+
 /**
  * Mobile task board. `AppShell` already renders the mobile header and the
  * 5-tab bottom bar (see CONTRACT.md "Design -> real app mapping"), so this
  * page is board content only: scope tiles, a subteam chip rail, filters, the
- * task list, and a FAB that opens the new-task sheet.
+ * task list (grouped into collapsible area sections, with done tasks in a
+ * collapsed "Done" section at the very bottom), and a FAB that opens the
+ * new-task sheet.
  *
  * All state/permission logic comes from `useTaskBoard()` + `taskFormat`,
  * shared verbatim with the desktop board so the two pages can't drift on
@@ -66,17 +96,32 @@ type ReviewTabKey = "review" | "done"
  *    requires one (Edit / Send back to To do / Delete), so it's added here
  *    as a small icon button next to the status badge, opening a bottom sheet
  *    in the same visual language as the New/Edit task sheets.
+ *  - No status dropdown: the Tasks / Unclaimed / Review & done tiles (and
+ *    the Awaiting review / Completed tabs) already cover it. Under Tasks,
+ *    done work sits in a collapsed "Done" section at the bottom.
  */
 export default function TasksPageMobile() {
     const user = useOnboardedUser()
     const board = useTaskBoard()
     const { tasks, people, loading, loadError, actionError, setActionError } = board
 
+    // Router state (e.g. from the dashboard card) pre-sets the filters, same
+    // as the desktop board; otherwise land in the viewer's own subteam.
+    const initialState = useLocation().state as TasksPageState | null
+    const targetTaskId = initialState?.taskId ?? null
+
     const [scope, setScope] = useState<Scope>("all")
+    const [bucketFilter, setBucketFilter] = useState<string>(initialState?.bucket ?? board.mySubteam ?? "all")
+    const [whoFilter, setWhoFilter] = useState<WhoFilter>(initialState?.who ?? "everyone")
     const [reviewTab, setReviewTab] = useState<ReviewTabKey>("review")
-    const [bucketFilter, setBucketFilter] = useState<string>("all")
-    const [whoFilter, setWhoFilter] = useState<WhoFilter>("everyone")
-    const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
+    const [sort, setSort] = useState<TaskSort>("priority")
+
+    // Area sections start expanded (a set of *collapsed* keys); the Done
+    // section starts collapsed.
+    const [collapsedAreas, setCollapsedAreas] = useState<Set<string>>(() => new Set())
+    const [doneOpen, setDoneOpen] = useState(false)
+    // The task opened from router state, outlined briefly after scrolling to it.
+    const [highlightId, setHighlightId] = useState<string | null>(null)
 
     // Only one status picker, one notes drawer and one "..." sheet open at a
     // time, board-wide -- mirrors the desktop board's single expandedId/
@@ -87,51 +132,135 @@ export default function TasksPageMobile() {
     const [newTaskOpen, setNewTaskOpen] = useState(false)
     const [editingTask, setEditingTask] = useState<Task | null>(null)
 
-    const live = tasks.filter(t => t.status !== "done")
-    const done = tasks.filter(t => t.status === "done")
+    const live = useMemo(() => tasks.filter(t => t.status !== "done"), [tasks])
+    const done = useMemo(() => tasks.filter(t => t.status === "done"), [tasks])
 
-    // Scope tile / review-tab counts read the whole board, unfiltered by
-    // bucket/who/status -- an at-a-glance overview, matching the mock's own
-    // unfiltered tile computation (CONTRACT.md "Layout, top to bottom" #2).
-    const unclaimedLiveCount = live.filter(t => !t.assignee_id).length
-    const reviewLiveCount = live.filter(t => t.status === "review").length
+    // Tile and tab counts follow the selected subteam (the whole board under
+    // "All tasks"), unfiltered by who -- inside a subteam, "Unclaimed 3"
+    // means three of that subteam's tasks, same as the web header chips.
+    const inBucket = (t: Task) => bucketFilter === "all" || t.bucket === bucketFilter
+    const scopedLive = live.filter(inBucket)
+    const scopedDoneCount = done.filter(inBucket).length
+    const unclaimedLiveCount = scopedLive.filter(t => !t.assignee_id).length
+    const reviewLiveCount = scopedLive.filter(t => t.status === "review").length
 
     const tiles: { key: Scope; label: string; count: number }[] = [
-        { key: "all", label: "Tasks", count: live.length },
+        { key: "all", label: "Tasks", count: scopedLive.length },
         { key: "unclaimed", label: "Unclaimed", count: unclaimedLiveCount },
         { key: "review", label: "Review & done", count: reviewLiveCount },
     ]
-
     const showReviewTabs = scope === "review"
     const reviewTabs: { key: ReviewTabKey; label: string; count: number }[] = [
         { key: "review", label: "Awaiting review", count: reviewLiveCount },
-        { key: "done", label: "Completed", count: done.length },
+        { key: "done", label: "Completed", count: scopedDoneCount },
     ]
+    const showingCompleted = scope === "review" && reviewTab === "done"
 
-    // Base pool per CONTRACT.md "Pool / scope rules": live tasks, except the
-    // Review & done tile's Completed tab (or an explicit "done" status
-    // filter) switches to the done pool instead.
-    const basePool = (scope === "review" && reviewTab === "done") || statusFilter === "done" ? done : live
-
-    // Subteam chip counts read `basePool` only -- *not* narrowed by the
-    // Unclaimed scope or the Review tab's "Needs review" narrowing, matching
-    // the design mock's own chip-count computation exactly (its `pool.filter
-    // (...)`, evaluated before those two `tasks = tasks.filter(...)` lines).
-    // Switching to a bucket while scoped to "Unclaimed" is meant to show
-    // "how many total tasks does CAD have", not "how many of CAD's tasks are
-    // currently unclaimed" -- that number is what the list below shows.
+    // Subteam chip counts read the live pool only -- *not* narrowed by the
+    // Unclaimed/Review scope, matching the design mock's own chip-count
+    // computation. Switching to a bucket while scoped to "Unclaimed" is meant
+    // to show "how many total tasks does CAD have", not "how many of CAD's
+    // tasks are currently unclaimed" -- that number is what the list shows.
     const chips = [{ value: "all", label: "All tasks" }, ...BUCKET_OPTIONS].map(b => ({
         ...b,
-        count: b.value === "all" ? basePool.length : basePool.filter(t => t.bucket === b.value).length,
+        count: b.value === "all" ? live.length : live.filter(t => t.bucket === b.value).length,
     }))
 
     const visibleTasks = useMemo(() => {
-        let list = basePool
+        let list = showingCompleted ? done : live
         if (scope === "unclaimed") list = list.filter(t => !t.assignee_id)
-        if (scope === "review" && reviewTab === "review") list = list.filter(t => t.status === "review")
-        const filter: TaskFilter = { bucket: bucketFilter, status: statusFilter, who: whoFilter, quick: null }
-        return list.filter(t => matchesFilter(t, filter, user.id, board.todayMs)).sort(sortWithinArea)
-    }, [basePool, scope, reviewTab, bucketFilter, statusFilter, whoFilter, user.id, board.todayMs])
+        if (scope === "review" && !showingCompleted) list = list.filter(t => t.status === "review")
+        const filter: TaskFilter = { bucket: bucketFilter, status: "all", who: whoFilter, quick: null }
+        return list.filter(t => matchesFilter(t, filter, user.id, board.todayMs)).sort(showingCompleted ? compareDone : compareTasks(sort))
+    }, [live, done, scope, showingCompleted, bucketFilter, whoFilter, sort, user.id, board.todayMs])
+
+    // A single subteam groups straight into area sections; "All tasks" adds
+    // a subteam header above each subteam's own area sections.
+    const showSubteamHeaders = bucketFilter === "all"
+    const groups = useMemo<SubteamGroup[]>(() => {
+        if (bucketFilter !== "all") {
+            return [{ bucket: bucketFilter, label: bucketLabel(bucketFilter), count: visibleTasks.length, areas: groupByArea(visibleTasks) }]
+        }
+        const result: SubteamGroup[] = []
+        for (const bucket of TASK_BUCKETS) {
+            const bucketTasks = visibleTasks.filter(t => t.bucket === bucket)
+            if (bucketTasks.length === 0) continue
+            result.push({ bucket, label: bucketLabel(bucket), count: bucketTasks.length, areas: groupByArea(bucketTasks) })
+        }
+        return result
+    }, [bucketFilter, visibleTasks])
+
+    // The bottom Done section belongs to the Tasks tile only -- Unclaimed is
+    // about live work, and Review & done has its own Completed tab.
+    const showDone = scope === "all"
+    const doneTasks = useMemo(() => {
+        const filter: TaskFilter = { bucket: bucketFilter, status: "all", who: whoFilter, quick: null }
+        return done.filter(t => matchesFilter(t, filter, user.id, board.todayMs)).sort(compareDone)
+    }, [done, bucketFilter, whoFilter, user.id, board.todayMs])
+
+    function toggleArea(key: string) {
+        setCollapsedAreas(prev => {
+            const next = new Set(prev)
+            if (next.has(key)) next.delete(key)
+            else next.add(key)
+            return next
+        })
+    }
+
+    // Opening a specific task (router state `taskId`): once tasks have
+    // loaded, loosen whatever filter would hide it, expand its section and
+    // highlight it. The ref keeps this to the first load only -- later
+    // filter changes are the user's own.
+    const targetHandledRef = useRef(false)
+    useEffect(() => {
+        if (targetHandledRef.current || !targetTaskId || loading) return
+        targetHandledRef.current = true
+        const task = tasks.find(t => t.id === targetTaskId)
+        if (!task) return
+        setScope("all")
+        if (bucketFilter !== "all" && task.bucket !== bucketFilter) setBucketFilter(task.bucket)
+        if (!matchesFilter(task, { bucket: "all", status: "all", who: whoFilter, quick: null }, user.id, board.todayMs)) setWhoFilter("everyone")
+        if (task.status === "done") {
+            setDoneOpen(true)
+        } else {
+            setCollapsedAreas(prev => {
+                if (!prev.has(areaKey(task))) return prev
+                const next = new Set(prev)
+                next.delete(areaKey(task))
+                return next
+            })
+        }
+        setHighlightId(task.id)
+    }, [loading, tasks, targetTaskId, bucketFilter, whoFilter, user.id, board.todayMs])
+
+    // Scroll the highlighted card into view once it has rendered, then let
+    // the highlight fade (the card's transition handles the fade itself).
+    useEffect(() => {
+        if (!highlightId) return
+        const frame = requestAnimationFrame(() => {
+            document.querySelector(`[data-task-id="${CSS.escape(highlightId)}"]`)?.scrollIntoView({ block: "center" })
+        })
+        const timer = setTimeout(() => setHighlightId(null), 2000)
+        return () => {
+            cancelAnimationFrame(frame)
+            clearTimeout(timer)
+        }
+    }, [highlightId])
+
+    // Keep the active subteam chip visible -- on mount it's usually the
+    // viewer's own subteam, which can sit well off the right edge of the
+    // rail. Scrolls the rail only (never the page); instant the first time.
+    const chipRailRef = useRef<HTMLDivElement>(null)
+    const chipRailScrolledRef = useRef(false)
+    useEffect(() => {
+        const rail = chipRailRef.current
+        const chip = rail?.querySelector<HTMLElement>("[data-active=\"true\"]")
+        if (!rail || !chip) return
+        // offsetLeft includes the rail's 16px left padding; subtracting it
+        // lines the chip up with the scroll-snap padding.
+        rail.scrollTo({ left: chip.offsetLeft - 16, behavior: chipRailScrolledRef.current ? "smooth" : "auto" })
+        chipRailScrolledRef.current = true
+    }, [loading, bucketFilter])
 
     const whoOptions = [
         { value: "everyone", label: "Everyone" },
@@ -139,18 +268,11 @@ export default function TasksPageMobile() {
         { value: "unclaimed", label: "Unassigned" },
         ...people.map(p => ({ value: p.id, label: p.display_name })),
     ]
-    const statusOptions = [
-        { value: "all", label: "Any status" },
-        { value: "todo", label: STATUS_LABEL.todo },
-        { value: "doing", label: STATUS_LABEL.doing },
-        { value: "review", label: STATUS_LABEL.review },
-        { value: "done", label: STATUS_LABEL.done },
-    ]
 
     const listLabel = scope === "unclaimed"
         ? "Unclaimed"
         : scope === "review"
-            ? (reviewTab === "done" ? "Completed" : "Awaiting review")
+            ? (showingCompleted ? "Completed" : "Awaiting review")
             : (bucketFilter === "all" ? "All tasks" : bucketLabel(bucketFilter))
     const shownCount = `${visibleTasks.length} ${visibleTasks.length === 1 ? "task" : "tasks"}`
 
@@ -160,6 +282,25 @@ export default function TasksPageMobile() {
     const defaultBucket = bucketFilter !== "all" ? bucketFilter : (board.mySubteam ?? "general")
 
     const menuTask = menuOpenId ? tasks.find(t => t.id === menuOpenId) ?? null : null
+
+    function renderCard(task: Task) {
+        return (
+            <TaskCard
+                key={task.id}
+                task={task}
+                board={board}
+                user={user}
+                people={people}
+                todayMs={board.todayMs}
+                highlighted={highlightId === task.id}
+                pickerOpen={pickerOpenId === task.id}
+                notesOpen={notesOpenId === task.id}
+                onTogglePicker={() => setPickerOpenId(id => (id === task.id ? null : task.id))}
+                onToggleNotes={() => setNotesOpenId(id => (id === task.id ? null : task.id))}
+                onToggleMenu={() => setMenuOpenId(id => (id === task.id ? null : task.id))}
+            />
+        )
+    }
 
     if (loading) {
         return (
@@ -193,12 +334,13 @@ export default function TasksPageMobile() {
                 ::-webkit-scrollbar rule below, which can't be expressed as a
                 React style object -- a scoped <style> tag (same pattern
                 AppShell.tsx uses for its spin keyframes) keeps it self
-                contained in this one file. */}
-            <div className="tasks-mobile-chip-rail" style={{ display: "flex", gap: 8, overflowX: "auto", scrollbarWidth: "none", padding: "14px 16px 2px", scrollPaddingInline: 16, scrollSnapType: "x mandatory" }}>
+                contained in this one file. `position: relative` makes the
+                rail the chips' offsetParent for the scroll-into-view above. */}
+            <div ref={chipRailRef} className="tasks-mobile-chip-rail" style={{ position: "relative", display: "flex", gap: 8, overflowX: "auto", scrollbarWidth: "none", padding: "14px 16px 2px", scrollPaddingInline: 16, scrollSnapType: "x mandatory" }}>
                 {chips.map(chip => {
                     const active = bucketFilter === chip.value
                     return (
-                        <button key={chip.value} type="button" onClick={() => setBucketFilter(chip.value)} style={chipStyle(active)}>
+                        <button key={chip.value} type="button" data-active={active} onClick={() => setBucketFilter(chip.value)} style={chipStyle(active)}>
                             <span>{chip.label}</span>
                             <span style={{ fontSize: 11.5, fontWeight: 700, opacity: 0.7 }}>{chip.count}</span>
                         </button>
@@ -212,7 +354,7 @@ export default function TasksPageMobile() {
                     <Dropdown value={whoFilter} onChange={v => setWhoFilter(v as WhoFilter)} options={whoOptions} triggerClassName={DROPDOWN_TRIGGER_CLASS} searchable label="Filter by person" />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                    <Dropdown value={statusFilter} onChange={v => setStatusFilter(v as StatusFilter)} options={statusOptions} triggerClassName={DROPDOWN_TRIGGER_CLASS} label="Status" />
+                    <Dropdown value={sort} onChange={v => setSort(v as TaskSort)} options={TASK_SORT_OPTIONS} triggerClassName={DROPDOWN_TRIGGER_CLASS} menuAlign="right" label="Sort tasks" />
                 </div>
             </div>
 
@@ -230,30 +372,41 @@ export default function TasksPageMobile() {
             )}
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px 16px calc(132px + env(safe-area-inset-bottom))" }}>
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--theme-subtext-color)" }}>{listLabel}</div>
+                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                    <div style={listLabelStyle}>{listLabel}</div>
                     <div style={{ fontSize: 12, color: "var(--theme-subtext-color)" }}>{shownCount}</div>
                 </div>
 
-                {visibleTasks.map(task => (
-                    <TaskCard
-                        key={task.id}
-                        task={task}
-                        board={board}
-                        user={user}
-                        people={people}
-                        todayMs={board.todayMs}
-                        pickerOpen={pickerOpenId === task.id}
-                        notesOpen={notesOpenId === task.id}
-                        onTogglePicker={() => setPickerOpenId(id => (id === task.id ? null : task.id))}
-                        onToggleNotes={() => setNotesOpenId(id => (id === task.id ? null : task.id))}
-                        onToggleMenu={() => setMenuOpenId(id => (id === task.id ? null : task.id))}
-                    />
+                {groups.map(group => (
+                    <div key={group.bucket} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {showSubteamHeaders && (
+                            <div style={subteamHeaderStyle}>
+                                <span>{group.label}</span>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--theme-subtext-color)" }}>{group.count}</span>
+                            </div>
+                        )}
+                        {group.areas.map(area => {
+                            const open = !collapsedAreas.has(area.key)
+                            return (
+                                <div key={area.key} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                    <SectionToggle title={area.area || "No area"} count={area.tasks.length} open={open} onToggle={() => toggleArea(area.key)} />
+                                    {open && area.tasks.map(renderCard)}
+                                </div>
+                            )
+                        })}
+                    </div>
                 ))}
 
                 {visibleTasks.length === 0 && (
                     <div style={{ padding: "28px 16px", textAlign: "center", borderRadius: 16, border: `1px dashed ${tint("--theme-border", 80)}`, color: "var(--theme-subtext-color)", fontSize: 13 }}>
                         Nothing here yet. Try a different subteam or filter.
+                    </div>
+                )}
+
+                {showDone && doneTasks.length > 0 && (
+                    <div style={doneSectionStyle}>
+                        <SectionToggle title={`Done (${doneTasks.length})`} open={doneOpen} onToggle={() => setDoneOpen(o => !o)} />
+                        {doneOpen && doneTasks.map(renderCard)}
                     </div>
                 )}
             </div>
@@ -272,6 +425,20 @@ export default function TasksPageMobile() {
                 <TaskActionSheet task={menuTask} board={board} onClose={() => setMenuOpenId(null)} onEdit={() => setEditingTask(menuTask)} />
             )}
         </div>
+    )
+}
+
+/** Collapsible section header: an area (title + count) or the Done section
+ *  (count already in the title). Chevron points down when open. */
+function SectionToggle({ title, count, open, onToggle }: { title: string; count?: number; open: boolean; onToggle: () => void }) {
+    return (
+        <button type="button" onClick={onToggle} aria-expanded={open} style={sectionToggleStyle}>
+            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+            <span style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, color: "var(--theme-subtext-color)" }}>
+                {count !== undefined && <span style={{ fontSize: 12, fontWeight: 600 }}>{count}</span>}
+                <ChevronDown size={16} style={{ transition: "transform 150ms", transform: open ? "none" : "rotate(-90deg)" }} />
+            </span>
+        </button>
     )
 }
 
@@ -295,6 +462,13 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss?: () =
     )
 }
 
+function reviewTabStyle(active: boolean): CSSProperties {
+    return {
+        flex: 1, minWidth: 0, minHeight: 38, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, border: "none",
+        background: active ? tint("--theme-text-contrast", 18) : "transparent",
+        color: active ? "var(--theme-text-contrast)" : "var(--theme-subtext-color)",
+    }
+}
 function tileStyle(active: boolean): CSSProperties {
     return {
         flex: 1, minWidth: 0, textAlign: "left", padding: "8px 10px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit",
@@ -317,13 +491,17 @@ function chipStyle(active: boolean): CSSProperties {
         color: active ? "var(--theme-text-contrast)" : "var(--theme-text)",
     }
 }
-function reviewTabStyle(active: boolean): CSSProperties {
-    return {
-        flex: 1, minWidth: 0, minHeight: 38, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, border: "none",
-        background: active ? tint("--theme-text-contrast", 18) : "transparent",
-        color: active ? "var(--theme-text-contrast)" : "var(--theme-subtext-color)",
-    }
+const listLabelStyle: CSSProperties = { fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--theme-subtext-color)" }
+const subteamHeaderStyle: CSSProperties = {
+    display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, paddingTop: 10,
+    borderTop: `1px solid ${tint("--theme-border", 45)}`, fontSize: 15, fontWeight: 700, color: "var(--theme-h1-color)",
 }
+const sectionToggleStyle: CSSProperties = {
+    width: "100%", minHeight: 44, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+    padding: "0 12px", borderRadius: 12, border: `1px solid ${tint("--theme-border", 55)}`, background: tint("--theme-border", 20),
+    fontFamily: "inherit", fontSize: 13.5, fontWeight: 700, color: "var(--theme-text)", cursor: "pointer", textAlign: "left",
+}
+const doneSectionStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 10, marginTop: 8, paddingTop: 14, borderTop: `1px solid ${tint("--theme-border", 45)}` }
 
 const fabStyle: CSSProperties = {
     position: "fixed", zIndex: 30, right: "max(20px, calc(50vw - 195px))",
@@ -344,6 +522,8 @@ interface TaskCardProps {
     user: OnboardedUser
     people: Person[]
     todayMs: number
+    /** Briefly outlined after being opened from the dashboard. */
+    highlighted: boolean
     pickerOpen: boolean
     notesOpen: boolean
     onTogglePicker: () => void
@@ -353,10 +533,11 @@ interface TaskCardProps {
 
 const PICKER_CHOICES: SettableStatus[] = ["todo", "doing", "review"]
 
-function TaskCard({ task, board, user, people, todayMs, pickerOpen, notesOpen, onTogglePicker, onToggleNotes, onToggleMenu }: TaskCardProps) {
+function TaskCard({ task, board, user, people, todayMs, highlighted, pickerOpen, notesOpen, onTogglePicker, onToggleNotes, onToggleMenu }: TaskCardProps) {
     const canEdit = board.canEditTask(task)
     const canChangeStatus = board.canChangeStatus(task)
     const done = task.status === "done"
+    const critical = task.priority === "critical" && !done
     const review = task.status === "review"
     const due = rowDue(task, todayMs)
     const unreadCount = board.unread(task)
@@ -409,7 +590,7 @@ function TaskCard({ task, board, user, people, todayMs, pickerOpen, notesOpen, o
     }
 
     return (
-        <div style={cardStyle}>
+        <div data-task-id={task.id} style={cardStyle(highlighted, critical)}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
                 <span style={titleStyle}>{task.title}</span>
                 {canTogglePicker ? (
@@ -444,9 +625,11 @@ function TaskCard({ task, board, user, people, todayMs, pickerOpen, notesOpen, o
                         {task.note_count > 0 && <span>{task.note_count}</span>}
                     </span>
                 </button>
-                <span style={priorityPillStyle(task.priority)}>{PRIORITY_LABEL[task.priority]} priority</span>
+                {critical
+                    ? <span style={CRITICAL_BADGE_STYLE}>☠ {PRIORITY_LABEL.critical}</span>
+                    : <span style={priorityPillStyle(task.priority)}>{PRIORITY_LABEL[task.priority]} priority</span>}
                 <span style={bucketPillStyle}>{bucketLabel(task.bucket)} · {task.area}</span>
-                <span style={{ color: due.color }}>{due.text}</span>
+                <span><span style={{ color: due.color }}>{due.text}</span> · {formatPosted(task.created_at)}</span>
                 <span>{ownerLine(task)}</span>
             </div>
 
@@ -526,9 +709,20 @@ function ownerLine(task: Task): string {
     return task.assignee_name ?? "Unassigned"
 }
 
-const cardStyle: CSSProperties = {
-    padding: 14, borderRadius: 16, border: `1px solid ${tint("--theme-border", 75)}`, background: "var(--theme-button-bg)",
-    display: "flex", flexDirection: "column", gap: 10,
+function cardStyle(highlighted: boolean, critical: boolean): CSSProperties {
+    return {
+        padding: 14, borderRadius: 16,
+        // "Perish if not done" gets a red frame and wash so it can't be scrolled past.
+        border: critical ? `2px solid ${DANGER_RED}` : `1px solid ${tint("--theme-border", 75)}`,
+        background: critical ? `linear-gradient(${tintColor(DANGER_RED, 12)}, ${tintColor(DANGER_RED, 12)}), var(--theme-button-bg)` : "var(--theme-button-bg)",
+        display: "flex", flexDirection: "column", gap: 10,
+        // The highlight is an outline plus an inset wash (box-shadow, unlike a
+        // background gradient, can transition), so it fades out rather than
+        // snapping off when `highlighted` clears.
+        outline: `2px solid ${highlighted ? "var(--theme-text-contrast)" : "transparent"}`, outlineOffset: 2,
+        boxShadow: highlighted ? "inset 0 0 0 999px var(--ag-grid-selected-bg)" : "inset 0 0 0 999px transparent",
+        transition: "outline-color 800ms ease, box-shadow 800ms ease",
+    }
 }
 const titleStyle: CSSProperties = {
     flex: "1 1 auto", minWidth: 0, textAlign: "left", minHeight: 44, display: "flex", alignItems: "center",
@@ -876,30 +1070,37 @@ function TaskFormSheet({ mode, task, board, people, defaultBucket, onClose }: Ta
                 <button type="button" onClick={onClose} aria-label="Close" style={sheetCloseBtnStyle}><X size={16} /></button>
             </div>
             <form onSubmit={e => void handleSubmit(e)} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                <Field label="Task">
+                <Field label="Task" help={TASK_FIELD_HELP.title}>
                     <input value={title} onChange={e => setTitle(e.target.value)} placeholder="What needs doing?" autoFocus style={sheetInputStyle} />
                 </Field>
 
                 <div style={{ display: "flex", gap: 10 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                        <Field label="Subteam">
+                        <Field label="Subteam" help={TASK_FIELD_HELP.bucket}>
                             <Dropdown value={bucket} onChange={setBucket} options={BUCKET_OPTIONS} triggerClassName={DROPDOWN_TRIGGER_CLASS} label="Subteam" />
                         </Field>
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                        <Field label="Area">
-                            <input value={area} onChange={e => setArea(e.target.value)} placeholder="e.g. Wiring harness" style={sheetInputStyle} />
+                        <Field label="Area" help={TASK_FIELD_HELP.area}>
+                            <AreaInput value={area} onChange={setArea} suggestions={areaSuggestions(board.tasks, bucket)} placeholder="General" style={sheetInputStyle} />
                         </Field>
                     </div>
                 </div>
 
-                <Field label="Due date">
+                <Field label="Due date" help={TASK_FIELD_HELP.due}>
                     <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={sheetInputStyle} />
                 </Field>
 
-                <Field label="Priority">
+                <Field label="Priority" help={TASK_FIELD_HELP.priority}>
+                    {/* "Perish if not done" gets its own full-width row above the
+                        three regular segments -- four labels don't fit across a phone. */}
+                    {priorityChoices(board.canAssign, task?.priority).includes("critical") && (
+                        <button type="button" onClick={() => setPriority("critical")} style={{ ...prioritySegStyle(priority === "critical", true), width: "100%", marginBottom: 6 }}>
+                            ☠ {PRIORITY_LABEL.critical}
+                        </button>
+                    )}
                     <div style={{ display: "flex", gap: 6 }}>
-                        {PRIORITY_ORDER.map(p => (
+                        {priorityChoices(board.canAssign, task?.priority).filter(p => p !== "critical").map(p => (
                             <button key={p} type="button" onClick={() => setPriority(p)} style={prioritySegStyle(p === priority)}>
                                 {PRIORITY_LABEL[p]}
                             </button>
@@ -908,7 +1109,7 @@ function TaskFormSheet({ mode, task, board, people, defaultBucket, onClose }: Ta
                 </Field>
 
                 {board.canAssign && (
-                    <Field label="Assign to">
+                    <Field label="Assign to" help={TASK_FIELD_HELP.assignee}>
                         <Dropdown value={assigneeId} onChange={setAssigneeId} options={assigneeOptions(people)} triggerClassName={DROPDOWN_TRIGGER_CLASS} searchable label="Assign to" />
                     </Field>
                 )}
@@ -933,10 +1134,13 @@ function TaskFormSheet({ mode, task, board, people, defaultBucket, onClose }: Ta
     )
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, help, children }: { label: string; help?: string; children: ReactNode }) {
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--theme-subtext-color)" }}>{label}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--theme-subtext-color)" }}>
+                {label}
+                {help && <HelpTip text={help} />}
+            </span>
             {children}
         </div>
     )
@@ -946,12 +1150,14 @@ const sheetInputStyle: CSSProperties = {
     width: "100%", boxSizing: "border-box", minHeight: 46, padding: "0 14px", borderRadius: 12, border: `1px solid ${tint("--theme-border", 80)}`,
     background: "var(--theme-button-bg)", color: "var(--theme-text)", fontSize: 15, fontFamily: "inherit", outline: "none",
 }
-function prioritySegStyle(selected: boolean): CSSProperties {
+function prioritySegStyle(selected: boolean, critical = false): CSSProperties {
+    const accent = critical ? DANGER_RED : "var(--theme-text-contrast)"
     return {
         flex: 1, minHeight: 44, borderRadius: 12, cursor: "pointer", fontFamily: "inherit", fontSize: 13.5, fontWeight: 700,
-        border: selected ? "1px solid var(--theme-text-contrast)" : `1px solid ${tint("--theme-border", 75)}`,
-        background: selected ? tint("--theme-text-contrast", 16) : "var(--theme-button-bg)",
-        color: selected ? "var(--theme-text-contrast)" : "var(--theme-text)",
+        border: selected ? `1px solid ${accent}` : `1px solid ${critical ? tintColor(DANGER_RED, 55) : tint("--theme-border", 75)}`,
+        background: selected ? (critical ? DANGER_RED : tint("--theme-text-contrast", 16)) : "var(--theme-button-bg)",
+        color: selected ? (critical ? "#fff" : accent) : (critical ? DANGER_RED : "var(--theme-text)"),
+        textTransform: critical ? "uppercase" : "none", letterSpacing: critical ? "0.05em" : "normal",
     }
 }
 const claimToggleRowStyle: CSSProperties = {

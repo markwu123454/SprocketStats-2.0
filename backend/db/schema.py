@@ -339,7 +339,7 @@ async def init_db():
                         title       TEXT        NOT NULL,
                         area        TEXT        NOT NULL DEFAULT 'General',
                         bucket      TEXT        NOT NULL,
-                        priority    TEXT        NOT NULL DEFAULT 'med'  CHECK (priority IN ('high','med','low')),
+                        priority    TEXT        NOT NULL DEFAULT 'med'  CHECK (priority IN ('critical','high','med','low')),
                         status      TEXT        NOT NULL DEFAULT 'todo' CHECK (status IN ('todo','doing','review','done')),
                         assignee_id TEXT        REFERENCES users(id) ON DELETE SET NULL,
                         due_date    DATE,
@@ -498,7 +498,7 @@ async def run_migrations():
                     title       TEXT        NOT NULL,
                     area        TEXT        NOT NULL DEFAULT 'General',
                     bucket      TEXT        NOT NULL,
-                    priority    TEXT        NOT NULL DEFAULT 'med'  CHECK (priority IN ('high','med','low')),
+                    priority    TEXT        NOT NULL DEFAULT 'med'  CHECK (priority IN ('critical','high','med','low')),
                     status      TEXT        NOT NULL DEFAULT 'todo' CHECK (status IN ('todo','doing','review','done')),
                     assignee_id TEXT        REFERENCES users(id) ON DELETE SET NULL,
                     due_date    DATE,
@@ -532,6 +532,25 @@ async def run_migrations():
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS task_notes_task_id_idx ON task_notes (task_id, created_at)"
             )
+            # Widen the priority CHECK for 'critical' ("Perish if not done") on
+            # databases created before it existed. Only swaps the constraint
+            # when its current definition doesn't already allow it.
+            await conn.execute("""
+                DO $migration$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conrelid = 'tasks'::regclass
+                          AND conname = 'tasks_priority_check'
+                          AND pg_get_constraintdef(oid) LIKE '%critical%'
+                    ) THEN
+                        ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_priority_check;
+                        ALTER TABLE tasks ADD CONSTRAINT tasks_priority_check
+                            CHECK (priority IN ('critical','high','med','low'));
+                    END IF;
+                END
+                $migration$
+            """)
         except Exception as e:
             logger.warning("Migration warning: %s", e)
 

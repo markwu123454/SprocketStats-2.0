@@ -7,10 +7,12 @@
 
 const API = import.meta.env.VITE_BACKEND_URL
 
-export type TaskPriority = "high" | "med" | "low"
+/** "critical" ("Perish if not done") ranks above high; only the authority
+ *  set (`tasks.assign`) may set or clear it -- the backend 403s otherwise. */
+export type TaskPriority = "critical" | "high" | "med" | "low"
 export type TaskStatus = "todo" | "doing" | "review" | "done"
 
-export const PRIORITY_LABEL: Record<TaskPriority, string> = { high: "High", med: "Medium", low: "Low" }
+export const PRIORITY_LABEL: Record<TaskPriority, string> = { critical: "Perish if not done", high: "High", med: "Medium", low: "Low" }
 export const STATUS_LABEL: Record<TaskStatus, string> = {
     todo: "To do",
     doing: "In progress",
