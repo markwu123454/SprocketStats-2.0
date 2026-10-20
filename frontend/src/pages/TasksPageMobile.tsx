@@ -3,6 +3,8 @@ import { useLocation } from "react-router-dom"
 import { ChevronDown, MessageSquare, Plus, Trash2, X } from "lucide-react"
 import { useOnboardedUser, type OnboardedUser } from "@/contexts/authContext"
 import Dropdown from "@/components/ui/Dropdown"
+import AreaInput from "@/components/tasks/AreaInput"
+import HelpTip from "@/components/tasks/HelpTip"
 import { BUCKET_OPTIONS, TASK_BUCKETS, bucketLabel } from "@/lib/taskBuckets"
 import {
     addContributor, addNote, createTask, deleteNote, fetchNotes, leaveTask, removeContributor, reviewTask, unreviewTask, updateTask,
@@ -13,6 +15,7 @@ import {
     DANGER_RED, PRIORITY_COLOR, PRIORITY_ORDER, AVATAR_INK, TASK_SORT_OPTIONS,
     tint, tintColor, avatarBg, initialOf, formatRelativeTime, formatPosted, rowDue, assigneeOptions, compareTasks, compareDone,
     matchesFilter, type SettableStatus, type StatusFilter, type TaskFilter, type TaskSort, type TasksPageState, type WhoFilter,
+    areaSuggestions, TASK_FIELD_HELP,
 } from "@/lib/taskFormat"
 import { useTaskBoard, type TaskBoard } from "@/lib/useTaskBoard"
 
@@ -1050,28 +1053,28 @@ function TaskFormSheet({ mode, task, board, people, defaultBucket, onClose }: Ta
                 <button type="button" onClick={onClose} aria-label="Close" style={sheetCloseBtnStyle}><X size={16} /></button>
             </div>
             <form onSubmit={e => void handleSubmit(e)} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                <Field label="Task">
+                <Field label="Task" help={TASK_FIELD_HELP.title}>
                     <input value={title} onChange={e => setTitle(e.target.value)} placeholder="What needs doing?" autoFocus style={sheetInputStyle} />
                 </Field>
 
                 <div style={{ display: "flex", gap: 10 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                        <Field label="Subteam">
+                        <Field label="Subteam" help={TASK_FIELD_HELP.bucket}>
                             <Dropdown value={bucket} onChange={setBucket} options={BUCKET_OPTIONS} triggerClassName={DROPDOWN_TRIGGER_CLASS} label="Subteam" />
                         </Field>
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                        <Field label="Area">
-                            <input value={area} onChange={e => setArea(e.target.value)} placeholder="e.g. Wiring harness" style={sheetInputStyle} />
+                        <Field label="Area" help={TASK_FIELD_HELP.area}>
+                            <AreaInput value={area} onChange={setArea} suggestions={areaSuggestions(board.tasks, bucket)} placeholder="General" style={sheetInputStyle} />
                         </Field>
                     </div>
                 </div>
 
-                <Field label="Due date">
+                <Field label="Due date" help={TASK_FIELD_HELP.due}>
                     <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={sheetInputStyle} />
                 </Field>
 
-                <Field label="Priority">
+                <Field label="Priority" help={TASK_FIELD_HELP.priority}>
                     <div style={{ display: "flex", gap: 6 }}>
                         {PRIORITY_ORDER.map(p => (
                             <button key={p} type="button" onClick={() => setPriority(p)} style={prioritySegStyle(p === priority)}>
@@ -1082,7 +1085,7 @@ function TaskFormSheet({ mode, task, board, people, defaultBucket, onClose }: Ta
                 </Field>
 
                 {board.canAssign && (
-                    <Field label="Assign to">
+                    <Field label="Assign to" help={TASK_FIELD_HELP.assignee}>
                         <Dropdown value={assigneeId} onChange={setAssigneeId} options={assigneeOptions(people)} triggerClassName={DROPDOWN_TRIGGER_CLASS} searchable label="Assign to" />
                     </Field>
                 )}
@@ -1107,10 +1110,13 @@ function TaskFormSheet({ mode, task, board, people, defaultBucket, onClose }: Ta
     )
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, help, children }: { label: string; help?: string; children: ReactNode }) {
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--theme-subtext-color)" }}>{label}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--theme-subtext-color)" }}>
+                {label}
+                {help && <HelpTip text={help} />}
+            </span>
             {children}
         </div>
     )

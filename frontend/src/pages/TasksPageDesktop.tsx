@@ -3,6 +3,8 @@ import { useLocation } from "react-router-dom"
 import { ChevronDown, ChevronRight, Pencil, X } from "lucide-react"
 import { useOnboardedUser, type OnboardedUser } from "@/contexts/authContext"
 import Dropdown from "@/components/ui/Dropdown"
+import AreaInput from "@/components/tasks/AreaInput"
+import HelpTip from "@/components/tasks/HelpTip"
 import { BUCKET_OPTIONS, TASK_BUCKETS, bucketLabel } from "@/lib/taskBuckets"
 import {
     addContributor, addNote, createTask, deleteNote, fetchNotes, leaveTask, removeContributor, reviewTask, unreviewTask, updateTask,
@@ -12,7 +14,7 @@ import {
 import {
     DANGER_RED, PRIORITY_ORDER, PRIORITY_COLOR, AVATAR_INK,
     tint, tintColor, avatarBg, initialOf, formatRelativeTime, formatPosted, isOverdue, rowDue, assigneeOptions,
-    compareTasks, compareDone, matchesFilter, TASK_SORT_OPTIONS,
+    compareTasks, compareDone, matchesFilter, areaSuggestions, TASK_SORT_OPTIONS, TASK_FIELD_HELP,
     type SettableStatus, type WhoFilter, type Quick, type TaskSort, type TasksPageState,
 } from "@/lib/taskFormat"
 import { useTaskBoard } from "@/lib/useTaskBoard"
@@ -313,6 +315,7 @@ export default function TasksPageDesktop() {
 
                 {composing && (
                     <ComposeForm
+                        tasks={tasks}
                         canAssign={canAssign}
                         people={people}
                         defaultBucket={defaultBucket}
@@ -402,6 +405,7 @@ export default function TasksPageDesktop() {
             {editingTask && (
                 <EditTaskModal
                     task={editingTask}
+                    tasks={tasks}
                     canAssign={canAssign}
                     people={people}
                     onClose={() => setEditingTask(null)}
@@ -501,7 +505,7 @@ function QuickChip({ label, dot, count, active, onClick }: { label: string; dot:
     )
 }
 
-const composeLabelStyle: CSSProperties = { fontSize: 12.5, fontWeight: 700, color: "var(--theme-h1-color)" }
+const composeLabelStyle: CSSProperties = { fontSize: 12.5, fontWeight: 700, color: "var(--theme-h1-color)", display: "flex", alignItems: "center", gap: 6 }
 const composeInputStyle: CSSProperties = {
     height: 38, boxSizing: "border-box", width: "100%", padding: "0 12px", borderRadius: 8,
     border: "1px solid var(--theme-border)", background: "var(--theme-bg)", color: "var(--theme-text)",
@@ -513,6 +517,7 @@ const composeInputStyle: CSSProperties = {
 const composeInputFocusClass = "focus:border-(--theme-h1-color)"
 
 interface ComposeFormProps {
+    tasks: Task[]
     canAssign: boolean
     people: Person[]
     defaultBucket: string
@@ -522,7 +527,7 @@ interface ComposeFormProps {
     onError: (message: string) => void
 }
 
-function ComposeForm({ canAssign, people, defaultBucket, dropdownTriggerClassName, onCreated, onClose, onError }: ComposeFormProps) {
+function ComposeForm({ tasks, canAssign, people, defaultBucket, dropdownTriggerClassName, onCreated, onClose, onError }: ComposeFormProps) {
     const [title, setTitle] = useState("")
     const [area, setArea] = useState("")
     const [bucket, setBucket] = useState(defaultBucket)
@@ -563,7 +568,7 @@ function ComposeForm({ canAssign, people, defaultBucket, dropdownTriggerClassNam
             <form onSubmit={e => void handleSubmit(e)} onKeyDown={onFormKeyDown} style={{ display: "contents" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, gridColumn: "span 2", minWidth: 0 }}>
-                        <span style={composeLabelStyle}>Task</span>
+                        <span style={composeLabelStyle}>Task <HelpTip text={TASK_FIELD_HELP.title} /></span>
                         <input
                             value={title}
                             onChange={e => setTitle(e.target.value)}
@@ -574,31 +579,32 @@ function ComposeForm({ canAssign, people, defaultBucket, dropdownTriggerClassNam
                         />
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                        <span style={composeLabelStyle}>Area</span>
-                        <input
+                        <span style={composeLabelStyle}>Area <HelpTip text={TASK_FIELD_HELP.area} /></span>
+                        <AreaInput
                             value={area}
-                            onChange={e => setArea(e.target.value)}
+                            onChange={setArea}
+                            suggestions={areaSuggestions(tasks, bucket)}
                             placeholder="General"
                             className={composeInputFocusClass}
                             style={composeInputStyle}
                         />
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                        <span style={composeLabelStyle}>Subteam</span>
+                        <span style={composeLabelStyle}>Subteam <HelpTip text={TASK_FIELD_HELP.bucket} /></span>
                         <Dropdown value={bucket} onChange={setBucket} options={BUCKET_OPTIONS} triggerClassName={dropdownTriggerClassName} />
                     </div>
                     {canAssign && (
                         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                            <span style={composeLabelStyle}>Assign to</span>
+                            <span style={composeLabelStyle}>Assign to <HelpTip text={TASK_FIELD_HELP.assignee} /></span>
                             <Dropdown value={assigneeId} onChange={setAssigneeId} options={assigneeOptions(people)} triggerClassName={dropdownTriggerClassName} searchable />
                         </div>
                     )}
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                        <span style={composeLabelStyle}>Priority</span>
+                        <span style={composeLabelStyle}>Priority <HelpTip text={TASK_FIELD_HELP.priority} /></span>
                         <Dropdown value={priority} onChange={v => setPriority(v as TaskPriority)} options={PRIORITY_ORDER.map(p => ({ value: p, label: PRIORITY_LABEL[p] }))} triggerClassName={dropdownTriggerClassName} />
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                        <span style={composeLabelStyle}>Due</span>
+                        <span style={composeLabelStyle}>Due <HelpTip text={TASK_FIELD_HELP.due} /></span>
                         <input
                             type="date"
                             value={dueDate}
@@ -1305,6 +1311,7 @@ const dropdownWrapStyle: CSSProperties = { minHeight: 38, boxSizing: "border-box
 
 interface EditTaskModalProps {
     task: Task
+    tasks: Task[]
     canAssign: boolean
     people: Person[]
     onClose: () => void
@@ -1315,7 +1322,7 @@ interface EditTaskModalProps {
 /** Not part of the mockup (its seed-data prototype has no equivalent) --
  *  kept from the previous implementation essentially as-is per SPEC
  *  "Housekeeping" ("restyle rather than rewrite where the design allows"). */
-function EditTaskModal({ task, canAssign, people, onClose, onSaved, onError }: EditTaskModalProps) {
+function EditTaskModal({ task, tasks, canAssign, people, onClose, onSaved, onError }: EditTaskModalProps) {
     const [title, setTitle] = useState(task.title)
     const [area, setArea] = useState(task.area)
     const [bucket, setBucket] = useState(task.bucket)
@@ -1365,10 +1372,10 @@ function EditTaskModal({ task, canAssign, people, onClose, onSaved, onError }: E
                         <input value={title} onChange={e => setTitle(e.target.value)} className={fieldInputClass} style={fieldInputStyle} />
                     </label>
                     <div className="grid grid-cols-2 gap-3">
-                        <label className="flex flex-col gap-1">
+                        <div className="flex flex-col gap-1">
                             <span className="text-xs font-medium theme-subtext-color">Area</span>
-                            <input value={area} onChange={e => setArea(e.target.value)} className={fieldInputClass} style={fieldInputStyle} />
-                        </label>
+                            <AreaInput value={area} onChange={setArea} suggestions={areaSuggestions(tasks, bucket)} placeholder="General" className={fieldInputClass} style={fieldInputStyle} />
+                        </div>
                         <label className="flex flex-col gap-1">
                             <span className="text-xs font-medium theme-subtext-color">Due date</span>
                             <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={fieldInputClass} style={fieldInputStyle} />
