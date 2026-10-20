@@ -29,6 +29,9 @@ from typing import Any
 _MODERATE_ALL: dict[str, Any] = {"scope": "all"}
 _MODERATE_SUBTEAM: dict[str, Any] = {"scope": "subteam", "target_levels": ["member"], "extra_roles": ["alumni"]}
 
+# Email domain every student role's account must use (enforced at onboarding).
+STUDENT_EMAIL_DOMAIN = "stu.wvusd.org"
+
 # Each role → its full policy object. `control_panel.view` is an access
 # permission; `school_info.required` and `label` are role attributes. `level` /
 # `subteam` place the role in the org (subteam is None for team-wide roles);
@@ -36,9 +39,6 @@ _MODERATE_SUBTEAM: dict[str, Any] = {"scope": "subteam", "target_levels": ["memb
 # (enforced at /auth/me); `student` marks a student role, whose account email
 # must be on the school domain (see `STUDENT_EMAIL_DOMAIN`); `can_moderate` is
 # this role's moderation authority.
-# Email domain every student role's account must use (enforced at onboarding).
-STUDENT_EMAIL_DOMAIN = "stu.wvusd.org"
-
 ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
     "cad_member":           {"label": "CAD Member",           "level": "member", "subteam": "cad",           "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
     "cad_lead":             {"label": "CAD Lead",             "level": "lead",   "subteam": "cad",           "requires_approval": True, "student": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
