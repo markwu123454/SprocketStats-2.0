@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { ChevronRight, ChevronDown, Check } from "lucide-react"
-import { GRADE_OPTIONS, TEAM_YEAR_OPTIONS } from "@/lib/Roles"
+import { GRADE_OPTIONS, STUDENT_EMAIL_DOMAIN, TEAM_YEAR_OPTIONS } from "@/lib/Roles"
 import type { OnboardingPageProps, SeasonInfo } from "@/pages/OnboardingPageRouter"
 import { SeasonWordmark, BrandLockup } from "./LoginShared"
 
@@ -179,6 +179,7 @@ export function OnboardingForm({
                                    selectedTeamYear, setSelectedTeamYear,
                                    submitting, error, setError,
                                    needsSchoolInfo,
+                                   studentEmailMismatch,
                                    roleCatalog,
                                    handleSubmit, handleSignOut,
                                }: Omit<OnboardingPageProps, "season">) {
@@ -228,6 +229,17 @@ export function OnboardingForm({
                             setError(null)
                         }}
                     />
+                    {studentEmailMismatch && (
+                        <p className="m-0 text-xs text-red-500">
+                            Student roles require a @{STUDENT_EMAIL_DOMAIN} account. Sign out and sign
+                            in with your school email, or choose Mentor, Alumni, or Visitor.
+                        </p>
+                    )}
+                    {!studentEmailMismatch && roleCatalog.find(r => r.value === selectedRole)?.requires_approval && (
+                        <p className="m-0 text-xs theme-subtext-color">
+                            This role must be approved before you can use the app.
+                        </p>
+                    )}
                 </div>
 
                 {needsSchoolInfo && (
@@ -267,6 +279,7 @@ export function OnboardingForm({
                     disabled={
                         submitting ||
                         !selectedRole ||
+                        studentEmailMismatch ||
                         !displayName.trim() ||
                         (needsSchoolInfo && (!selectedGrade || !selectedTeamYear))
                     }

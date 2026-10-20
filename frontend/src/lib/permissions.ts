@@ -27,6 +27,8 @@ export interface RoleCatalogEntry {
     level: string
     subteam: string | null
     requires_approval: boolean
+    /** Student roles require an `@stu.wvusd.org` account (enforced at onboarding). */
+    student: boolean
 }
 
 /** The `can_moderate` spec carried on a role policy (see backend permissions.py).

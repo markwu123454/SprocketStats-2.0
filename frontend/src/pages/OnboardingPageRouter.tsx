@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { useAuth } from "@/contexts/authContext"
 import { useAppReady } from "@/contexts/appReadyContext"
 import type { RoleCatalogEntry } from "@/lib/permissions"
+import { STUDENT_EMAIL_DOMAIN } from "@/lib/Roles"
 import { useIsMobile } from "@/lib/useIsMobile"
 import { useThemeSeasonInfo, type SeasonInfo } from "@/lib/seasonTheme"
 // Temporarily unused -- subscribeToPush() call below is disabled.
@@ -28,6 +29,8 @@ export interface OnboardingPageProps {
     error: string | null
     setError: (v: string | null) => void
     needsSchoolInfo: boolean
+    /** A student role is selected but the signed-in account isn't a school account. */
+    studentEmailMismatch: boolean
     roleCatalog: RoleCatalogEntry[]
     handleSubmit: (e: React.FormEvent) => void
     handleSignOut: () => void
@@ -66,6 +69,12 @@ export default function OnboardingPageRouter() {
         selectedRole !== null &&
         (roleCatalog.find(r => r.value === selectedRole)?.school_info_required ?? true)
 
+    // Student roles require a school account; the backend enforces this too.
+    const studentEmailMismatch =
+        selectedRole !== null &&
+        (roleCatalog.find(r => r.value === selectedRole)?.student ?? false) &&
+        !(user?.email ?? "").trim().toLowerCase().endsWith(`@${STUDENT_EMAIL_DOMAIN}`)
+
     useEffect(() => { markReady() }, [markReady])
 
     useEffect(() => {
@@ -85,6 +94,7 @@ export default function OnboardingPageRouter() {
         const name = displayName.trim()
         if (!name)                                { setError("Please enter your name.");                    return }
         if (!selectedRole)                        { setError("Please select your role.");                   return }
+        if (studentEmailMismatch)                 { setError(`Student roles require a @${STUDENT_EMAIL_DOMAIN} email.`); return }
         if (needsSchoolInfo && !selectedGrade)    { setError("Please select your grade.");                 return }
         if (needsSchoolInfo && !selectedTeamYear) { setError("Please select your year on Team Sprocket."); return }
 
@@ -145,6 +155,7 @@ export default function OnboardingPageRouter() {
         submitting,
         error,            setError,
         needsSchoolInfo,
+        studentEmailMismatch,
         roleCatalog,
         handleSubmit,
         handleSignOut,

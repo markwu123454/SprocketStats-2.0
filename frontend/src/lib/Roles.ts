@@ -17,3 +17,7 @@ export const TEAM_YEAR_OPTIONS = [
     { value: "year_3", label: "Year 3" },
     { value: "year_4", label: "Year 4" },
 ]
+
+/** Student roles may only be chosen by accounts on this domain (mirrors the
+ *  backend's `STUDENT_EMAIL_DOMAIN`, which enforces it at onboarding). */
+export const STUDENT_EMAIL_DOMAIN = "stu.wvusd.org"
