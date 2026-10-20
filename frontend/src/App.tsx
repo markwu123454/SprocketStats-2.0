@@ -9,6 +9,7 @@ import {BootstrapProvider} from "@/contexts/BootstrapProvider"
 import AuthWrapper from "@/components/wrappers/AuthWrapper.tsx"
 import ControlGuard from "@/components/wrappers/ControlGuard.tsx"
 import PermGuard from "@/components/wrappers/PermGuard.tsx"
+import UpdatePrompt from "@/components/UpdatePrompt.tsx"
 
 const LoginPageRouter      = lazy(() => import("@/pages/LoginPageRouter"))
 const OnboardingPageRouter = lazy(() => import("@/pages/OnboardingPageRouter.tsx"))
@@ -102,6 +103,7 @@ export default function App() {
                                     </Route>
                                 </Routes>
                             </Suspense>
+                            <UpdatePrompt/>
                         </div>
                     </BrowserRouter>
                     </BootstrapProvider>

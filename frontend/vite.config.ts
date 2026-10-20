@@ -23,7 +23,8 @@ export default defineConfig({
             srcDir: "src",
             filename: "sw.js",
 
-            registerType: "autoUpdate",
+            // Updates wait for the user to opt in via UpdatePrompt.tsx.
+            registerType: "prompt",
 
             manifest: {
                 name: "SprocketStats",
@@ -46,9 +47,11 @@ export default defineConfig({
 
             injectRegister: "auto",
 
+            // The dev SW's precache manifest gets a fresh revision on every
+            // dev-server start, so with this on the update banner shows on
+            // every launch. Test the SW with `vite build && vite preview`.
             devOptions: {
-                enabled: true,
-                type: "module",
+                enabled: false,
             },
         })
     ],

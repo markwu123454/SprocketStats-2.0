@@ -1,17 +1,22 @@
-import {precacheAndRoute} from "workbox-precaching";
+import {cleanupOutdatedCaches, precacheAndRoute} from "workbox-precaching";
 import {clientsClaim} from "workbox-core";
 import {registerRoute} from "workbox-routing";
 import {NetworkFirst} from "workbox-strategies";
 
 const API = import.meta.env.VITE_BACKEND_URL;
 
-// Deliberately no self.skipWaiting() here: a newly-installed worker sits in
-// "waiting" instead of yanking control away from tabs that are mid-session.
-// It only activates once every tab from the previous version has been closed
-// or navigated away -- i.e. on the user's next natural navigation/unload --
-// at which point clientsClaim() lets it take over the incoming page right
-// away instead of needing yet another reload.
+// A new build sits in "waiting" until the user taps "Reload" in UpdatePrompt,
+// which posts SKIP_WAITING here; we never yank a page mid-session (that could
+// wipe an unsaved scouting form). If they ignore it, it still activates on its
+// own once every old client is closed. clientsClaim() lets the new worker take
+// over the reloaded page right away.
+self.addEventListener("message", (event) => {
+    if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+});
 clientsClaim();
+
+// Drop precaches left behind by older workbox versions.
+cleanupOutdatedCaches();
 
 precacheAndRoute(self.__WB_MANIFEST);
 
