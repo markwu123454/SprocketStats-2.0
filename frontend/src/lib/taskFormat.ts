@@ -32,11 +32,6 @@ export const PRIORITY_ORDER: TaskPriority[] = ["high", "med", "low"]
 // #f87171 ("one red, not two").
 export const PRIORITY_COLOR: Record<TaskPriority, string> = { high: DANGER_RED, med: "#f5d547", low: "#45908d" }
 
-// Sort order for rows *within* an area card: open work first, then whatever
-// needs a look, done last. Distinct from the old cycling order (which never
-// included "done" — a bare PATCH can't reach it) since this is pure display
-// sorting, not a set of reachable states.
-export const STATUS_SORT_ORDER: TaskStatus[] = ["todo", "doing", "review", "done"]
 export type SettableStatus = Exclude<TaskStatus, "done">
 
 // The 5 avatar background pastels + the fixed dark-ink initial color, picked
@@ -103,18 +98,53 @@ export function assigneeOptions(people: Person[]) {
     return [{ value: "", label: "Unassigned" }, ...people.map(p => ({ value: p.id, label: p.display_name }))]
 }
 
-export function sortWithinArea(a: Task, b: Task): number {
-    const byStatus = STATUS_SORT_ORDER.indexOf(a.status) - STATUS_SORT_ORDER.indexOf(b.status)
-    if (byStatus !== 0) return byStatus
+const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, med: 1, low: 2 }
+
+function compareDue(a: Task, b: Task): number {
     if (a.due_date === b.due_date) return 0
     if (a.due_date === null) return 1
     if (b.due_date === null) return -1
     return a.due_date.localeCompare(b.due_date)
 }
 
+/** How the board orders rows inside a group: by priority (high → low, then
+ *  soonest due) by default, or by due date (soonest first, then priority). */
+export type TaskSort = "priority" | "due"
+export const TASK_SORT_OPTIONS: { value: TaskSort; label: string }[] = [
+    { value: "priority", label: "Sort: Priority" },
+    { value: "due", label: "Sort: Due date" },
+]
+
+export function compareTasks(sort: TaskSort): (a: Task, b: Task) => number {
+    return (a, b) => {
+        const byPriority = PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
+        const primary = sort === "priority" ? byPriority || compareDue(a, b) : compareDue(a, b) || byPriority
+        return primary || a.title.localeCompare(b.title)
+    }
+}
+
+/** Done tasks sit in their own collapsed section, most recently finished first. */
+export function compareDone(a: Task, b: Task): number {
+    return b.updated_at.localeCompare(a.updated_at)
+}
+
+/** "Posted Oct 3" from a task's `created_at` timestamp. */
+export function formatPosted(iso: string): string {
+    const d = new Date(iso)
+    return `Posted ${MONTHS[d.getMonth()]} ${d.getDate()}`
+}
+
+/** Router `state` accepted by `/tasks` to pre-set its filters. `taskId`
+ *  opens (and scrolls to) that one task -- e.g. from the dashboard card. */
+export interface TasksPageState {
+    bucket?: string
+    who?: WhoFilter
+    taskId?: string
+}
+
 export type WhoFilter = "everyone" | "me" | "unclaimed" | string // string branch = a person id
 export type StatusFilter = "all" | TaskStatus
-export type Quick = null | "unclaimed" | "overdue" | "review"
+export type Quick = null | "unclaimed" | "overdue" | "review" | "todo" | "doing"
 
 export interface TaskFilter {
     bucket: string          // "all" | bucket slug
@@ -140,5 +170,7 @@ export function matchesFilter(
     if (filter.quick === "unclaimed" && task.assignee_id) return false
     if (filter.quick === "overdue" && !isOverdue(task, todayMs)) return false
     if (filter.quick === "review" && task.status !== "review") return false
+    if (filter.quick === "todo" && task.status !== "todo") return false
+    if (filter.quick === "doing" && task.status !== "doing") return false
     return true
 }
