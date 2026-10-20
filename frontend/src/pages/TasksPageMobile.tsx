@@ -14,7 +14,7 @@ import {
 import {
     DANGER_RED, PRIORITY_COLOR, AVATAR_INK, TASK_SORT_OPTIONS, CRITICAL_BADGE_STYLE, priorityChoices,
     tint, tintColor, avatarBg, initialOf, formatRelativeTime, formatPosted, rowDue, assigneeOptions, compareTasks, compareDone,
-    matchesFilter, type SettableStatus, type StatusFilter, type TaskFilter, type TaskSort, type TasksPageState, type WhoFilter,
+    matchesFilter, type SettableStatus, type TaskFilter, type TaskSort, type TasksPageState, type WhoFilter,
     areaSuggestions, TASK_FIELD_HELP,
 } from "@/lib/taskFormat"
 import { useTaskBoard, type TaskBoard } from "@/lib/useTaskBoard"
@@ -26,7 +26,6 @@ import { useTaskBoard, type TaskBoard } from "@/lib/useTaskBoard"
 const INK = "#12261f"
 
 const DROPDOWN_TRIGGER_CLASS = "rounded-xl border px-3 h-11 py-0 text-sm font-semibold theme-bg theme-border theme-text"
-const SORT_DROPDOWN_TRIGGER_CLASS = "rounded-xl border px-3 h-11 py-0 text-xs font-semibold theme-bg theme-border theme-text"
 const CONTRIBUTOR_DROPDOWN_TRIGGER_CLASS = "rounded-xl border px-3 h-11 py-0 text-xs font-semibold theme-bg theme-border theme-subtext-color"
 
 /** Same idea as `taskFormat`'s `tint` (a `--theme-*` token blended with
@@ -42,6 +41,7 @@ function tintDark(token: string, pct: number): string {
 }
 
 type Scope = "all" | "unclaimed" | "review"
+type ReviewTabKey = "review" | "done"
 
 /** One collapsible area section of the list. `key` folds the bucket in so
  *  the same area name under two subteams collapses independently. */
@@ -96,9 +96,9 @@ function groupByArea(list: Task[]): AreaGroup[] {
  *    requires one (Edit / Send back to To do / Delete), so it's added here
  *    as a small icon button next to the status badge, opening a bottom sheet
  *    in the same visual language as the New/Edit task sheets.
- *  - The mock's "Review & done" tile with its Awaiting review / Completed
- *    tabs (and a "Done" status filter) is gone: done tasks always live in
- *    the bottom "Done" section, so the tile is just "Review".
+ *  - No status dropdown: the Tasks / Unclaimed / Review & done tiles (and
+ *    the Awaiting review / Completed tabs) already cover it. Under Tasks,
+ *    done work sits in a collapsed "Done" section at the bottom.
  */
 export default function TasksPageMobile() {
     const user = useOnboardedUser()
@@ -113,7 +113,7 @@ export default function TasksPageMobile() {
     const [scope, setScope] = useState<Scope>("all")
     const [bucketFilter, setBucketFilter] = useState<string>(initialState?.bucket ?? board.mySubteam ?? "all")
     const [whoFilter, setWhoFilter] = useState<WhoFilter>(initialState?.who ?? "everyone")
-    const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
+    const [reviewTab, setReviewTab] = useState<ReviewTabKey>("review")
     const [sort, setSort] = useState<TaskSort>("priority")
 
     // Area sections start expanded (a set of *collapsed* keys); the Done
@@ -135,18 +135,26 @@ export default function TasksPageMobile() {
     const live = useMemo(() => tasks.filter(t => t.status !== "done"), [tasks])
     const done = useMemo(() => tasks.filter(t => t.status === "done"), [tasks])
 
-    // Scope tile counts follow the selected subteam (the whole board under
-    // "All tasks"), unfiltered by who/status -- inside a subteam, "Unclaimed 3"
+    // Tile and tab counts follow the selected subteam (the whole board under
+    // "All tasks"), unfiltered by who -- inside a subteam, "Unclaimed 3"
     // means three of that subteam's tasks, same as the web header chips.
-    const scopedLive = bucketFilter === "all" ? live : live.filter(t => t.bucket === bucketFilter)
+    const inBucket = (t: Task) => bucketFilter === "all" || t.bucket === bucketFilter
+    const scopedLive = live.filter(inBucket)
+    const scopedDoneCount = done.filter(inBucket).length
     const unclaimedLiveCount = scopedLive.filter(t => !t.assignee_id).length
     const reviewLiveCount = scopedLive.filter(t => t.status === "review").length
 
     const tiles: { key: Scope; label: string; count: number }[] = [
         { key: "all", label: "Tasks", count: scopedLive.length },
         { key: "unclaimed", label: "Unclaimed", count: unclaimedLiveCount },
-        { key: "review", label: "Review", count: reviewLiveCount },
+        { key: "review", label: "Review & done", count: reviewLiveCount },
     ]
+    const showReviewTabs = scope === "review"
+    const reviewTabs: { key: ReviewTabKey; label: string; count: number }[] = [
+        { key: "review", label: "Awaiting review", count: reviewLiveCount },
+        { key: "done", label: "Completed", count: scopedDoneCount },
+    ]
+    const showingCompleted = scope === "review" && reviewTab === "done"
 
     // Subteam chip counts read the live pool only -- *not* narrowed by the
     // Unclaimed/Review scope, matching the design mock's own chip-count
@@ -159,12 +167,12 @@ export default function TasksPageMobile() {
     }))
 
     const visibleTasks = useMemo(() => {
-        let list = live
+        let list = showingCompleted ? done : live
         if (scope === "unclaimed") list = list.filter(t => !t.assignee_id)
-        if (scope === "review") list = list.filter(t => t.status === "review")
-        const filter: TaskFilter = { bucket: bucketFilter, status: statusFilter, who: whoFilter, quick: null }
-        return list.filter(t => matchesFilter(t, filter, user.id, board.todayMs)).sort(compareTasks(sort))
-    }, [live, scope, bucketFilter, statusFilter, whoFilter, sort, user.id, board.todayMs])
+        if (scope === "review" && !showingCompleted) list = list.filter(t => t.status === "review")
+        const filter: TaskFilter = { bucket: bucketFilter, status: "all", who: whoFilter, quick: null }
+        return list.filter(t => matchesFilter(t, filter, user.id, board.todayMs)).sort(showingCompleted ? compareDone : compareTasks(sort))
+    }, [live, done, scope, showingCompleted, bucketFilter, whoFilter, sort, user.id, board.todayMs])
 
     // A single subteam groups straight into area sections; "All tasks" adds
     // a subteam header above each subteam's own area sections.
@@ -182,10 +190,9 @@ export default function TasksPageMobile() {
         return result
     }, [bucketFilter, visibleTasks])
 
-    // Done tasks honor the bucket/who filters only; the section is hidden
-    // under the Unclaimed scope or an explicit status filter, both of which
-    // are asking about live work.
-    const showDone = scope !== "unclaimed" && statusFilter === "all"
+    // The bottom Done section belongs to the Tasks tile only -- Unclaimed is
+    // about live work, and Review & done has its own Completed tab.
+    const showDone = scope === "all"
     const doneTasks = useMemo(() => {
         const filter: TaskFilter = { bucket: bucketFilter, status: "all", who: whoFilter, quick: null }
         return done.filter(t => matchesFilter(t, filter, user.id, board.todayMs)).sort(compareDone)
@@ -211,7 +218,6 @@ export default function TasksPageMobile() {
         const task = tasks.find(t => t.id === targetTaskId)
         if (!task) return
         setScope("all")
-        setStatusFilter("all")
         if (bucketFilter !== "all" && task.bucket !== bucketFilter) setBucketFilter(task.bucket)
         if (!matchesFilter(task, { bucket: "all", status: "all", who: whoFilter, quick: null }, user.id, board.todayMs)) setWhoFilter("everyone")
         if (task.status === "done") {
@@ -262,18 +268,11 @@ export default function TasksPageMobile() {
         { value: "unclaimed", label: "Unassigned" },
         ...people.map(p => ({ value: p.id, label: p.display_name })),
     ]
-    // No "Done" option: done tasks always sit in the bottom Done section.
-    const statusOptions = [
-        { value: "all", label: "Any status" },
-        { value: "todo", label: STATUS_LABEL.todo },
-        { value: "doing", label: STATUS_LABEL.doing },
-        { value: "review", label: STATUS_LABEL.review },
-    ]
 
     const listLabel = scope === "unclaimed"
         ? "Unclaimed"
         : scope === "review"
-            ? "Awaiting review"
+            ? (showingCompleted ? "Completed" : "Awaiting review")
             : (bucketFilter === "all" ? "All tasks" : bucketLabel(bucketFilter))
     const shownCount = `${visibleTasks.length} ${visibleTasks.length === 1 ? "task" : "tasks"}`
 
@@ -355,22 +354,27 @@ export default function TasksPageMobile() {
                     <Dropdown value={whoFilter} onChange={v => setWhoFilter(v as WhoFilter)} options={whoOptions} triggerClassName={DROPDOWN_TRIGGER_CLASS} searchable label="Filter by person" />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                    <Dropdown value={statusFilter} onChange={v => setStatusFilter(v as StatusFilter)} options={statusOptions} triggerClassName={DROPDOWN_TRIGGER_CLASS} label="Status" />
+                    <Dropdown value={sort} onChange={v => setSort(v as TaskSort)} options={TASK_SORT_OPTIONS} triggerClassName={DROPDOWN_TRIGGER_CLASS} menuAlign="right" label="Sort tasks" />
                 </div>
             </div>
 
+            {showReviewTabs && (
+                <div style={{ display: "flex", gap: 4, margin: "12px 16px 0", padding: 4, borderRadius: 12, border: `1px solid ${tint("--theme-border", 70)}`, background: "var(--theme-button-bg)" }}>
+                    {reviewTabs.map(tab => {
+                        const active = reviewTab === tab.key
+                        return (
+                            <button key={tab.key} type="button" onClick={() => setReviewTab(tab.key)} style={reviewTabStyle(active)}>
+                                {tab.label} · {tab.count}
+                            </button>
+                        )
+                    })}
+                </div>
+            )}
+
             <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px 16px calc(132px + env(safe-area-inset-bottom))" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                    <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-                        <div style={listLabelStyle}>{listLabel}</div>
-                        <div style={{ fontSize: 12, color: "var(--theme-subtext-color)" }}>{shownCount}</div>
-                    </div>
-                    {/* Sort sits with the list it orders rather than as a
-                        third control in the who/status row, which is too
-                        narrow at phone width for three triggers. */}
-                    <div style={{ flex: "none", width: 148 }}>
-                        <Dropdown value={sort} onChange={v => setSort(v as TaskSort)} options={TASK_SORT_OPTIONS} triggerClassName={SORT_DROPDOWN_TRIGGER_CLASS} menuAlign="right" label="Sort tasks" />
-                    </div>
+                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                    <div style={listLabelStyle}>{listLabel}</div>
+                    <div style={{ fontSize: 12, color: "var(--theme-subtext-color)" }}>{shownCount}</div>
                 </div>
 
                 {groups.map(group => (
@@ -458,6 +462,13 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss?: () =
     )
 }
 
+function reviewTabStyle(active: boolean): CSSProperties {
+    return {
+        flex: 1, minWidth: 0, minHeight: 38, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, border: "none",
+        background: active ? tint("--theme-text-contrast", 18) : "transparent",
+        color: active ? "var(--theme-text-contrast)" : "var(--theme-subtext-color)",
+    }
+}
 function tileStyle(active: boolean): CSSProperties {
     return {
         flex: 1, minWidth: 0, textAlign: "left", padding: "8px 10px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit",
