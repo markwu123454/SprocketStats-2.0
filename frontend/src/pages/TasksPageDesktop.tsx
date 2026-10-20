@@ -1040,7 +1040,7 @@ function TaskRow({
                     <NotesThread
                         taskId={task.id}
                         currentUserId={currentUser.id}
-                        currentUserGivenName={currentUser.given_name}
+                        currentUserGivenName={currentUser.display_name}
                         canAssign={canAssign}
                         unreadCount={unread}
                         draft={draft}
