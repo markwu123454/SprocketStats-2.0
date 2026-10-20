@@ -4,13 +4,13 @@ import os
 
 # noinspection PyUnresolvedReferences
 from authlib.integrations.starlette_client import OAuth
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, field_validator, model_validator
 
 import db
 from core import account_state
-from core.permissions import get_permissions_for_role, role_catalog
+from core.permissions import STUDENT_EMAIL_DOMAIN, email_allowed_for_role, get_permissions_for_role, role_catalog
 from core.security import (
     ROLES_WITHOUT_SCHOOL_INFO,
     VALID_GRADES,
@@ -249,6 +249,14 @@ async def complete_onboarding(
     body: OnboardingRequest,
     user: dict = Depends(require_active),
 ):
+    # Student roles are restricted to school accounts; the email comes from the
+    # signed JWT (set from the Google profile), never from the request body.
+    if not email_allowed_for_role(user.get("email"), body.role):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Student roles require a @{STUDENT_EMAIL_DOMAIN} email address. "
+                   f"Sign in with your school account, or choose Mentor, Alumni, or Visitor.",
+        )
     updated = await db.update_user_onboarding(user["sub"], body.display_name, body.role, body.grade, body.team_year)
     updated_dict = dict(updated)
     session_jwt = issue_jwt(updated_dict)
