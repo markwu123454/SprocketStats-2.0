@@ -678,7 +678,7 @@ function TaskCard({ task, board, user, people, todayMs, highlighted, pickerOpen,
                             </div>
                         ) : !isAssignee && !isContributor && (
                             <button type="button" onClick={() => void board.runAction(() => addContributor(task.id))} style={joinBtnStyle}>
-                                + Join as {user.given_name}
+                                + Join as {user.display_name}
                             </button>
                         )}
                         {isAssignee && (
