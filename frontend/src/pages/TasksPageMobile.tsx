@@ -132,14 +132,15 @@ export default function TasksPageMobile() {
     const live = useMemo(() => tasks.filter(t => t.status !== "done"), [tasks])
     const done = useMemo(() => tasks.filter(t => t.status === "done"), [tasks])
 
-    // Scope tile counts read the whole board, unfiltered by bucket/who/
-    // status -- an at-a-glance overview, matching the mock's own unfiltered
-    // tile computation (CONTRACT.md "Layout, top to bottom" #2).
-    const unclaimedLiveCount = live.filter(t => !t.assignee_id).length
-    const reviewLiveCount = live.filter(t => t.status === "review").length
+    // Scope tile counts follow the selected subteam (the whole board under
+    // "All tasks"), unfiltered by who/status -- inside a subteam, "Unclaimed 3"
+    // means three of that subteam's tasks, same as the web header chips.
+    const scopedLive = bucketFilter === "all" ? live : live.filter(t => t.bucket === bucketFilter)
+    const unclaimedLiveCount = scopedLive.filter(t => !t.assignee_id).length
+    const reviewLiveCount = scopedLive.filter(t => t.status === "review").length
 
     const tiles: { key: Scope; label: string; count: number }[] = [
-        { key: "all", label: "Tasks", count: live.length },
+        { key: "all", label: "Tasks", count: scopedLive.length },
         { key: "unclaimed", label: "Unclaimed", count: unclaimedLiveCount },
         { key: "review", label: "Review", count: reviewLiveCount },
     ]
