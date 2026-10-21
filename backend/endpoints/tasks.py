@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 import db
+from core import push_notify
 from core.permissions import has_task_authority, role_requires_approval, task_buckets
 from core.security import require_active
 
@@ -157,6 +158,8 @@ async def create_task(body: TaskCreate, user: dict = Depends(require_task_access
     await _validate_assignee(body.assignee_id)
 
     row = await db.create_task(title, area, body.bucket, priority, body.due_date, body.assignee_id, user["sub"])
+    if body.assignee_id is not None:
+        push_notify.notify_task_assigned(row, body.assignee_id, user)
     return _row_to_task(row)
 
 
@@ -289,6 +292,10 @@ async def update_task(task_id: str, body: TaskUpdate, user: dict = Depends(requi
             row = await db.remove_contributor(task_id, new_assignee_id)
             if row is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        # Re-sending the current assignee (edit forms send every field) isn't
+        # a new assignment.
+        if new_assignee_id != existing["assignee_id"]:
+            push_notify.notify_task_assigned(row, new_assignee_id, user)
 
     return _row_to_task(row)
 
@@ -338,9 +345,12 @@ async def add_contributor(task_id: str, body: ContributorAdd | None = None, user
         detail = "You are already the assignee" if target == user["sub"] else "That person is already the assignee"
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
+    already_contributor = any(c["id"] == target for c in _decode_contributors(existing["contributors"]))
     row = await db.add_contributor(task_id, target)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    if not already_contributor:
+        push_notify.notify_task_assigned(row, target, user, as_contributor=True)
     return _row_to_task(row)
 
 

@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import os
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 import asyncpg
 from fastapi import HTTPException
@@ -22,6 +24,33 @@ logger = logging.getLogger(__name__)
 VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY")
 VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY")
 VAPID_CLAIM_EMAIL = os.environ.get("VAPID_CLAIM_EMAIL", "mailto:admin@example.com")
+
+# How long the push service should hold a message for a device that's asleep or
+# offline. pywebpush defaults to ttl=0, which tells the push service to drop the
+# message outright unless the device is reachable *right now* -- the main reason
+# pushes "never arrived" on phones in Doze / with the screen off.
+PUSH_TTL_SECONDS = 86400  # 24 hours
+# "high" asks Android to wake the device from Doze for this message instead of
+# batching it into the next maintenance window.
+PUSH_HEADERS = {"Urgency": "high"}
+# Per-request timeout. pywebpush passes timeout=None through to `requests` by
+# default, i.e. no timeout at all, so one hung push service could pin a worker
+# thread indefinitely.
+PUSH_REQUEST_TIMEOUT_SECONDS = 10
+
+# Transient push-service errors (429 / 5xx) get this many retries before the
+# delivery is marked failed. Backoff doubles from the base each attempt unless
+# the push service sends a Retry-After, which is honored up to the cap.
+PUSH_MAX_RETRIES = 2
+PUSH_RETRY_BASE_SECONDS = 1.0
+PUSH_RETRY_AFTER_CAP_SECONDS = 30.0
+
+# Automated push categories a user can opt out of individually in Settings.
+# Manual pushes sent from the Control Panel (`/push`) are team announcements
+# and deliberately have no category -- they reach every subscribed device, so
+# leads always have a channel to everyone; a user who wants none of it turns
+# push off for the device entirely.
+PUSH_CATEGORIES = ("task_assigned", "meeting_reminder", "event_reminder")
 
 
 async def save_push_subscription(user_id: str, endpoint: str, p256dh: str, auth: str) -> None:
@@ -87,12 +116,17 @@ async def _prune_dead_endpoint(endpoint: str) -> None:
             logger.warning("_prune_dead_endpoint failed for %s: %s", endpoint, e)
 
 
-async def get_push_subscriptions_for_roles(target_roles: list[str]) -> list[asyncpg.Record]:
+async def get_push_subscriptions_for_roles(
+    target_roles: list[str], category: str | None = None
+) -> list[asyncpg.Record]:
     """Subscriptions for active (non-banned) users targeted by ``target_roles``.
 
     Mirrors the "empty = everyone" convention already used by
     ``notifications.target_roles``. Includes ``s.id``/``s.user_id`` so callers
     can attribute a delivery log row to a subscription and its owner.
+
+    ``category`` (one of ``PUSH_CATEGORIES``) additionally drops users who
+    opted out of it; ``None`` (a Control Panel announcement) skips that filter.
     """
     async with db_connection(DB_NAME) as conn:
         try:
@@ -103,12 +137,121 @@ async def get_push_subscriptions_for_roles(target_roles: list[str]) -> list[asyn
                 JOIN users u ON u.id = s.user_id
                 WHERE u.banned_at IS NULL
                   AND ($1::text[] = '{}' OR u.role = ANY($1::text[]))
+                  AND NOT EXISTS (
+                      SELECT 1 FROM push_opt_outs o
+                      WHERE o.user_id = s.user_id AND o.category = $2
+                  )
                 """,
                 target_roles,
+                category,
             )
         except Exception as e:
             logger.error("get_push_subscriptions_for_roles failed: %s", e)
             raise
+
+
+async def get_push_subscriptions_for_users(user_ids: list[str], category: str) -> list[asyncpg.Record]:
+    """Subscriptions for specific active users, minus anyone opted out of ``category``.
+
+    For pushes aimed at named people (e.g. a task's new assignee) rather than
+    a role audience.
+    """
+    if not user_ids:
+        return []
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetch(
+                """
+                SELECT s.id, s.user_id, s.endpoint, s.p256dh, s.auth
+                FROM push_subscriptions s
+                JOIN users u ON u.id = s.user_id
+                WHERE u.banned_at IS NULL
+                  AND s.user_id = ANY($1::text[])
+                  AND NOT EXISTS (
+                      SELECT 1 FROM push_opt_outs o
+                      WHERE o.user_id = s.user_id AND o.category = $2
+                  )
+                """,
+                user_ids,
+                category,
+            )
+        except Exception as e:
+            logger.error("get_push_subscriptions_for_users failed: %s", e)
+            raise
+
+
+async def get_push_opt_outs(user_id: str) -> set[str]:
+    """Categories ``user_id`` has opted out of. Absent = opted in (the default)."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            rows = await conn.fetch("SELECT category FROM push_opt_outs WHERE user_id = $1", user_id)
+            return {r["category"] for r in rows}
+        except Exception as e:
+            logger.error("get_push_opt_outs failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to fetch notification preferences")
+
+
+async def set_push_preferences(user_id: str, prefs: dict[str, bool]) -> None:
+    """Apply ``{category: enabled}`` for ``user_id`` in one transaction.
+
+    Stored as opt-out rows so a category added later defaults to on for every
+    existing user without a backfill. Callers validate categories against
+    ``PUSH_CATEGORIES`` first.
+    """
+    opt_out = [c for c, enabled in prefs.items() if not enabled]
+    opt_in = [c for c, enabled in prefs.items() if enabled]
+    async with db_connection(DB_NAME) as conn:
+        try:
+            async with conn.transaction():
+                if opt_out:
+                    await conn.execute(
+                        """
+                        INSERT INTO push_opt_outs (user_id, category)
+                        SELECT $1, unnest($2::text[])
+                        ON CONFLICT DO NOTHING
+                        """,
+                        user_id, opt_out,
+                    )
+                if opt_in:
+                    await conn.execute(
+                        "DELETE FROM push_opt_outs WHERE user_id = $1 AND category = ANY($2::text[])",
+                        user_id, opt_in,
+                    )
+        except Exception as e:
+            logger.error("set_push_preferences failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to save notification preferences")
+
+
+async def claim_push_reminder(key: str) -> bool:
+    """Atomically mark reminder ``key`` as sent. Returns False if it already was.
+
+    The reminder sweep claims before sending, so concurrent sweeps (several
+    server processes, or overlapping ticks) never double-send. The trade-off is
+    at-most-once: a crash between claim and send drops that one reminder.
+    """
+    async with db_connection(DB_NAME) as conn:
+        try:
+            row = await conn.fetchrow(
+                "INSERT INTO push_reminders_sent (key) VALUES ($1) ON CONFLICT DO NOTHING RETURNING key",
+                key,
+            )
+            return row is not None
+        except Exception as e:
+            logger.error("claim_push_reminder failed: %s", e)
+            raise
+
+
+async def prune_push_reminders() -> None:
+    """Forget reminder claims older than 30 days.
+
+    Every reminder key embeds its target's start time and is only claimed
+    before that start, so an old key can never be claimed again anyway.
+    """
+    async with db_connection(DB_NAME) as conn:
+        try:
+            await conn.execute("DELETE FROM push_reminders_sent WHERE created_at < now() - interval '30 days'")
+        except Exception as e:
+            logger.warning("prune_push_reminders failed: %s", e)
 
 
 async def create_delivery_logs(push_message_id, subs: list[asyncpg.Record]) -> dict[str, object]:
@@ -159,52 +302,105 @@ async def _mark_delivery_failed(delivery_id) -> None:
             logger.warning("_mark_delivery_failed failed for %s: %s", delivery_id, e)
 
 
-async def _send_one(deliv: dict, title: str, body: str) -> None:
-    """Send to a single device; prune it if the push service says it's dead.
+def _retry_delay(response, attempt: int) -> float:
+    """Seconds to wait before retry number ``attempt`` (0-based).
+
+    Honors a ``Retry-After`` header (delta-seconds or HTTP-date) when the push
+    service sends one, capped so a hostile or misconfigured value can't stall
+    the fan-out; otherwise exponential backoff from PUSH_RETRY_BASE_SECONDS.
+    """
+    retry_after = response.headers.get("Retry-After") if response is not None else None
+    if retry_after:
+        try:
+            delay = float(retry_after)
+        except ValueError:
+            try:
+                delay = (parsedate_to_datetime(retry_after) - datetime.now(timezone.utc)).total_seconds()
+            except (TypeError, ValueError):
+                delay = None
+        if delay is not None:
+            return min(max(delay, 0.0), PUSH_RETRY_AFTER_CAP_SECONDS)
+    return PUSH_RETRY_BASE_SECONDS * (2 ** attempt)
+
+
+def _is_retryable(status_code: int | None) -> bool:
+    return status_code is not None and (status_code == 429 or status_code >= 500)
+
+
+async def _send_one(deliv: dict, title: str, body: str, url: str | None = None, tag: str | None = None) -> None:
+    """Send to a single device; retry transient errors, prune it if it's dead.
 
     ``webpush`` is a blocking call (it shells out to `requests`), so it runs on
     a worker thread via ``asyncio.to_thread`` rather than blocking the event
-    loop. Failures are swallowed here by design -- one bad endpoint in a batch
-    must not take down delivery to the rest of the audience -- but they still
-    flip that device's delivery row to 'failed' so the sender can see it.
+    loop. A 429/5xx is retried up to PUSH_MAX_RETRIES times (see
+    ``_retry_delay``); a 404/410 prunes the subscription immediately. Failures
+    are swallowed here by design -- one bad endpoint in a batch must not take
+    down delivery to the rest of the audience -- but they still flip that
+    device's delivery row to 'failed' so the sender can see it.
+
+    ``deliv["delivery_id"]`` is optional: Control Panel sends carry one (and
+    the service worker echoes it back via ``POST /push/delivered``), automated
+    category pushes don't track delivery and omit it. ``url`` (an in-app path)
+    is where tapping the notification lands; ``tag`` lets a newer push replace
+    an older one about the same thing instead of stacking.
     """
-    payload = json.dumps({"title": title, "body": body, "delivery_id": str(deliv["delivery_id"])})
-    try:
-        await asyncio.to_thread(
-            webpush,
-            subscription_info={
-                "endpoint": deliv["endpoint"],
-                "keys": {"p256dh": deliv["p256dh"], "auth": deliv["auth"]},
-            },
-            data=payload,
-            vapid_private_key=VAPID_PRIVATE_KEY,
-            vapid_claims={"sub": VAPID_CLAIM_EMAIL},
-        )
-    except WebPushException as e:
-        status_code = e.response.status_code if e.response is not None else None
-        if status_code in (404, 410):
-            # Push service no longer recognizes this endpoint (browser
-            # unsubscribed, uninstalled, or the subscription simply expired).
-            await _prune_dead_endpoint(deliv["endpoint"])
-        else:
-            logger.warning("send_web_push failed for %s: %s", deliv["endpoint"], e)
-        await _mark_delivery_failed(deliv["delivery_id"])
-    except Exception as e:
-        logger.warning("send_web_push unexpected error for %s: %s", deliv["endpoint"], e)
-        await _mark_delivery_failed(deliv["delivery_id"])
+    delivery_id = deliv.get("delivery_id")
+    message = {"title": title, "body": body}
+    if delivery_id is not None:
+        message["delivery_id"] = str(delivery_id)
+    if url:
+        message["url"] = url
+    if tag:
+        message["tag"] = tag
+    payload = json.dumps(message)
+
+    for attempt in range(PUSH_MAX_RETRIES + 1):
+        try:
+            await asyncio.to_thread(
+                webpush,
+                subscription_info={
+                    "endpoint": deliv["endpoint"],
+                    "keys": {"p256dh": deliv["p256dh"], "auth": deliv["auth"]},
+                },
+                data=payload,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": VAPID_CLAIM_EMAIL},
+                ttl=PUSH_TTL_SECONDS,
+                headers=dict(PUSH_HEADERS),
+                timeout=PUSH_REQUEST_TIMEOUT_SECONDS,
+            )
+            return
+        except WebPushException as e:
+            status_code = e.response.status_code if e.response is not None else None
+            if status_code in (404, 410):
+                # Push service no longer recognizes this endpoint (browser
+                # unsubscribed, uninstalled, or the subscription simply expired).
+                await _prune_dead_endpoint(deliv["endpoint"])
+            elif _is_retryable(status_code) and attempt < PUSH_MAX_RETRIES:
+                await asyncio.sleep(_retry_delay(e.response, attempt))
+                continue
+            else:
+                logger.warning("send_web_push failed for %s: %s", deliv["endpoint"], e)
+        except Exception as e:
+            logger.warning("send_web_push unexpected error for %s: %s", deliv["endpoint"], e)
+        if delivery_id is not None:
+            await _mark_delivery_failed(delivery_id)
+        return
 
 
 async def send_web_push(
     deliveries: list[dict],
     title: str,
     body: str,
+    url: str | None = None,
+    tag: str | None = None,
 ) -> None:
     """Best-effort fan-out of one push message to every given device.
 
     Each item in ``deliveries`` carries ``endpoint``/``p256dh``/``auth`` (from
-    the subscription) plus ``delivery_id`` (from ``create_delivery_logs``) so
-    the per-device payload can embed the id the service worker echoes back via
-    ``POST /push/delivered``.
+    the subscription) plus, for tracked sends, ``delivery_id`` (from
+    ``create_delivery_logs``) so the per-device payload can embed the id the
+    service worker echoes back via ``POST /push/delivered``.
 
     No-ops (with a warning) if VAPID keys aren't configured, so a missing env
     var degrades to "no push" instead of a 500 on notification creation.
@@ -215,13 +411,18 @@ async def send_web_push(
     if not deliveries:
         return
 
-    await asyncio.gather(*(_send_one(deliv, title, body) for deliv in deliveries))
+    await asyncio.gather(*(_send_one(deliv, title, body, url, tag) for deliv in deliveries))
 
 
 async def mark_delivery_delivered(delivery_id, endpoint: str) -> bool:
-    """Flip one delivery row from 'sent' to 'delivered'. Returns whether a row matched.
+    """Flip one delivery row to 'delivered'. Returns whether a row matched.
 
-    Scoped to (id, endpoint, status='sent') -- see the ``/push/delivered``
+    Accepts a row that is still 'sent' *or* already 'failed': a receipt is
+    proof the device got the push, and pushes are held by the push service for
+    up to PUSH_TTL_SECONDS, so a device that was offline past the 10-minute
+    ``expire_stale_deliveries`` timeout can still report in late. (A row failed
+    by a real send error never gets a receipt, because that device never got
+    the push.) Scoped to (id, endpoint) -- see the ``/push/delivered``
     endpoint's docstring for why that pair is safe to accept from an
     unauthenticated caller.
     """
@@ -230,7 +431,7 @@ async def mark_delivery_delivered(delivery_id, endpoint: str) -> bool:
             result = await conn.execute(
                 """
                 UPDATE push_delivery_logs SET status = 'delivered', updated_at = now()
-                WHERE id = $1 AND endpoint = $2 AND status = 'sent'
+                WHERE id = $1 AND endpoint = $2 AND status IN ('sent', 'failed')
                 """,
                 delivery_id,
                 endpoint,
@@ -248,6 +449,11 @@ async def expire_stale_deliveries() -> int:
     arrives while the device is offline and is later dropped by the push
     service without ever reaching the service worker), so this periodic sweep
     (see ``main.py``) is what eventually resolves those rows to 'failed'.
+
+    So 'failed' means "send error OR no receipt yet", not "the user definitely
+    didn't see it": the notification may have been shown but the receipt POST
+    itself failed (flaky network, backend unreachable). A receipt that does
+    arrive later still upgrades the row (see ``mark_delivery_delivered``).
     Returns the number of rows updated, parsed from the UPDATE command tag.
     """
     async with db_connection(DB_NAME) as conn:
@@ -360,9 +566,15 @@ async def list_push_messages() -> list[asyncpg.Record]:
 
 __all__ = [
     "VAPID_PUBLIC_KEY",
+    "PUSH_CATEGORIES",
     "save_push_subscription",
     "delete_push_subscription",
     "get_push_subscriptions_for_roles",
+    "get_push_subscriptions_for_users",
+    "get_push_opt_outs",
+    "set_push_preferences",
+    "claim_push_reminder",
+    "prune_push_reminders",
     "create_delivery_logs",
     "send_web_push",
     "mark_delivery_delivered",

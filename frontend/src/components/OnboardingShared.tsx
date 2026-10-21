@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { ChevronRight, ChevronDown, Check } from "lucide-react"
 import { GRADE_OPTIONS, STUDENT_EMAIL_DOMAIN, TEAM_YEAR_OPTIONS } from "@/lib/Roles"
+import { isPushSupported } from "@/lib/push"
 import type { OnboardingPageProps, SeasonInfo } from "@/pages/OnboardingPageRouter"
 import { SeasonWordmark, BrandLockup } from "./LoginShared"
 
@@ -288,6 +289,13 @@ export function OnboardingForm({
                     {submitting ? "Saving…" : "Continue"}
                     {!submitting && <ChevronRight size={16} />}
                 </button>
+
+                {isPushSupported() && (
+                    <p className="text-xs theme-subtext-color text-center -mt-2">
+                        We'll ask to send you notifications for task assignments, meetings and
+                        events. You can change this anytime in Settings.
+                    </p>
+                )}
             </form>
 
             <button

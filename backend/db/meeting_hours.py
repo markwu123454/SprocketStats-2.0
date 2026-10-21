@@ -35,6 +35,27 @@ async def list_all_meeting_hours() -> list[asyncpg.Record]:
             raise HTTPException(status_code=500, detail="Failed to fetch meeting hours")
 
 
+async def list_meetings_starting_between(start: datetime, end: datetime) -> list[asyncpg.Record]:
+    """Meetings whose *start* falls in ``(start, end]`` -- for the reminder sweep.
+
+    Unlike ``list_meeting_hours`` (any overlap), a meeting already underway
+    doesn't match: there's nothing left to remind anyone about.
+    """
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetch(
+                """
+                SELECT * FROM meeting_hours
+                WHERE start_time > $1 AND start_time <= $2
+                ORDER BY start_time
+                """,
+                start, end,
+            )
+        except Exception as e:
+            logger.error("list_meetings_starting_between failed: %s", e)
+            raise
+
+
 async def create_meeting_hours(
     created_by: str, start_time: datetime, end_time: datetime, meeting_purpose: str | None
 ) -> asyncpg.Record:
@@ -111,6 +132,7 @@ async def delete_meeting_hours(meeting_id: str) -> bool:
 __all__ = [
     "list_meeting_hours",
     "list_all_meeting_hours",
+    "list_meetings_starting_between",
     "create_meeting_hours",
     "create_meeting_hours_batch",
     "update_meeting_hours",

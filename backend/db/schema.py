@@ -286,6 +286,25 @@ async def init_db():
                     "CREATE INDEX IF NOT EXISTS push_delivery_logs_sent_created_idx "
                     "ON push_delivery_logs (created_at) WHERE status = 'sent'"
                 )
+                # One row per (user, automated push category) the user turned OFF in
+                # Settings -- absence means opted in, so a newly added category
+                # defaults to on without a backfill. See db.push.PUSH_CATEGORIES.
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS push_opt_outs (
+                        user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        category TEXT NOT NULL,
+                        PRIMARY KEY (user_id, category)
+                    )
+                """)
+                # Dedup ledger for the automated reminder sweep (core.push_reminders):
+                # a key is claimed before its push goes out, so overlapping sweeps or
+                # several server processes never send the same reminder twice.
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS push_reminders_sent (
+                        key        TEXT        PRIMARY KEY,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    )
+                """)
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS user_tags (
                         user_id     TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -444,6 +463,19 @@ async def run_migrations():
             # now-unused column from any table created before this change.
             await conn.execute("ALTER TABLE push_messages DROP COLUMN IF EXISTS link")
             await conn.execute("ALTER TABLE meeting_hours ADD COLUMN IF NOT EXISTS meeting_purpose TEXT")
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS push_opt_outs (
+                    user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    category TEXT NOT NULL,
+                    PRIMARY KEY (user_id, category)
+                )
+            """)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS push_reminders_sent (
+                    key        TEXT        PRIMARY KEY,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+            """)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS user_tags (
                     user_id     TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
