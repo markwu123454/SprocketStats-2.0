@@ -57,7 +57,7 @@ export const CONTROL_SECTIONS: ControlSection[] = [
         to: "notifications",
         label: "Notifications",
         icon: Bell,
-        visible: () => false,
+        visible: p => can(p, CP + "notifications"),
     },
     {
         to: "push",
@@ -65,7 +65,7 @@ export const CONTROL_SECTIONS: ControlSection[] = [
         icon: Send,
         // Separate page/feature from dashboard Notifications above -- same
         // authoring permission, but its own table, endpoints, and history.
-        visible: () => false,
+        visible: p => can(p, CP + "notifications"),
     },
 ]
 

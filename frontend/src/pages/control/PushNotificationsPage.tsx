@@ -80,6 +80,10 @@ function statusBadge(status: DeliveryRow["status"]) {
 /** Small at-a-glance pill for a message row in the history list. Surfaces the
  *  worst outcome first so failures are visible before you open anything. */
 function listBadge(m: PushMessage) {
+    // Nobody in the audience had push on -- not a success, nothing was sent.
+    if (m.sent_count === 0) {
+        return { label: "No devices", color: "#6b7280" }
+    }
     if (m.failed_count > 0) {
         return { label: `${m.failed_count} failed`, color: "#dc2626" }
     }
