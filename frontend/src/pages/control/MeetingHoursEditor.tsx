@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 import { TimeWheel } from "@/components/ui/TimeWheel"
 import Dropdown from "@/components/ui/Dropdown"
+import Checkbox from "@/components/ui/Checkbox"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -591,14 +592,11 @@ export default function MeetingHoursEditor() {
 
                 {sortedMeetings.length > 0 && (
                     <div className="flex items-center gap-3.5 pb-2 text-xs theme-subtext-color">
-                        <input
-                            type="checkbox"
+                        <Checkbox
                             aria-label="Select all meetings"
                             checked={selected.size === sortedMeetings.length}
-                            ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < sortedMeetings.length }}
+                            indeterminate={selected.size > 0 && selected.size < sortedMeetings.length}
                             onChange={toggleAll}
-                            className="w-4 h-4 shrink-0 cursor-pointer"
-                            style={{ accentColor: "var(--theme-text-contrast)" }}
                         />
                         {selected.size === 0 ? (
                             <span>Select meetings to edit together</span>
@@ -628,13 +626,10 @@ export default function MeetingHoursEditor() {
                         const durMinutes = Math.round((end.getTime() - start.getTime()) / 60000)
                         return (
                             <div key={m.id} className="flex items-center gap-3.5 py-3 border-t first:border-t-0 theme-border">
-                                <input
-                                    type="checkbox"
+                                <Checkbox
                                     aria-label="Select meeting"
                                     checked={selected.has(m.id)}
                                     onChange={() => toggleSelected(m.id)}
-                                    className="w-4 h-4 shrink-0 cursor-pointer"
-                                    style={{ accentColor: "var(--theme-text-contrast)" }}
                                 />
                                 <span className="font-mono text-[11px] font-bold theme-subtext-color w-8 shrink-0">
                                     {start.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase()}
