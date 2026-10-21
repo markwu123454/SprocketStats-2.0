@@ -12,6 +12,7 @@ import {
     Trash2,
 } from "lucide-react"
 import { TimeWheel } from "@/components/ui/TimeWheel"
+import Dropdown from "@/components/ui/Dropdown"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -137,7 +138,8 @@ export default function MeetingHoursEditor() {
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
-    const [mode, setMode] = useState<"add" | "edit">("add")
+    const [mode, setMode] = useState<"add" | "edit" | "bulk">("add")
+    const [selected, setSelected] = useState<Set<string>>(() => new Set())
     const [editingId, setEditingId] = useState<string | null>(null)
     const [description, setDescription] = useState("")
     const [dateKey, setDateKey] = useState(() => localDateKey(new Date()))
@@ -201,6 +203,7 @@ export default function MeetingHoursEditor() {
         setStartTime(DEFAULT_START)
         setEndTime(DEFAULT_END)
         setRepeat("none")
+        setSelected(new Set())
     }, [])
 
     const updateDescription = (v: string) => { setDescription(v); setJustAdded(false) }
@@ -216,14 +219,14 @@ export default function MeetingHoursEditor() {
     const scheduledSet = useMemo(() => {
         const s = new Set<string>()
         for (const m of meetings) {
-            if (m.id === editingId) continue
+            if (m.id === editingId || (mode === "bulk" && selected.has(m.id))) continue
             s.add(localDateKey(new Date(m.start_time)))
         }
         return s
-    }, [meetings, editingId])
+    }, [meetings, editingId, mode, selected])
 
     const sortedMeetings = useMemo(
-        () => [...meetings].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()),
+        () => [...meetings].sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()),
         [meetings],
     )
 
@@ -245,13 +248,33 @@ export default function MeetingHoursEditor() {
         [isRecurring, dateKey, repeatUntil, stepDays],
     )
     const repeatInvalid = isRecurring && (occurrences.length === 0 || occurrences.length > MAX_OCCURRENCES)
-    const formDisabled = !description.trim() || !dateKey || timeRangeInvalid || repeatInvalid || saving
+    const formDisabled = !description.trim() || (mode !== "bulk" && !dateKey) || timeRangeInvalid || repeatInvalid || saving
 
     async function handleSubmit() {
         if (formDisabled) return
         setSaving(true)
         setError(null)
         try {
+            if (mode === "bulk") {
+                const targets = meetings.filter(m => selected.has(m.id))
+                const results = await Promise.all(targets.map(m => {
+                    const day = new Date(m.start_time)
+                    return fetch(`${API}/meeting-hours/${m.id}`, {
+                        method: "PUT",
+                        credentials: "include",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            start_time: combineDateAndTime(day, startTime).toISOString(),
+                            end_time: combineDateAndTime(day, endTime).toISOString(),
+                            meeting_purpose: description.trim(),
+                        }),
+                    })
+                }))
+                await load()
+                if (results.some(r => !r.ok)) throw new Error("save")
+                resetForm()
+                return
+            }
             const date = dateKeyToDate(dateKey)
             const isEdit = mode === "edit"
             const body = isRecurring
@@ -282,7 +305,7 @@ export default function MeetingHoursEditor() {
                 setTimeout(() => setJustAdded(false), 1600)
             }
         } catch {
-            setError(mode === "edit" ? "Failed to save changes" : "Failed to add meeting")
+            setError(mode !== "add" ? "Failed to save changes" : "Failed to add meeting")
         } finally {
             setSaving(false)
         }
@@ -301,12 +324,53 @@ export default function MeetingHoursEditor() {
         setCalOpen(false)
     }
 
+    function toggleSelected(id: string) {
+        setSelected(prev => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id); else next.add(id)
+            return next
+        })
+    }
+
+    function toggleAll() {
+        setSelected(prev => prev.size === sortedMeetings.length ? new Set() : new Set(sortedMeetings.map(m => m.id)))
+    }
+
+    function handleEditSelected() {
+        const picked = sortedMeetings.filter(m => selected.has(m.id))
+        if (picked.length === 0) return
+        if (picked.length === 1) { handleEdit(picked[0]); return }
+        const first = picked[0]
+        setMode("bulk")
+        setEditingId(null)
+        setDescription(first.meeting_purpose ?? "")
+        setStartTime(toHHMM(new Date(first.start_time)))
+        setEndTime(toHHMM(new Date(first.end_time)))
+        setJustAdded(false)
+        setCalOpen(false)
+    }
+
+    async function handleDeleteSelected() {
+        setError(null)
+        try {
+            const results = await Promise.all([...selected].map(id =>
+                fetch(`${API}/meeting-hours/${id}`, { method: "DELETE", credentials: "include" })))
+            if (mode !== "add") resetForm()
+            setSelected(new Set())
+            await load()
+            if (results.some(r => !r.ok)) throw new Error("delete")
+        } catch {
+            setError("Failed to delete some meetings")
+        }
+    }
+
     async function handleDelete(id: string) {
         setError(null)
         try {
             const res = await fetch(`${API}/meeting-hours/${id}`, { method: "DELETE", credentials: "include" })
             if (!res.ok) throw new Error("delete")
             if (editingId === id) resetForm()
+            setSelected(prev => { const n = new Set(prev); n.delete(id); return n })
             await load()
         } catch {
             setError("Failed to delete meeting")
@@ -326,10 +390,10 @@ export default function MeetingHoursEditor() {
             <div className="rounded-xl border p-6 flex flex-col gap-4 backdrop-blur-sm" style={cardStyle}>
                 <div>
                     <p className="text-xs font-semibold tracking-wider theme-subtext-color">
-                        {mode === "edit" ? "EDIT MEETING" : "SCHEDULE A MEETING"}
+                        {mode === "bulk" ? "EDIT MEETINGS" : mode === "edit" ? "EDIT MEETING" : "SCHEDULE A MEETING"}
                     </p>
                     <h3 className="text-lg font-bold theme-h1-color">
-                        {mode === "edit" ? "Edit meeting hours" : "Add meeting hours"}
+                        {mode === "bulk" ? `Edit ${selected.size} meetings` : mode === "edit" ? "Edit meeting hours" : "Add meeting hours"}
                     </h3>
                 </div>
 
@@ -344,6 +408,11 @@ export default function MeetingHoursEditor() {
                 />
 
                 {/* Date picker (inline calendar) */}
+                {mode === "bulk" ? (
+                    <p className="text-xs theme-subtext-color -mt-1">
+                        Each meeting keeps its own date — the description and times below are applied to all {selected.size} selected.
+                    </p>
+                ) : (
                 <div className="relative" ref={calTriggerRef}>
                     <button
                         onClick={() => setCalOpen(o => !o)}
@@ -408,18 +477,18 @@ export default function MeetingHoursEditor() {
                         document.body,
                     )}
                 </div>
+                )}
 
                 {/* Recurrence (new meetings only) */}
                 {mode === "add" && (
                     <div className="flex flex-col sm:flex-row gap-3">
-                        <select
+                        <Dropdown
                             value={repeat}
-                            onChange={(e) => { setRepeat(e.target.value as Repeat); setJustAdded(false) }}
-                            className="flex-1 rounded-lg border px-3.5 py-2.5 text-sm theme-text outline-none"
-                            style={fieldStyle}
-                        >
-                            {REPEAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
+                            onChange={(v) => { setRepeat(v as Repeat); setJustAdded(false) }}
+                            options={REPEAT_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+                            className="flex-1"
+                            triggerClassName="rounded-lg border px-3.5 py-2.5 text-sm transition theme-bg theme-border theme-text"
+                        />
                         {repeat !== "none" && (
                             <label className="flex-1 flex items-center gap-2 rounded-lg border px-3.5 py-2.5 text-sm theme-text" style={fieldStyle}>
                                 <span className="theme-subtext-color shrink-0">Until</span>
@@ -461,7 +530,7 @@ export default function MeetingHoursEditor() {
                     )}
 
                     <div className="flex items-center gap-2 ml-auto">
-                        {mode === "edit" && (
+                        {mode !== "add" && (
                             <button
                                 type="button"
                                 onClick={resetForm}
@@ -476,8 +545,8 @@ export default function MeetingHoursEditor() {
                             className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                             style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
                         >
-                            {mode === "edit" || justAdded ? <Check size={15} /> : <Plus size={15} />}
-                            {mode === "edit"
+                            {mode !== "add" || justAdded ? <Check size={15} /> : <Plus size={15} />}
+                            {mode !== "add"
                                 ? (saving ? "Saving…" : "Save changes")
                                 : (saving ? "Adding…" : justAdded ? "Added" : isRecurring ? "Add meetings" : "Add meeting")}
                         </button>
@@ -494,6 +563,34 @@ export default function MeetingHoursEditor() {
                     </span>
                 </div>
 
+                {sortedMeetings.length > 0 && (
+                    <div className="flex items-center gap-3.5 pb-2 text-xs theme-subtext-color">
+                        <input
+                            type="checkbox"
+                            aria-label="Select all meetings"
+                            checked={selected.size === sortedMeetings.length}
+                            ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < sortedMeetings.length }}
+                            onChange={toggleAll}
+                            className="w-4 h-4 shrink-0 cursor-pointer"
+                            style={{ accentColor: "var(--theme-text-contrast)" }}
+                        />
+                        {selected.size === 0 ? (
+                            <span>Select meetings to edit together</span>
+                        ) : (
+                            <>
+                                <span className="font-semibold theme-text">{selected.size} selected</span>
+                                <button onClick={handleEditSelected} className="flex items-center gap-1 font-semibold theme-text-contrast hover:opacity-80">
+                                    <Pencil size={13} /> Edit
+                                </button>
+                                <button onClick={() => void handleDeleteSelected()} className="flex items-center gap-1 font-semibold hover:opacity-80 theme-text">
+                                    <Trash2 size={13} /> Delete
+                                </button>
+                                <button onClick={() => setSelected(new Set())} className="ml-auto hover:opacity-80">Clear</button>
+                            </>
+                        )}
+                    </div>
+                )}
+
                 {loading ? (
                     <p className="text-sm theme-subtext-color py-3">Loading…</p>
                 ) : sortedMeetings.length === 0 ? (
@@ -505,6 +602,14 @@ export default function MeetingHoursEditor() {
                         const durMinutes = Math.round((end.getTime() - start.getTime()) / 60000)
                         return (
                             <div key={m.id} className="flex items-center gap-3.5 py-3 border-t first:border-t-0 theme-border">
+                                <input
+                                    type="checkbox"
+                                    aria-label="Select meeting"
+                                    checked={selected.has(m.id)}
+                                    onChange={() => toggleSelected(m.id)}
+                                    className="w-4 h-4 shrink-0 cursor-pointer"
+                                    style={{ accentColor: "var(--theme-text-contrast)" }}
+                                />
                                 <span className="font-mono text-[11px] font-bold theme-subtext-color w-8 shrink-0">
                                     {start.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase()}
                                 </span>
