@@ -1,10 +1,10 @@
-import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, field_validator
 
 import db
+from core.push_notify import fire_and_forget
 from core.security import VALID_ROLES, require_access, require_active
 
 router = APIRouter()
@@ -15,18 +15,6 @@ router = APIRouter()
 # Sending a push never creates a `notifications` row (no dashboard modal), and
 # creating a dashboard notice never sends a push.
 require_push = require_access(permissions="control_panel.notifications")
-
-# Strong references for fire-and-forget push sends. asyncio.create_task() only
-# holds a *weak* reference to the task -- without this, the task object can be
-# garbage-collected mid-flight (before the webpush network calls finish),
-# silently dropping the send. See asyncio docs' "Important" note on create_task.
-_background_tasks: set[asyncio.Task] = set()
-
-
-def _fire_and_forget(coro) -> None:
-    task = asyncio.create_task(coro)
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
 
 
 class PushSubscriptionKeys(BaseModel):
@@ -68,6 +56,20 @@ class PushMessageRequest(BaseModel):
         unknown = set(v) - VALID_ROLES
         if unknown:
             raise ValueError(f"Unknown role(s): {sorted(unknown)}")
+        return v
+
+
+class PushPreferencesRequest(BaseModel):
+    """Partial ``{category: enabled}`` update; omitted categories are untouched."""
+
+    preferences: dict[str, bool]
+
+    @field_validator("preferences")
+    @classmethod
+    def _validate_categories(cls, v: dict[str, bool]) -> dict[str, bool]:
+        unknown = set(v) - set(db.PUSH_CATEGORIES)
+        if unknown:
+            raise ValueError(f"Unknown category(s): {sorted(unknown)}")
         return v
 
 
@@ -114,6 +116,25 @@ async def push_unsubscribe(body: PushUnsubscribeRequest, user: dict = Depends(re
     return {"ok": True}
 
 
+@router.get("/preferences")
+async def get_push_preferences(user: dict = Depends(require_active)):
+    """Which automated push categories the current user receives.
+
+    Per user, not per device: opting out here applies to every device they've
+    subscribed. Control Panel announcements aren't listed -- they have no
+    category and can't be opted out of short of disabling push on the device.
+    """
+    opted_out = await db.get_push_opt_outs(user["sub"])
+    return {"preferences": {c: c not in opted_out for c in db.PUSH_CATEGORIES}}
+
+
+@router.put("/preferences")
+async def put_push_preferences(body: PushPreferencesRequest, user: dict = Depends(require_active)):
+    """Turn individual automated push categories on or off for the current user."""
+    await db.set_push_preferences(user["sub"], body.preferences)
+    return await get_push_preferences(user)
+
+
 @router.get("")
 async def list_push_messages(_: dict = Depends(require_push)):
     """Send history for the Push Notifications page."""
@@ -145,7 +166,7 @@ async def send_push_message(body: PushMessageRequest, user: dict = Depends(requi
         for s in subs
         if s["endpoint"] in delivery_ids
     ]
-    _fire_and_forget(db.send_web_push(deliveries, body.title, body.body))
+    fire_and_forget(db.send_web_push(deliveries, body.title, body.body))
     return _row_to_message(row)
 
 
@@ -159,9 +180,10 @@ async def push_delivered(body: PushDeliveredRequest):
     still land. This is safe to leave open because the (delivery UUID,
     endpoint) pair is an unguessable bearer credential: it's embedded only in
     that one device's encrypted push payload, it scopes the write to exactly
-    one row, and the underlying update can only ever transition that row from
-    'sent' to 'delivered' -- never create, delete, or touch any other status --
-    so there is nothing meaningful to abuse even if a pair were guessed.
+    one row, and the underlying update can only ever transition that row
+    (from 'sent', or 'failed' for a late receipt) to 'delivered' -- never
+    create, delete, or touch any other row -- so there is nothing meaningful
+    to abuse even if a pair were guessed.
 
     Never errors on a miss: an unknown id, wrong endpoint, or already-resolved
     row just means ``ok`` comes back false. This call is idempotent and its

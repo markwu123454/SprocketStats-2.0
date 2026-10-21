@@ -6,8 +6,7 @@ import type { RoleCatalogEntry } from "@/lib/permissions"
 import { STUDENT_EMAIL_DOMAIN } from "@/lib/Roles"
 import { useIsMobile } from "@/lib/useIsMobile"
 import { useThemeSeasonInfo, type SeasonInfo } from "@/lib/seasonTheme"
-// Temporarily unused -- subscribeToPush() call below is disabled.
-// import { subscribeToPush } from "@/lib/push.ts"
+import { subscribeToPush } from "@/lib/push.ts"
 import OnboardingPageDesktop from "./OnboardingPageDesktop"
 import OnboardingPageMobile from "./OnboardingPageMobile"
 
@@ -103,16 +102,16 @@ export default function OnboardingPageRouter() {
 
         // Best-effort, using this click's user gesture -- browsers require the
         // permission prompt to originate from a direct interaction, and this is
-        // the last click before the user lands on the dashboard. Never blocks
-        // onboarding: unsupported browsers, a denied prompt, or any subscribe
-        // failure are swallowed, since the user can still enable push later
-        // from Settings.
-        // Temporarily disabled -- button now just says "Continue".
-        // try {
-        //     await subscribeToPush()
-        // } catch {
-        //     // ignore
-        // }
+        // the last click before the user lands on the dashboard. Called
+        // synchronously (requestPermission is its first await, so the gesture
+        // is still fresh) but deliberately not awaited: onboarding never waits
+        // on the prompt or the subscribe round-trips, and an unsupported
+        // browser, a denied prompt, or any subscribe failure is swallowed --
+        // the user can still enable push later from Settings. The promise
+        // outlives this page's unmount, so it finishes on the dashboard; if
+        // the save is rejected (e.g. a role pending approval), AppShell's
+        // load-time re-sync registers it once they're let in.
+        subscribeToPush().catch(() => {})
 
         try {
             const res = await fetch(`${API}/auth/onboarding`, {

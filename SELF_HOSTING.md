@@ -232,6 +232,7 @@ Note that changing a user's role clears `approved_by` ([backend/db/users.py:176]
 | `VAPID_PRIVATE_KEY` | yes | **runs**, web push broken | |
 | `LABEL_STUDIO_PROJECT_ID` | yes | **runs**, defaults to `7` | |
 | `VAPID_CLAIM_EMAIL` | no | **runs**, defaults to `mailto:admin@example.com` | push services may reject the default |
+| `TEAM_TIMEZONE` | no | **runs**, defaults to `America/Los_Angeles` | IANA zone; used for meeting/event reminder times and to read the naive local times in `events.start_time` |
 | `DATABASE_URL_LABEL_STUDIO` | no | **runs**, fails only on labeling queries | second Neon database |
 | `ENV` | no | **runs** as production | `production` or `development` |
 
@@ -255,7 +256,7 @@ Whether the app then survives depends on how each variable is read, see the **If
 
 **Frontend calls `undefined/...`.** `VITE_BACKEND_URL` wasn't set at build time. Set it and redeploy.
 
-**Push notifications never arrive.** Check `VAPID_CLAIM_EMAIL` is a real `mailto:`, and that the keypair hasn't changed since browsers subscribed.
+**Push notifications never arrive.** Check `VAPID_CLAIM_EMAIL` is a real `mailto:`, and that the keypair hasn't changed since browsers subscribed. Meeting and event reminders come from a background loop in the backend process, so they also need at least one machine running (`min_machines_running = 1` in `fly.toml`); with every machine stopped, reminders that fall due while it's down are skipped once they're no longer timely.
 
 ---
 

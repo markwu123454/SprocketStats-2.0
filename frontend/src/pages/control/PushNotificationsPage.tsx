@@ -34,8 +34,10 @@ interface DeliveryDetails {
 }
 
 /** "sent" means still pending within the receipt window; "partial" means
- *  some but not all of a user's devices got it; only "failed" is a true
- *  failure. */
+ *  some but not all of a user's devices got it; "failed" means a send error
+ *  *or* no delivery receipt within 10 minutes -- the device may still have
+ *  shown it (e.g. the receipt itself didn't get through), and a late receipt
+ *  flips it to delivered. */
 function statusBadge(status: DeliveryRow["status"]) {
     if (status === "delivered") {
         return (
@@ -62,6 +64,7 @@ function statusBadge(status: DeliveryRow["status"]) {
             <span
                 className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium theme-border shrink-0"
                 style={{ color: "#dc2626", borderColor: "color-mix(in oklch, #dc2626 50%, transparent)" }}
+                title="Send error, or no delivery receipt yet. The device may still have shown it."
             >
                 <XCircle size={12} /> Failed
             </span>
@@ -77,6 +80,10 @@ function statusBadge(status: DeliveryRow["status"]) {
 /** Small at-a-glance pill for a message row in the history list. Surfaces the
  *  worst outcome first so failures are visible before you open anything. */
 function listBadge(m: PushMessage) {
+    // Nobody in the audience had push on -- not a success, nothing was sent.
+    if (m.sent_count === 0) {
+        return { label: "No devices", color: "#6b7280" }
+    }
     if (m.failed_count > 0) {
         return { label: `${m.failed_count} failed`, color: "#dc2626" }
     }

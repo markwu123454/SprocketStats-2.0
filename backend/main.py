@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
@@ -34,7 +35,7 @@ if missing_env_vars:
     print(f"Missing required environment variables: {', '.join(missing_env_vars)}")
 
 import db
-from core import account_state
+from core import account_state, push_notify
 from endpoints import router
 from endpoints import label_studio_client
 
@@ -53,6 +54,12 @@ ACCOUNT_STATE_REFRESH_MAX_SECONDS = 7200  # 2 hours
 PUSH_DELIVERY_SWEEP_SECONDS = 60
 # Ceiling the sweep interval backs off to when request volume is low.
 PUSH_DELIVERY_SWEEP_MAX_SECONDS = 21600  # 6 hours
+
+# How often each process checks for due meeting/event reminders (see
+# core.push_notify.send_due_reminders). Deliberately a fixed interval with no
+# idle backoff, unlike the loops above: reminders are time-driven, and a quiet
+# night is exactly when the next morning's reminder has to go out on time.
+PUSH_REMINDER_SWEEP_SECONDS = 300
 
 # Below this many requests in a sleep window, a loop treats itself as idle
 # and doubles its interval next time instead of resetting to the base rate.
@@ -121,6 +128,23 @@ async def _push_delivery_sweep_loop():
             interval = PUSH_DELIVERY_SWEEP_SECONDS
 
 
+async def _push_reminder_loop():
+    """Send meeting/event reminders as they come due, for the life of the app.
+
+    A failed sweep is logged and retried on the next tick. Safe to run in
+    several processes at once: each reminder is claimed in the database
+    before it's sent, so only one process sends it.
+    """
+    while True:
+        await asyncio.sleep(PUSH_REMINDER_SWEEP_SECONDS)
+        try:
+            sent = await push_notify.send_due_reminders(datetime.now(timezone.utc))
+            if sent:
+                logger.info("push reminder sweep: sent %d reminder(s)", sent)
+        except Exception as e:
+            logger.error("push reminder sweep failed: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await db.init_db()
@@ -129,9 +153,11 @@ async def lifespan(_: FastAPI):
     await account_state.refresh()
     refresh_task = asyncio.create_task(_account_state_refresh_loop())
     push_sweep_task = asyncio.create_task(_push_delivery_sweep_loop())
+    push_reminder_task = asyncio.create_task(_push_reminder_loop())
     yield
     refresh_task.cancel()
     push_sweep_task.cancel()
+    push_reminder_task.cancel()
     await label_studio_client.aclose()
     await db.close_pool()
 

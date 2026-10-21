@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import db
+from core import push_notify
 from core.security import require_active
 from endpoints.tasks import router as tasks_router
 
@@ -37,6 +38,8 @@ class FakeStore:
         # mirroring `ORDER BY added_at` in the real query).
         self.contributors: dict[str, list[str]] = {}
         self.notes: dict[str, dict] = {}
+        # (user_ids, category, title, body) for every push the router fired.
+        self.pushes: list[tuple] = []
 
     def add_user(self, user_id, display_name, role=None, approved_by="approver", banned_at=None,
                  onboarding_complete=True):
@@ -227,6 +230,12 @@ def store(monkeypatch):
         "create_task_note", "delete_task_note",
     ):
         monkeypatch.setattr(db, name, getattr(fake, name))
+    monkeypatch.setattr(
+        push_notify, "notify_users_later",
+        lambda user_ids, category, title, body, url=None, tag=None: fake.pushes.append(
+            (user_ids, category, title, body)
+        ),
+    )
     return fake
 
 
@@ -993,3 +1002,63 @@ def test_delete_unknown_note_404(app, store):
     task_id = store.add_task()
     resp = _as(app, MEMBER).delete(f"/tasks/{task_id}/notes/does-not-exist")
     assert resp.status_code == 404
+
+
+# ── Assignment push notifications ─────────────────────────────────────────────
+
+def test_create_with_assignee_pushes_to_them(app, store):
+    store.add_user("member-1", "Member One", role="cad_member")
+    resp = _as(app, {**CAPTAIN, "display_name": "Cap"}).post(
+        "/tasks", json={"title": "Wire the arm", "bucket": "general", "assignee_id": "member-1",
+                        "due_date": "2026-10-23"},
+    )
+    assert resp.status_code == 200
+    assert store.pushes == [
+        (["member-1"], "task_assigned", "New task", "Cap assigned you \u201cWire the arm\u201d \u00b7 due Fri, Oct 23")
+    ]
+
+
+def test_create_assigned_to_self_does_not_push(app, store):
+    store.add_user("captain-1", "Cap One", role="captain")
+    resp = _as(app, CAPTAIN).post("/tasks", json={"title": "Mine", "bucket": "general", "assignee_id": "captain-1"})
+    assert resp.status_code == 200
+    assert store.pushes == []
+
+
+def test_reassign_pushes_new_assignee_but_resending_same_does_not(app, store):
+    store.add_user("member-1", "Member One", role="cad_member")
+    store.add_user("member-2", "Member Two", role="cad_member")
+    task_id = store.add_task(assignee_id="member-1")
+
+    assert _as(app, CAPTAIN).patch(f"/tasks/{task_id}", json={"assignee_id": "member-1", "title": "T"}).status_code == 200
+    assert store.pushes == []
+
+    assert _as(app, CAPTAIN).patch(f"/tasks/{task_id}", json={"assignee_id": "member-2"}).status_code == 200
+    assert [p[0] for p in store.pushes] == [["member-2"]]
+
+
+def test_claim_does_not_push(app, store):
+    task_id = store.add_task()
+    assert _as(app, MEMBER).post(f"/tasks/{task_id}/claim").status_code == 200
+    assert store.pushes == []
+
+
+def test_lead_adding_contributor_pushes_once(app, store):
+    store.add_user("member-1", "Member One", role="cad_member")
+    store.add_user("member-2", "Member Two", role="cad_member")
+    task_id = store.add_task(assignee_id="member-1")
+
+    for _ in range(2):
+        resp = _as(app, LEAD).post(f"/tasks/{task_id}/contributors", json={"user_id": "member-2"})
+        assert resp.status_code == 200
+    assert len(store.pushes) == 1
+    assert store.pushes[0][0] == ["member-2"]
+    assert "added you to" in store.pushes[0][3]
+
+
+def test_adding_self_as_contributor_does_not_push(app, store):
+    store.add_user("member-2", "Member Two", role="cad_member")
+    task_id = store.add_task(assignee_id="member-1")
+    resp = _as(app, {"sub": "member-2", "role": "cad_member"}).post(f"/tasks/{task_id}/contributors")
+    assert resp.status_code == 200
+    assert store.pushes == []

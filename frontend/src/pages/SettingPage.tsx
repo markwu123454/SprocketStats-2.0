@@ -1,12 +1,51 @@
 import { useAuth, useOnboardedUser } from "@/contexts/authContext"
 import { getPerm } from "@/lib/permissions"
-import { LogOut, Mail, ShieldCheck, Palette, Navigation, Bell } from "lucide-react"
+import { LogOut, Mail, ShieldCheck, Palette, Navigation, Bell, ListChecks, CalendarClock, Milestone, Megaphone } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useTheme } from "@/contexts/themeContext"
 import Avatar from "@/components/Avatar.tsx"
-import { getPushState, subscribeToPush, unsubscribeFromPush, type PushState } from "@/lib/push.ts"
+import {
+    getPushPreferences, getPushState, setPushPreferences, subscribeToPush, syncPushSubscription,
+    unsubscribeFromPush, type PushCategory, type PushPreferences, type PushState,
+} from "@/lib/push.ts"
 
 const NAV_TEXT_KEY = "nav-show-text"
+
+const PUSH_CATEGORY_ROWS: { key: PushCategory; label: string; description: string; icon: typeof Bell }[] = [
+    { key: "task_assigned",    label: "Task assignments",   description: "When someone assigns you a task or adds you to one", icon: ListChecks },
+    { key: "meeting_reminder", label: "Meeting reminders",  description: "A day before each team meeting",                    icon: CalendarClock },
+    { key: "event_reminder",   label: "Competition events", description: "The evening before and morning of each event",      icon: Milestone },
+]
+
+function Switch({ checked, disabled, onClick, label }: {
+    checked: boolean
+    disabled?: boolean
+    onClick: () => void
+    label?: string
+}) {
+    return (
+        <button
+            role="switch"
+            aria-checked={checked}
+            aria-label={label}
+            disabled={disabled}
+            onClick={onClick}
+            className="relative shrink-0 w-11 h-6 rounded-full transition-colors duration-200 disabled:opacity-40"
+            style={{
+                background: checked
+                    ? "var(--theme-button-bg, #3b82f6)"
+                    : "var(--theme-border)",
+            }}
+        >
+            <span
+                className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
+                style={{ transform: checked ? "translateX(20px)" : "translateX(0)" }}
+            />
+        </button>
+    )
+}
+
+const Divider = () => <div style={{ height: "1px", background: "var(--theme-border)" }} />
 
 function getNavTextPref(): boolean {
     const stored = localStorage.getItem(NAV_TEXT_KEY)
@@ -21,10 +60,28 @@ export default function SettingPage() {
     const [pushState, setPushState] = useState<PushState>("unsubscribed")
     const [pushBusy, setPushBusy] = useState(false)
     const [pushError, setPushError] = useState<string | null>(null)
+    const [prefs, setPrefs] = useState<PushPreferences | null>(null)
+    const [prefsError, setPrefsError] = useState<string | null>(null)
 
     useEffect(() => {
-        void getPushState().then(setPushState)
+        // Not just getPushState(): this also re-registers the subscription with
+        // the backend, so "on" here means the server will actually send to it.
+        void syncPushSubscription().then(setPushState)
+        getPushPreferences().then(setPrefs).catch(() => setPrefsError("Couldn't load notification preferences"))
     }, [])
+
+    async function toggleCategory(key: PushCategory) {
+        if (!prefs) return
+        const previous = prefs
+        setPrefs({ ...prefs, [key]: !prefs[key] })
+        setPrefsError(null)
+        try {
+            setPrefs(await setPushPreferences({ [key]: !previous[key] }))
+        } catch (e) {
+            setPrefs(previous)
+            setPrefsError(e instanceof Error ? e.message : "Something went wrong")
+        }
+    }
 
     function setShowNavText(v: boolean) {
         setShowNavTextState(v)
@@ -140,7 +197,7 @@ export default function SettingPage() {
                         </div>
                     </div>
 
-                    <div style={{ height: "1px", background: "var(--theme-border)" }} />
+                    <Divider />
 
                     {/* Nav Labels Row */}
                     <div className="flex items-center justify-between px-5 py-3.5 gap-4">
@@ -151,22 +208,7 @@ export default function SettingPage() {
                                 <p className="text-xs theme-subtext-color">Show text labels on mobile nav</p>
                             </div>
                         </div>
-                        <button
-                            role="switch"
-                            aria-checked={showNavText}
-                            onClick={() => setShowNavText(!showNavText)}
-                            className="relative shrink-0 w-11 h-6 rounded-full transition-colors duration-200"
-                            style={{
-                                background: showNavText
-                                    ? "var(--theme-button-bg, #3b82f6)"
-                                    : "var(--theme-border)",
-                            }}
-                        >
-                            <span
-                                className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
-                                style={{ transform: showNavText ? "translateX(20px)" : "translateX(0)" }}
-                            />
-                        </button>
+                        <Switch label="Nav labels" checked={showNavText} onClick={() => setShowNavText(!showNavText)} />
                     </div>
                 </div>
             </section>
@@ -189,33 +231,63 @@ export default function SettingPage() {
                                         ? "Not supported in this browser"
                                         : pushState === "denied"
                                             ? "Blocked - enable in your browser's site settings"
-                                            : "Get notified about new notices on this device"}
+                                            : "Get notified on this device"}
                                 </p>
                             </div>
                         </div>
-                        <button
-                            role="switch"
-                            aria-checked={pushState === "subscribed"}
+                        <Switch
+                            label="Push notifications"
+                            checked={pushState === "subscribed"}
                             disabled={pushBusy || pushState === "unsupported" || pushState === "denied"}
                             onClick={() => void togglePush()}
-                            className="relative shrink-0 w-11 h-6 rounded-full transition-colors duration-200 disabled:opacity-40"
-                            style={{
-                                background: pushState === "subscribed"
-                                    ? "var(--theme-button-bg, #3b82f6)"
-                                    : "var(--theme-border)",
-                            }}
-                        >
-                            <span
-                                className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
-                                style={{ transform: pushState === "subscribed" ? "translateX(20px)" : "translateX(0)" }}
-                            />
-                        </button>
+                        />
                     </div>
 
                     {pushError && (
                         <p className="px-5 pb-3.5 text-xs text-red-500">{pushError}</p>
                     )}
+
+                    {pushState === "subscribed" && (
+                        <>
+                            <Divider />
+                            <div className="flex items-center gap-3 px-5 py-3.5">
+                                <Megaphone size={16} className="theme-subtext-color shrink-0" />
+                                <div>
+                                    <p className="text-sm font-medium theme-text">Team announcements</p>
+                                    <p className="text-xs theme-subtext-color">Always on while push is enabled</p>
+                                </div>
+                            </div>
+                            {PUSH_CATEGORY_ROWS.map(({ key, label, description, icon: Icon }) => (
+                                <div key={key}>
+                                    <Divider />
+                                    <div className="flex items-center justify-between px-5 py-3.5 gap-4">
+                                        <div className="flex items-center gap-3">
+                                            <Icon size={16} className="theme-subtext-color shrink-0" />
+                                            <div>
+                                                <p className="text-sm font-medium theme-text">{label}</p>
+                                                <p className="text-xs theme-subtext-color">{description}</p>
+                                            </div>
+                                        </div>
+                                        <Switch
+                                            label={label}
+                                            checked={prefs?.[key] ?? true}
+                                            disabled={!prefs}
+                                            onClick={() => void toggleCategory(key)}
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                            {prefsError && (
+                                <p className="px-5 pb-3.5 text-xs text-red-500">{prefsError}</p>
+                            )}
+                        </>
+                    )}
                 </div>
+                {pushState === "subscribed" && (
+                    <p className="text-xs theme-subtext-color px-1">
+                        These choices apply to every device you've turned push on for.
+                    </p>
+                )}
             </section>
         </div>
     )

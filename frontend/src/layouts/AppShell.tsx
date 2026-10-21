@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react"
-import { Outlet, Link, useLocation } from "react-router-dom"
+import { Outlet, Link, useLocation, useNavigate } from "react-router-dom"
 import { useAuth, useOnboardedUser } from "@/contexts/authContext"
 import {
     LayoutDashboard, CalendarCheck, ClipboardList, Settings,
@@ -11,6 +11,7 @@ import { can, getPerm, type PermPolicy } from "@/lib/permissions"
 import { visibleSections, type ControlSection } from "@/lib/controlSections"
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community"
 import { useAppReady } from "@/contexts/appReadyContext"
+import { onNotificationNavigate, syncPushSubscription } from "@/lib/push"
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
@@ -48,6 +49,7 @@ export default function AppShell() {
     // Guaranteed present + onboarded: AppShell only renders under <Protected>.
     const user = useOnboardedUser()
     const location = useLocation()
+    const navigate = useNavigate()
     const markReady = useAppReady()
 
     const [menuOpen,       setMenuOpen]       = useState(false)
@@ -70,6 +72,13 @@ export default function AppShell() {
     }, [])
 
     useEffect(() => { markReady() }, [markReady])
+
+    // Keep this device's push subscription registered with the backend for
+    // whoever is signed in (see syncPushSubscription). Never prompts.
+    useEffect(() => { void syncPushSubscription() }, [user.id])
+
+    // A notification tapped while the app is already open routes in-app.
+    useEffect(() => onNotificationNavigate(path => navigate(path)), [navigate])
 
     useEffect(() => {
         function onClickOutside(e: MouseEvent) {
