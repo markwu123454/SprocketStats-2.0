@@ -95,6 +95,27 @@ function buildWeeks(y: number, m: number): (number | null)[][] {
 const cardStyle = { background: "var(--theme-bg)", borderColor: "var(--theme-border)" }
 const fieldStyle = { background: "color-mix(in oklch, var(--theme-button-bg) 60%, transparent)", borderColor: "var(--theme-border)" }
 
+type Repeat = "none" | "daily" | "weekly" | "biweekly"
+
+const REPEAT_OPTIONS: { value: Repeat, label: string, days: number }[] = [
+    { value: "none", label: "Does not repeat", days: 0 },
+    { value: "daily", label: "Every day", days: 1 },
+    { value: "weekly", label: "Every week", days: 7 },
+    { value: "biweekly", label: "Every 2 weeks", days: 14 },
+]
+
+const MAX_OCCURRENCES = 200
+
+/** Local-time occurrences from `first` through `untilKey` (inclusive), stepping by whole calendar days so DST doesn't shift the clock time. */
+function expandOccurrences(first: Date, untilKey: string, stepDays: number): Date[] {
+    const until = dateKeyToDate(untilKey)
+    const out: Date[] = []
+    for (let d = new Date(first); d <= until && out.length <= MAX_OCCURRENCES; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + stepDays)) {
+        out.push(d)
+    }
+    return out
+}
+
 const DEFAULT_START = "15:30"
 const DEFAULT_END = "18:30"
 
@@ -123,6 +144,8 @@ export default function MeetingHoursEditor() {
     const [startTime, setStartTime] = useState(DEFAULT_START)
     const [endTime, setEndTime] = useState(DEFAULT_END)
     const [justAdded, setJustAdded] = useState(false)
+    const [repeat, setRepeat] = useState<Repeat>("none")
+    const [repeatUntil, setRepeatUntil] = useState(() => localDateKey(new Date()))
 
     const [calOpen, setCalOpen] = useState(false)
     const calTriggerRef = useRef<HTMLDivElement>(null)
@@ -177,10 +200,14 @@ export default function MeetingHoursEditor() {
         setDateKey(localDateKey(new Date()))
         setStartTime(DEFAULT_START)
         setEndTime(DEFAULT_END)
+        setRepeat("none")
     }, [])
 
     const updateDescription = (v: string) => { setDescription(v); setJustAdded(false) }
-    const selectDate = (key: string) => { setDateKey(key); setCalOpen(false); setJustAdded(false) }
+    const selectDate = (key: string) => {
+        setDateKey(key); setCalOpen(false); setJustAdded(false)
+        setRepeatUntil(prev => prev < key ? key : prev)
+    }
     const updateStart = (v: string) => { setStartTime(v); setJustAdded(false) }
     const updateEnd = (v: string) => { setEndTime(v); setJustAdded(false) }
 
@@ -211,7 +238,14 @@ export default function MeetingHoursEditor() {
     const total = useMemo(() => diffHoursMinutes(startTime, endTime), [startTime, endTime])
     const rawMinutes = useMemo(() => rawMinutesDiff(startTime, endTime), [startTime, endTime])
     const timeRangeInvalid = rawMinutes <= 0
-    const formDisabled = !description.trim() || !dateKey || timeRangeInvalid || saving
+    const stepDays = REPEAT_OPTIONS.find(o => o.value === repeat)?.days ?? 0
+    const isRecurring = mode === "add" && repeat !== "none"
+    const occurrences = useMemo(
+        () => isRecurring && dateKey ? expandOccurrences(dateKeyToDate(dateKey), repeatUntil, stepDays) : [],
+        [isRecurring, dateKey, repeatUntil, stepDays],
+    )
+    const repeatInvalid = isRecurring && (occurrences.length === 0 || occurrences.length > MAX_OCCURRENCES)
+    const formDisabled = !description.trim() || !dateKey || timeRangeInvalid || repeatInvalid || saving
 
     async function handleSubmit() {
         if (formDisabled) return
@@ -219,13 +253,22 @@ export default function MeetingHoursEditor() {
         setError(null)
         try {
             const date = dateKeyToDate(dateKey)
-            const body = {
-                start_time: combineDateAndTime(date, startTime).toISOString(),
-                end_time: combineDateAndTime(date, endTime).toISOString(),
-                meeting_purpose: description.trim(),
-            }
             const isEdit = mode === "edit"
-            const res = await fetch(isEdit ? `${API}/meeting-hours/${editingId}` : `${API}/meeting-hours`, {
+            const body = isRecurring
+                ? {
+                    slots: occurrences.map(d => ({
+                        start_time: combineDateAndTime(d, startTime).toISOString(),
+                        end_time: combineDateAndTime(d, endTime).toISOString(),
+                    })),
+                    meeting_purpose: description.trim(),
+                }
+                : {
+                    start_time: combineDateAndTime(date, startTime).toISOString(),
+                    end_time: combineDateAndTime(date, endTime).toISOString(),
+                    meeting_purpose: description.trim(),
+                }
+            const url = isEdit ? `${API}/meeting-hours/${editingId}` : `${API}/meeting-hours${isRecurring ? "/batch" : ""}`
+            const res = await fetch(url, {
                 method: isEdit ? "PUT" : "POST",
                 credentials: "include",
                 headers: { "Content-Type": "application/json" },
@@ -366,6 +409,32 @@ export default function MeetingHoursEditor() {
                     )}
                 </div>
 
+                {/* Recurrence (new meetings only) */}
+                {mode === "add" && (
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <select
+                            value={repeat}
+                            onChange={(e) => { setRepeat(e.target.value as Repeat); setJustAdded(false) }}
+                            className="flex-1 rounded-lg border px-3.5 py-2.5 text-sm theme-text outline-none"
+                            style={fieldStyle}
+                        >
+                            {REPEAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                        {repeat !== "none" && (
+                            <label className="flex-1 flex items-center gap-2 rounded-lg border px-3.5 py-2.5 text-sm theme-text" style={fieldStyle}>
+                                <span className="theme-subtext-color shrink-0">Until</span>
+                                <input
+                                    type="date"
+                                    value={repeatUntil}
+                                    min={dateKey}
+                                    onChange={(e) => { setRepeatUntil(e.target.value); setJustAdded(false) }}
+                                    className="flex-1 bg-transparent outline-none theme-text min-w-0"
+                                />
+                            </label>
+                        )}
+                    </div>
+                )}
+
                 {/* Start / end time wheels */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <TimeWheel label="Start" value={startTime} onChange={updateStart} />
@@ -380,9 +449,14 @@ export default function MeetingHoursEditor() {
                 <div className="flex items-center justify-between gap-3">
                     {timeRangeInvalid ? (
                         <p className="text-sm text-red-500">End must be after start</p>
+                    ) : repeatInvalid ? (
+                        <p className="text-sm text-red-500">
+                            {occurrences.length === 0 ? "Pick an end date on or after the start" : `Too many meetings (max ${MAX_OCCURRENCES})`}
+                        </p>
                     ) : (
                         <p className="text-sm theme-text">
                             Total <span className="font-mono font-bold theme-text-contrast">{total.h}h {String(total.m).padStart(2, "0")}m</span>
+                            {isRecurring && <span className="theme-subtext-color"> · {occurrences.length} meetings</span>}
                         </p>
                     )}
 
@@ -405,7 +479,7 @@ export default function MeetingHoursEditor() {
                             {mode === "edit" || justAdded ? <Check size={15} /> : <Plus size={15} />}
                             {mode === "edit"
                                 ? (saving ? "Saving…" : "Save changes")
-                                : (saving ? "Adding…" : justAdded ? "Added" : "Add meeting")}
+                                : (saving ? "Adding…" : justAdded ? "Added" : isRecurring ? "Add meetings" : "Add meeting")}
                         </button>
                     </div>
                 </div>

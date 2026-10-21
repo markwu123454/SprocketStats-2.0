@@ -54,6 +54,29 @@ async def create_meeting_hours(
             raise HTTPException(status_code=500, detail="Failed to create meeting")
 
 
+async def create_meeting_hours_batch(
+    created_by: str, slots: list[tuple[datetime, datetime]], meeting_purpose: str | None
+) -> list[asyncpg.Record]:
+    """Insert every occurrence of a recurring meeting atomically."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            async with conn.transaction():
+                return [
+                    await conn.fetchrow(
+                        """
+                        INSERT INTO meeting_hours (created_by, start_time, end_time, meeting_purpose)
+                        VALUES ($1, $2, $3, $4)
+                        RETURNING *
+                        """,
+                        created_by, start, end, meeting_purpose,
+                    )
+                    for start, end in slots
+                ]
+        except Exception as e:
+            logger.error("create_meeting_hours_batch failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to create meetings")
+
+
 async def update_meeting_hours(
     meeting_id: str, start_time: datetime, end_time: datetime, meeting_purpose: str | None
 ) -> asyncpg.Record | None:
@@ -89,6 +112,7 @@ __all__ = [
     "list_meeting_hours",
     "list_all_meeting_hours",
     "create_meeting_hours",
+    "create_meeting_hours_batch",
     "update_meeting_hours",
     "delete_meeting_hours",
 ]
