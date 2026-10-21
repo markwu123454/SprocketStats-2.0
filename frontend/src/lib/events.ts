@@ -15,7 +15,14 @@ export interface EventEntry {
 export interface ResolvedEvent extends EventEntry {
     dateLabel: string
     status: EventStatus
+    startsAt: number // epoch ms of `start`, parsed the same way as `status`
 }
+
+// How far ahead of an upcoming event its hub page (itinerary, packing,
+// roster...) opens up from the events list. Done and current events are
+// always openable -- done ones as a read-only archive.
+export const HUB_LEAD_DAYS = 14
+const DAY_MS = 24 * 60 * 60 * 1000
 
 // Shared status → label/color mapping. Used by EventsPage (the list) and
 // EventDetailLayout (individual event pages) so both agree on what "done" /
@@ -68,7 +75,7 @@ export function resolveEvent(entry: EventEntry, now: Date): ResolvedEvent {
     else if (start.getMonth() === end.getMonth()) dateLabel = `${startLabel}–${end.getDate()}`
     else dateLabel = `${startLabel}–${MONTHS[end.getMonth()]} ${end.getDate()}`
 
-    return {...entry, dateLabel, status}
+    return {...entry, dateLabel, status, startsAt: start.getTime()}
 }
 
 export function resolveEvents(events: EventEntry[], now: Date = new Date()): ResolvedEvent[] {
@@ -80,6 +87,22 @@ export function resolveEvents(events: EventEntry[], now: Date = new Date()): Res
 export function resolveEventByUrl(events: EventEntry[], url: string, now: Date = new Date()): ResolvedEvent | undefined {
     const entry = events.find((e) => e.url === url)
     return entry ? resolveEvent(entry, now) : undefined
+}
+
+export function isHubOpen(event: ResolvedEvent, now: number = Date.now()): boolean {
+    return event.status !== "upcoming" || event.startsAt - now <= HUB_LEAD_DAYS * DAY_MS
+}
+
+// Time left until `ms` elapses, e.g. "12d 04h 31m" -- or, inside the last
+// day, "04h 31m 09s" so the final stretch visibly ticks.
+export function formatCountdown(ms: number): string {
+    const total = Math.max(0, Math.floor(ms / 1000))
+    const days = Math.floor(total / 86400)
+    const pad = (n: number) => String(n).padStart(2, "0")
+    const h = pad(Math.floor(total / 3600) % 24)
+    const m = pad(Math.floor(total / 60) % 60)
+    if (days > 0) return `${days}d ${h}h ${m}m`
+    return `${h}h ${m}m ${pad(total % 60)}s`
 }
 
 // Picks the one event to show on the dashboard's active-event card: among

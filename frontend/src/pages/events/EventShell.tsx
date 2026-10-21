@@ -4,6 +4,7 @@ import { Home, Calendar, Users, Package, Trophy, ArrowLeft, CalendarClock } from
 import { useBootstrapped, BootstrapContext } from "@/contexts/bootstrapContext"
 import { EventContext } from "@/contexts/eventContext"
 import { fetchEventInfo, fetchEventUpdate, type EventInfo } from "@/lib/eventApi"
+import { resolveEvents, type EventEntry } from "@/lib/events"
 
 const TABS = [
     { label: "Overview",  icon: Home,     to: "",          end: true  },
@@ -17,6 +18,13 @@ export default function EventShell() {
     const { eventKey } = useParams<{ eventKey: string }>()
     const [bootstrapEvent] = useBootstrapped<EventInfo | null>("current_event", null)
     const [eventKeys] = useBootstrapped<string[]>("event_keys", [])
+    const [scheduleEvents] = useBootstrapped<EventEntry[]>("events", [])
+
+    // An event with no schedule entry is never treated as archived -- better
+    // to keep polling than to hide live data for an event we can't date.
+    const archived = resolveEvents(scheduleEvents).some(
+        e => e.status === "done" && (e.tbaKey === eventKey || e.url === `/events/${eventKey}`)
+    )
 
     // /bootstrap already ran on app load and carries every valid event_key, so
     // once it's resolved we can tell a real event from a 404 synchronously —
@@ -43,15 +51,16 @@ export default function EventShell() {
         return () => { cancelled = true }
     }, [eventKey, knownInvalid])
 
+    // Archived events' results are final -- the initial /info fetch is enough.
     useEffect(() => {
-        if (!eventKey || notFound) return
+        if (!eventKey || notFound || archived) return
         const id = setInterval(() => {
             fetchEventUpdate(eventKey)
                 .then(update => setInfo(prev => prev ? { ...prev, ...update } : prev))
                 .catch(() => {})
         }, 20_000)
         return () => clearInterval(id)
-    }, [eventKey, notFound])
+    }, [eventKey, notFound, archived])
 
     const isLoading = loading && !knownInvalid
 
@@ -60,7 +69,7 @@ export default function EventShell() {
     }, [])
 
     return (
-        <EventContext.Provider value={{ eventKey: eventKey ?? "", info, loading: isLoading, updateInfo }}>
+        <EventContext.Provider value={{ eventKey: eventKey ?? "", info, loading: isLoading, archived, updateInfo }}>
             <div className="h-full flex flex-col">
                 <div
                     className="sticky top-0 z-10 border-b theme-border"

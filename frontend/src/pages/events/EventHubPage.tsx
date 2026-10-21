@@ -1,4 +1,6 @@
 import { useState } from "react"
+import { Link } from "react-router-dom"
+import { ChevronRight } from "lucide-react"
 import { useEventContext } from "@/contexts/eventContext"
 import type { TBAMatch, ItineraryItem } from "@/lib/eventApi"
 import { getAlliance, matchLabel, formatUnix, nextMatchFor, TEAM_KEY } from "@/lib/eventMatches"
@@ -26,7 +28,7 @@ function getTimelineSlice(items: ItineraryItem[]) {
 }
 
 export default function EventHubPage() {
-    const { info } = useEventContext()
+    const { info, archived } = useEventContext()
 
     const matches    = info?.matches ?? []
     const rankings   = info?.rankings ?? null
@@ -65,12 +67,13 @@ export default function EventHubPage() {
         })
 
     const cardBase = { background: "var(--theme-bg)", borderColor: "var(--theme-border)" }
+    const playedCount = matches.filter(m => getAlliance(m, TEAM_KEY) !== null && (!!m.actual_time || m.alliances.red.score >= 0)).length
 
     return (
         <div className="max-w-xl mx-auto px-4 py-5 flex flex-col gap-6 pb-8">
 
-            {/* Day timeline */}
-            <section>
+            {/* Day timeline (live only) */}
+            {!archived && <section>
                 <SectionLabel>Today</SectionLabel>
                 <div className="rounded-xl border overflow-hidden" style={cardBase}>
                     {timeline && (timeline.current || timeline.upcoming.length > 0) ? (
@@ -82,11 +85,11 @@ export default function EventHubPage() {
                         <PlaceholderRow>Schedule not yet posted</PlaceholderRow>
                     )}
                 </div>
-            </section>
+            </section>}
 
             {/* Our team */}
             <section className="flex flex-col gap-2">
-                <SectionLabel>Our Team</SectionLabel>
+                <SectionLabel>{archived ? "Final Result" : "Our Team"}</SectionLabel>
                 {rankEntry ? (
                     <div className="flex items-center gap-4 px-4 py-3 rounded-xl border" style={cardBase}>
                         <span className="text-sm font-semibold" style={{ color: "var(--theme-text)" }}>
@@ -98,10 +101,23 @@ export default function EventHubPage() {
                     </div>
                 ) : (
                     <div className="flex items-center px-4 py-3 rounded-xl border" style={cardBase}>
-                        <span className="text-sm" style={{ color: "var(--theme-subtext-color)" }}>Rankings not yet available</span>
+                        <span className="text-sm" style={{ color: "var(--theme-subtext-color)" }}>
+                            {archived ? "No rankings were posted" : "Rankings not yet available"}
+                        </span>
                     </div>
                 )}
-                {ourNext ? (
+                {archived ? (
+                    <Link
+                        to="comp"
+                        className="flex items-center justify-between gap-3 px-4 py-3 min-h-11 rounded-xl border transition-colors hover:border-(--theme-text-contrast)"
+                        style={cardBase}
+                    >
+                        <span className="text-sm" style={{ color: "var(--theme-text)" }}>
+                            {playedCount > 0 ? `${playedCount} match result${playedCount === 1 ? "" : "s"}` : "Match results"}
+                        </span>
+                        <ChevronRight size={16} className="theme-subtext-color" />
+                    </Link>
+                ) : ourNext ? (
                     <NextMatchCard match={ourNext} />
                 ) : (
                     <div className="flex items-center px-4 py-3 rounded-xl border" style={cardBase}>
@@ -110,8 +126,8 @@ export default function EventHubPage() {
                 )}
             </section>
 
-            {/* Watch teams */}
-            <section>
+            {/* Watch teams (live only -- grouped by each team's next match) */}
+            {!archived && <section>
                 <SectionLabel>Watch</SectionLabel>
                 <div className="rounded-xl border overflow-hidden" style={cardBase}>
                     {watchGroups.length > 0 ? (
@@ -122,7 +138,7 @@ export default function EventHubPage() {
                         <PlaceholderRow>Match data not yet available</PlaceholderRow>
                     )}
                 </div>
-            </section>
+            </section>}
 
             {/* Quick links */}
             <section>
