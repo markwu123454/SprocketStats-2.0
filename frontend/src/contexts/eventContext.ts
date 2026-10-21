@@ -5,6 +5,8 @@ export interface EventContextValue {
     eventKey: string
     info: EventInfo | null
     loading: boolean
+    /** The event is over -- pages show final results instead of live/upcoming state. */
+    archived: boolean
     updateInfo: (patch: Partial<EventInfo>) => void
 }
 

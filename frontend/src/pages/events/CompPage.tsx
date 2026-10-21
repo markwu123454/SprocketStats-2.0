@@ -29,6 +29,28 @@ function fmtUnix(unix: number | null): string {
     return new Date(unix * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
 }
 
+// Archived events span several days, so their results carry the weekday too.
+function fmtUnixWithDay(unix: number | null): string {
+    if (!unix) return "—"
+    return new Date(unix * 1000).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })
+}
+
+// TBA reports -1 scores for unplayed matches; a real score counts as played
+// even if `actual_time` never got filled in.
+function isPlayed(m: TBAMatch): boolean {
+    return !!m.actual_time || m.alliances.red.score >= 0
+}
+
+// Bracket order for the archived results list -- quals first, then each
+// playoff round -- so it doesn't hinge on TBA's timestamps being filled in.
+const COMP_LEVEL_ORDER = ["qm", "ef", "qf", "sf", "f"]
+
+function bracketOrder(a: TBAMatch, b: TBAMatch): number {
+    return COMP_LEVEL_ORDER.indexOf(a.comp_level) - COMP_LEVEL_ORDER.indexOf(b.comp_level)
+        || a.set_number - b.set_number
+        || a.match_number - b.match_number
+}
+
 // Nexus maps team status strings to display labels + colors
 const NEXUS_STATUS_MAP: [RegExp, string, string][] = [
     [/on.?field/i,      "In Match",       "#22c55e"],
@@ -52,7 +74,7 @@ function parseNexusStatus(raw: string | null | undefined): { label: string; colo
 // ── main component ─────────────────────────────────────────────────────────────
 
 export default function CompPage() {
-    const { info, loading } = useEventContext()
+    const { info, loading, archived } = useEventContext()
 
     // epa: our own scouting metric, not yet wired — will arrive via /update when implemented
     const [epa] = useState<number | null>(null)
@@ -95,6 +117,16 @@ export default function CompPage() {
         .filter(m => !m.actual_time)
         .slice(0, 5)
 
+    // Archived: every match we played, in order, with a W-L-T tally
+    const playedMatches = ourMatches.filter(isPlayed).sort(bracketOrder)
+    const record = playedMatches.reduce((acc, m) => {
+        const side = alliance(m, TEAM_KEY)
+        if (!m.winning_alliance) acc.ties++
+        else if (m.winning_alliance === side) acc.wins++
+        else acc.losses++
+        return acc
+    }, { wins: 0, losses: 0, ties: 0 })
+
     // Our ranking entry
     const ourRank = rankings.find(r => r.team_key === TEAM_KEY)
 
@@ -111,8 +143,8 @@ export default function CompPage() {
     return (
         <div className="max-w-2xl mx-auto px-4 py-4 flex flex-col gap-6 pb-8">
 
-            {/* ── Robot Status ────────────────────────────────────── */}
-            <Section label="Robot">
+            {/* ── Robot Status (live only) ─────────────────────────── */}
+            {!archived && <Section label="Robot">
                 <div
                     className="rounded-xl border overflow-hidden"
                     style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
@@ -152,10 +184,10 @@ export default function CompPage() {
                         </div>
                     )}
                 </div>
-            </Section>
+            </Section>}
 
             {/* ── Rankings ────────────────────────────────────────── */}
-            <Section label="Rankings">
+            <Section label={archived ? "Final Rankings" : "Rankings"}>
                 <div
                     className="rounded-xl border overflow-hidden"
                     style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
@@ -219,14 +251,26 @@ export default function CompPage() {
                         })
                     ) : !ourRank ? (
                         <div className="px-4 py-3 text-sm" style={{ color: "var(--theme-subtext-color)" }}>
-                            Rankings not yet posted.
+                            {archived ? "No rankings were posted." : "Rankings not yet posted."}
                         </div>
                     ) : null}
                 </div>
             </Section>
 
             {/* ── Matches ─────────────────────────────────────────── */}
-            <Section label="Matches">
+            {archived ? (
+                <Section label={playedMatches.length > 0 ? `Match Results · ${record.wins}–${record.losses}–${record.ties}` : "Match Results"}>
+                    {playedMatches.length === 0 ? (
+                        <div className="text-sm text-center py-8" style={{ color: "var(--theme-subtext-color)" }}>
+                            No match results recorded.
+                        </div>
+                    ) : (
+                        <div className="flex flex-col gap-2">
+                            {playedMatches.map(m => <MatchCard key={m.key} match={m} isPast showDay />)}
+                        </div>
+                    )}
+                </Section>
+            ) : <Section label="Matches">
                 {pastMatches.length === 0 && upcomingMatches.length === 0 ? (
                     <div className="text-sm text-center py-8" style={{ color: "var(--theme-subtext-color)" }}>
                         Schedule not yet posted.
@@ -237,7 +281,7 @@ export default function CompPage() {
                         {upcomingMatches.map(m => <MatchCard key={m.key} match={m} isPast={false} isNext={m.key === nextMatch?.key} />)}
                     </div>
                 )}
-            </Section>
+            </Section>}
 
             {/* ── Scouting Intel placeholder ───────────────────────── */}
             <div className="pt-4 border-t" style={{ borderColor: "var(--theme-border)" }}>
@@ -300,7 +344,7 @@ function NextMatchRow({ match }: { match: TBAMatch }) {
     )
 }
 
-function MatchCard({ match, isPast, isNext }: { match: TBAMatch; isPast: boolean; isNext?: boolean }) {
+function MatchCard({ match, isPast, isNext, showDay }: { match: TBAMatch; isPast: boolean; isNext?: boolean; showDay?: boolean }) {
     const ourSide = alliance(match, TEAM_KEY)
     const red     = match.alliances.red
     const blue    = match.alliances.blue
@@ -327,7 +371,7 @@ function MatchCard({ match, isPast, isNext }: { match: TBAMatch; isPast: boolean
                 {isPast ? (
                     <>
                         <span className="ml-auto" style={{ color: "var(--theme-subtext-color)" }}>
-                            {fmtUnix(match.actual_time)}
+                            {showDay ? fmtUnixWithDay(match.actual_time) : fmtUnix(match.actual_time)}
                         </span>
                         {ourSide && winner && (
                             <span

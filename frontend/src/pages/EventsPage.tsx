@@ -1,11 +1,16 @@
-import {useEffect} from "react"
+import {useEffect, useState} from "react"
 import {ChevronRight} from "lucide-react"
 import {Link} from "react-router-dom";
-import {type EventEntry, resolveEvents, STATUS_META} from "@/lib/events.ts"
+import {type EventEntry, formatCountdown, isHubOpen, resolveEvents, STATUS_META} from "@/lib/events.ts"
 import {useBootstrapped} from "@/contexts/bootstrapContext"
 
 const API = import.meta.env.VITE_BACKEND_URL
 const cardStyle = {background: "var(--theme-bg)", borderColor: "var(--theme-border)"}
+
+// "View" button fill -- the accent for live/upcoming events, a muted mix of
+// the accent and subtext for archived ones so they read as history.
+const VIEW_BG_ACTIVE = "var(--theme-text-contrast)"
+const VIEW_BG_ARCHIVED = "color-mix(in oklch, var(--theme-text-contrast) 35%, var(--theme-subtext-color))"
 
 export default function EventsPage() {
     const [rawEvents, setRawEvents] = useBootstrapped<EventEntry[]>("events", [])
@@ -19,7 +24,15 @@ export default function EventsPage() {
         return () => { cancelled = true }
     }, [setRawEvents])
 
-    const events = resolveEvents(rawEvents)
+    // Drives the countdowns, and re-resolves statuses so an event flips from
+    // upcoming -> current -> done (and its hub opens) without a reload.
+    const [now, setNow] = useState(() => Date.now())
+    useEffect(() => {
+        const id = setInterval(() => setNow(Date.now()), 1000)
+        return () => clearInterval(id)
+    }, [])
+
+    const events = resolveEvents(rawEvents, new Date(now))
 
 return (
     <div className="mx-auto px-4 py-8 flex flex-col gap-1">
@@ -30,7 +43,13 @@ return (
             {events.map((event, i) => {
                 const meta = STATUS_META[event.status]
                 const isLast = i === events.length - 1
-                const cardClassName = `flex items-center gap-3 sm:gap-5 rounded-xl border backdrop-blur-sm p-3 sm:p-4 pl-4 sm:pl-5 transition-colors ${event.url ? "hover:border-(--theme-text-contrast)" : ""}`
+                const archived = event.status === "done"
+                const link = event.url && isHubOpen(event, now) ? event.url : null
+                const cardClassName = [
+                    "flex items-center gap-3 sm:gap-5 rounded-xl border backdrop-blur-sm p-3 sm:p-4 pl-4 sm:pl-5 transition-[border-color,opacity]",
+                    link ? "hover:border-(--theme-text-contrast)" : "",
+                    archived ? "opacity-60 hover:opacity-90" : "",
+                ].join(" ")
 
                 const cardContent = (
                     <>
@@ -41,6 +60,14 @@ return (
                             </span>
                             <span
                                 className="text-xs sm:text-sm theme-subtext-color mt-0.5">{event.dateLabel}</span>
+                            {event.status === "upcoming" && (
+                                <span
+                                    className="text-xs font-semibold tabular-nums mt-0.5 whitespace-nowrap"
+                                    style={{color: "var(--theme-text-contrast)"}}
+                                >
+                                    in {formatCountdown(event.startsAt - now)}
+                                </span>
+                            )}
                         </div>
 
                         <div className="flex-1 min-w-0">
@@ -51,10 +78,10 @@ return (
                         </div>
 
                         {/* Big "View" action — mobile collapses to a 44px circular tap target */}
-                            {event.url && (
+                            {link && (
                                 <div
                                     className="shrink-0 flex items-center justify-center gap-1 font-bold rounded-full sm:rounded-lg w-11 h-11 sm:w-auto sm:h-auto sm:px-4 sm:py-2.5"
-                                    style={{background: "var(--theme-text-contrast)", color: "var(--theme-bg)"}}
+                                    style={{background: archived ? VIEW_BG_ARCHIVED : VIEW_BG_ACTIVE, color: "var(--theme-bg)"}}
                                 >
                                     <span className="hidden sm:inline text-sm">View</span>
                                     <ChevronRight size={18}/>
@@ -79,8 +106,8 @@ return (
 
                             {/* Event card */}
                             <div className="flex-1 min-w-0 pb-6">
-                                {event.url ? (
-                                    <Link to={event.url} className={cardClassName} style={cardStyle}>
+                                {link ? (
+                                    <Link to={link} className={cardClassName} style={cardStyle}>
                                         {cardContent}
                                     </Link>
                                 ) : (
