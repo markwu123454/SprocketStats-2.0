@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { ExternalLink } from "lucide-react"
+import { Link } from "react-router-dom"
+import { ClipboardList, ExternalLink } from "lucide-react"
 
 const LS_KEY = "label_studio_email_ack"
 
@@ -171,6 +172,17 @@ export default function ScoutingPage() {
 
                 <div className="rounded-xl border p-6 flex flex-col justify-center gap-3 theme-border backdrop-blur-sm"
                      style={{ background: "var(--theme-bg)" }}>
+                    <Link
+                        to="/scouting/scout"
+                        className="w-full flex items-center justify-center gap-3 rounded-xl border p-4 font-semibold text-lg transition-opacity hover:opacity-80 theme-text-contrast backdrop-blur-sm"
+                        style={{
+                            background: "color-mix(in oklch, var(--theme-button-bg) 80%, transparent)",
+                            borderColor: "var(--theme-border)",
+                        }}
+                    >
+                        <ClipboardList size={22} />
+                        Scouting Page
+                    </Link>
                     <button
                         onClick={handleLabelStudioClick}
                         className="w-full flex items-center justify-center gap-3 rounded-xl border p-4 font-semibold text-lg transition-opacity hover:opacity-80 theme-text-contrast backdrop-blur-sm"
