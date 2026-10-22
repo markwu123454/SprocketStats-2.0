@@ -76,6 +76,27 @@ these three, always together (text = `--theme-danger`, border = `-border`, fill 
 `-bg`). Never use a bare Tailwind red (`text-red-500`, etc.) — that's a known debt
 item, see §8.
 
+#### Category role (subteam hues, season-invariant)
+
+Sub-teams are categorical data, so like danger they keep one hue across seasons.
+Each hue is only ever consumed through three `color-mix` derivations, never raw:
+label = `color-mix(in oklch, <hue> 70%, var(--theme-text))` (pulling toward theme
+text keeps it legible on both dark and light seasons), fill = `<hue> 14%`, border =
+`<hue> 38%` over `transparent`.
+
+| Sub-team | Hue |
+|---|---|
+| Programming | `#3b82f6` |
+| CAD | `#f97316` |
+| Scouting | `#a855f7` |
+| Electrical | `#10b981` |
+| Manufacturing | `#06b6d4` |
+| Outreach | `#ec4899` |
+| Publicity | `#f59e0b` |
+| Mentor | none: uses `--theme-text-contrast` (mentors aren't a department) |
+
+Red is deliberately absent so a subteam badge can never read as a danger state.
+
 #### Brand-locked exceptions
 
 A small, closed set of colors don't theme, because they're not SDS's to change:
@@ -286,6 +307,43 @@ this section.
   matching the icon-button pattern.
 - **Rules:** dismiss on outside click (required — implemented via a ref + document
   listener pattern, reuse it rather than a new click-outside hook).
+
+### 3.11 Segmented status tabs
+
+- **Anatomy:** `role="tablist"` row over a `theme-border` rule; each tab = `icon-sm` +
+  `body` label + count pill (`radius-pill`, mono `badge`-scale digits).
+- **States:** inactive = `theme-text opacity-55`; active = `theme-text-contrast` at
+  full opacity plus a 2px accent underline (position + color, never color alone).
+- **Rules:** scrolls horizontally below `md` instead of wrapping.
+
+### 3.12 Action menu (•••)
+
+- **Anatomy:** icon-only trigger (`MoreHorizontal`, 36px hit box, `aria-haspopup="menu"`)
+  + §3.10 Level-1 panel with `role="menuitem"` rows. Destructive row sits last, below a
+  `theme-border` divider, in `--theme-danger` text.
+- **Rules:** flips above the trigger when there's no room below, same as §3.3. The
+  host card/row raises its own z-index while open (`has-[[aria-expanded=true]]:z-20`),
+  since cards with `backdrop-blur` each form a stacking context.
+
+### 3.13 Inspector drawer
+
+- **Anatomy:** right-edge slide-over, full width below `sm`, `max-w-md` above; a
+  dimming scrim (`rgba(0,0,0,.45)`) behind it; header (Avatar + identity + close),
+  scrolling body of `h2`-labelled field groups.
+- **Motion:** `translateX` at `duration-slow` (360ms) with `ease-sheet`;
+  `motion-reduce:transition-none`.
+- **Rules:** Escape and scrim click close it. Edits made in the drawer are staged
+  (see §3.14), not saved by the drawer itself.
+
+### 3.14 Unsaved-changes bar
+
+- **Anatomy:** Level-1 floating bar, bottom-centre, `radius-surface`: accent dot +
+  count copy + Reset (icon-button style) + Save (primary style, `radius-control`).
+- **States:** hidden when nothing is staged; slides in at `duration-slow`/`ease-sheet`;
+  Save shows "Saving…" while in flight; after a save the bar briefly reads "Changes
+  saved" in `theme-text-contrast` and slides out. This is a confirmation of the bar's
+  own action, not a general success notice (§3.7 still has none).
+- **Rules:** replaces static page-level Save/Reset buttons on screens with staged edits.
 
 ---
 

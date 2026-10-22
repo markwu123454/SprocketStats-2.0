@@ -1,10 +1,11 @@
-import {lazy, type ReactNode, Suspense, useLayoutEffect} from "react"
+import {lazy, type ReactNode, Suspense, useEffect, useLayoutEffect} from "react"
 import {BrowserRouter, Routes, Route} from "react-router-dom"
 import "./index.css"
 import ThemeProvider from "@/contexts/themeProvider.tsx"
 import {AuthProvider} from "@/contexts/AuthProvider"
 import {AppReadyProvider} from "@/contexts/AppReadyProvider"
 import {BootstrapProvider} from "@/contexts/BootstrapProvider"
+import {useAppReady} from "@/contexts/appReadyContext"
 
 import AuthWrapper from "@/components/wrappers/AuthWrapper.tsx"
 import ControlGuard from "@/components/wrappers/ControlGuard.tsx"
@@ -29,6 +30,9 @@ const ControlPanelHub  = lazy(() => import("@/pages/control/ControlPanelHub"))
 const MeetingPage       = lazy(() => import("@/pages/control/MeetingPage"))
 const UpcomingEventPage = lazy(() => import("@/pages/control/UpcomingEventPage"))
 const MembersPage       = lazy(() => import("@/pages/control/MembersPage"))
+// Mock-data redesign preview; dev builds only, outside the auth shell so it
+// runs without a backend.
+const MembersDirectory  = lazy(() => import("@/pages/control/MembersDirectory"))
 const NotificationsPage = lazy(() => import("@/pages/control/NotificationsPage"))
 const NotificationDetailPage = lazy(() => import("@/pages/control/NotificationDetailPage"))
 const PushNotificationsPage = lazy(() => import("@/pages/control/PushNotificationsPage"))
@@ -36,6 +40,13 @@ const SettingPage    = lazy(() => import("@/pages/SettingPage"))
 const NotFoundPage   = lazy(() => import("@/pages/NotFoundPage"))
 const PrivacyPage    = lazy(() => import("@/pages/PrivacyPage"))
 const TermsPage      = lazy(() => import("@/pages/TermsPage"))
+
+/** Standalone host for dev previews: no AppShell, so dismiss the splash here. */
+function DevPreview({children}: {children: ReactNode}) {
+    const markReady = useAppReady()
+    useEffect(() => { markReady() }, [markReady])
+    return <div className="flex-1 overflow-y-auto theme-scrollbar theme-bg">{children}</div>
+}
 
 function Protected({children}: {children: ReactNode}) {
     return <AuthWrapper>{children}</AuthWrapper>
@@ -69,6 +80,9 @@ export default function App() {
                                     <Route path="/onboarding" element={<OnboardingPageRouter/>}/>
                                     <Route path="/privacy" element={<PrivacyPage/>}/>
                                     <Route path="/terms" element={<TermsPage/>}/>
+                                    {import.meta.env.DEV && (
+                                        <Route path="/dev/members-directory" element={<DevPreview><MembersDirectory/></DevPreview>}/>
+                                    )}
 
                                     {/* One guard for the whole shell: AuthWrapper gates
                                         AppShell + every child page, so all of them are
