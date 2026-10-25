@@ -505,32 +505,6 @@ export default function MeetingHoursEditor() {
                     </div>
                 )}
 
-                {/* Recurrence (new meetings only) */}
-                {mode === "add" && (
-                    <div className="flex flex-col sm:flex-row gap-3">
-                        <select
-                            value={repeat}
-                            onChange={(e) => { setRepeat(e.target.value as Repeat); setJustAdded(false) }}
-                            className="flex-1 rounded-lg border px-3.5 py-2.5 text-sm theme-text outline-none"
-                            style={fieldStyle}
-                        >
-                            {REPEAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                        {repeat !== "none" && (
-                            <label className="flex-1 flex items-center gap-2 rounded-lg border px-3.5 py-2.5 text-sm theme-text" style={fieldStyle}>
-                                <span className="theme-subtext-color shrink-0">Until</span>
-                                <input
-                                    type="date"
-                                    value={repeatUntil}
-                                    min={dateKey}
-                                    onChange={(e) => { setRepeatUntil(e.target.value); setJustAdded(false) }}
-                                    className="flex-1 bg-transparent outline-none theme-text min-w-0"
-                                />
-                            </label>
-                        )}
-                    </div>
-                )}
-
                 {/* Start / end time wheels */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <TimeWheel label="Start" value={startTime} onChange={updateStart} />
