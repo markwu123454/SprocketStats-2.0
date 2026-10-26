@@ -85,6 +85,19 @@ async def update_user_onboarding(
             raise HTTPException(status_code=500, detail="Failed to update user onboarding")
 
 
+async def update_display_name(user_id: str, display_name: str) -> asyncpg.Record | None:
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow(
+                "UPDATE users SET display_name = $2 WHERE id = $1 RETURNING *",
+                user_id,
+                display_name,
+            )
+        except Exception as e:
+            logger.error("update_display_name failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to update display name")
+
+
 async def load_all_account_state() -> list[asyncpg.Record]:
     """Return the ban/approval state of every user, for the in-memory cache.
 
@@ -258,6 +271,7 @@ __all__ = [
     "get_user",
     "get_user_by_offline_code",
     "update_user_onboarding",
+    "update_display_name",
     "load_all_account_state",
     "get_users_by_fields",
     "list_all_users",

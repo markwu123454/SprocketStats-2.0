@@ -4,6 +4,7 @@ import { ChevronLeft, Download, X } from "lucide-react"
 import { AgGridReact } from "ag-grid-react"
 import type { ColDef, ValueFormatterParams } from "ag-grid-community"
 import RoleAudienceSelect, { type RoleMeta } from "@/components/RoleAudienceSelect"
+import Checkbox from "@/components/ui/Checkbox"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -494,11 +495,9 @@ function NoticeForm(props: {
             </label>
 
             <label className="flex items-center gap-2 text-sm theme-text cursor-pointer">
-                <input
-                    type="checkbox"
+                <Checkbox
                     checked={form.hard_block}
-                    onChange={e => setForm(prev => ({ ...prev, hard_block: e.target.checked }))}
-                    className="h-4 w-4 accent-(--theme-text-contrast)"
+                    onChange={() => setForm(prev => ({ ...prev, hard_block: !prev.hard_block }))}
                 />
                 Hard block (must respond to dismiss, no "Later")
             </label>
@@ -538,11 +537,9 @@ function NoticeForm(props: {
                 </div>
                 {form.response_options.length > 0 && (
                     <label className="flex items-center gap-2 text-xs theme-subtext-color cursor-pointer mt-1">
-                        <input
-                            type="checkbox"
+                        <Checkbox
                             checked={form.response_mode === "multi"}
-                            onChange={e => setForm(prev => ({ ...prev, response_mode: e.target.checked ? "multi" : "single" }))}
-                            className="h-3.5 w-3.5 accent-(--theme-text-contrast)"
+                            onChange={() => setForm(prev => ({ ...prev, response_mode: prev.response_mode === "multi" ? "single" : "multi" }))}
                         />
                         Allow selecting multiple options
                     </label>

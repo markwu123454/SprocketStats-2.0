@@ -1,6 +1,6 @@
 import { useAuth, useOnboardedUser } from "@/contexts/authContext"
 import { getPerm } from "@/lib/permissions"
-import { LogOut, Mail, ShieldCheck, Palette, Navigation, Bell, ListChecks, CalendarClock, Milestone, Megaphone } from "lucide-react"
+import { LogOut, Mail, ShieldCheck, Palette, Navigation, Bell, ListChecks, CalendarClock, Milestone, Megaphone, Pencil } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useTheme } from "@/contexts/themeContext"
 import Avatar from "@/components/Avatar.tsx"
@@ -10,6 +10,8 @@ import {
 } from "@/lib/push.ts"
 
 const NAV_TEXT_KEY = "nav-show-text"
+
+const API = import.meta.env.VITE_BACKEND_URL
 
 const PUSH_CATEGORY_ROWS: { key: PushCategory; label: string; description: string; icon: typeof Bell }[] = [
     { key: "task_assigned",    label: "Task assignments",   description: "When someone assigns you a task or adds you to one", icon: ListChecks },
@@ -53,8 +55,12 @@ function getNavTextPref(): boolean {
 }
 
 export default function SettingPage() {
-    const { logout } = useAuth()
+    const { logout, refreshUser } = useAuth()
     const user = useOnboardedUser()
+    const [editingName, setEditingName] = useState(false)
+    const [nameDraft, setNameDraft] = useState("")
+    const [nameSaving, setNameSaving] = useState(false)
+    const [nameError, setNameError] = useState<string | null>(null)
     const { theme, setTheme } = useTheme()
     const [showNavText, setShowNavTextState] = useState<boolean>(getNavTextPref)
     const [pushState, setPushState] = useState<PushState>("unsubscribed")
@@ -80,6 +86,46 @@ export default function SettingPage() {
         } catch (e) {
             setPrefs(previous)
             setPrefsError(e instanceof Error ? e.message : "Something went wrong")
+        }
+    }
+
+    function startEditingName() {
+        setNameDraft(user.display_name)
+        setNameError(null)
+        setEditingName(true)
+    }
+
+    async function saveName() {
+        const trimmed = nameDraft.trim()
+        if (!trimmed) {
+            setNameError("Name cannot be empty")
+            return
+        }
+        if (trimmed === user.display_name) {
+            setEditingName(false)
+            return
+        }
+        setNameSaving(true)
+        setNameError(null)
+        try {
+            const res = await fetch(`${API}/auth/display-name`, {
+                method: "PATCH",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ display_name: trimmed }),
+            })
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}))
+                // Pydantic validation errors come back as a list of {msg}.
+                const detail = Array.isArray(data?.detail) ? data.detail[0]?.msg : data?.detail
+                throw new Error(detail ?? "Something went wrong")
+            }
+            await refreshUser()
+            setEditingName(false)
+        } catch (e) {
+            setNameError(e instanceof Error ? e.message : "Something went wrong")
+        } finally {
+            setNameSaving(false)
         }
     }
 
@@ -123,8 +169,54 @@ export default function SettingPage() {
                     style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
                 >
                     <Avatar name={user.name} picture={user.picture} size={64} />
-                    <div className="min-w-0">
-                        <p className="text-lg font-semibold theme-text truncate">{user.display_name}</p>
+                    <div className="min-w-0 flex-1">
+                        {editingName ? (
+                            <div className="flex flex-col gap-1.5">
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        autoFocus
+                                        value={nameDraft}
+                                        maxLength={64}
+                                        disabled={nameSaving}
+                                        aria-label="Display name"
+                                        onChange={e => setNameDraft(e.target.value)}
+                                        onKeyDown={e => {
+                                            if (e.key === "Enter") void saveName()
+                                            if (e.key === "Escape") setEditingName(false)
+                                        }}
+                                        className="min-w-0 flex-1 rounded-lg border px-2.5 py-1 text-sm theme-border theme-bg theme-text"
+                                    />
+                                    <button
+                                        onClick={() => void saveName()}
+                                        disabled={nameSaving}
+                                        className="rounded-lg border px-3 py-1 text-xs font-semibold theme-text-contrast theme-border transition-opacity hover:opacity-80 disabled:opacity-40"
+                                        style={{ background: "color-mix(in oklch, var(--theme-button-bg) 80%, transparent)" }}
+                                    >
+                                        {nameSaving ? "Saving…" : "Save"}
+                                    </button>
+                                    <button
+                                        onClick={() => setEditingName(false)}
+                                        disabled={nameSaving}
+                                        className="rounded-lg border px-3 py-1 text-xs font-medium theme-subtext-color theme-border transition-opacity hover:opacity-70"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                                {nameError && <p className="text-xs text-red-500">{nameError}</p>}
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2 min-w-0">
+                                <p className="text-lg font-semibold theme-text truncate">{user.display_name}</p>
+                                <button
+                                    onClick={startEditingName}
+                                    aria-label="Edit display name"
+                                    title="Edit display name"
+                                    className="shrink-0 theme-subtext-color hover:opacity-70 transition-opacity"
+                                >
+                                    <Pencil size={14} />
+                                </button>
+                            </div>
+                        )}
                         {user.name !== user.display_name && (
                             <p className="text-xs theme-subtext-color truncate">{user.name}</p>
                         )}
