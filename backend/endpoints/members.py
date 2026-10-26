@@ -4,25 +4,21 @@ from pydantic import BaseModel, field_validator
 import db
 from core import account_state
 from core.permissions import can, can_role_moderate, get_permissions_for_role, has_moderation_authority
-from core.security import VALID_GRADES, VALID_ROLES, VALID_TEAM_YEARS, get_current_user, require_access
+from core.security import VALID_GRADES, VALID_ROLES, VALID_TEAM_YEARS, get_current_user
 
 router = APIRouter()
 
-# Full roster management — view + edit of every profile. Captains, Mentors and
-# the Scouting Lead. Editing (roles, names, grades) stays exclusively theirs.
-require_members = require_access(permissions="control_panel.members")
-
-
 async def require_roster_access(user: dict = Depends(get_current_user)) -> dict:
-    """Gate the read-only roster and the moderation (approve/ban) actions.
+    """Gate the roster, profile edits, and the moderation (approve/ban) actions.
 
     Admits anyone who can either fully manage members (``control_panel.members``,
     i.e. Captains/Mentors/Scouting Lead) or moderate at least someone (Leads,
     via their ``can_moderate`` spec). This only decides who may reach the roster at all —
-    the per-target scope (who may approve/ban whom) is enforced separately in each
-    handler through :func:`_authorize_moderation`. Leads get the full roster read
-    (Mentor emails are masked for everyone — see :func:`list_members`) but a Save/edit that they
-    attempt is still rejected by ``require_members`` on the write endpoint.
+    the per-target scope (who may approve/ban/edit whom) is enforced separately in
+    each handler through :func:`_authorize_moderation` / :func:`_authorize_edits`.
+    Leads get the full roster read (Mentor emails are masked for everyone — see
+    :func:`list_members`) but may only edit their own subteam's members, and not
+    their role.
 
     Unlike the capability-gated routes (which flow through ``require_access``),
     this guard is built directly on ``get_current_user``, so it re-checks
@@ -80,6 +76,36 @@ async def list_members(user: dict = Depends(require_roster_access)):
     """
     rows = await db.list_all_users()
     return [_row_to_member(r, mask_email=r["role"] == "mentor") for r in rows]
+
+
+async def _authorize_edits(actor: dict, updates: list["MemberUpdate"]) -> None:
+    """Ensure ``actor`` may apply every profile edit in ``updates``, else raise.
+
+    Holders of ``control_panel.members`` (Captains, Mentors, Scouting Lead) may
+    edit anyone, role included. Everyone else — Leads — may only edit members in
+    their moderation scope (:func:`permissions.can_role_moderate`: their own
+    subteam's members and alumni), and may change their names, grade and team
+    year but never their role. The check covers the whole batch up front, so one
+    disallowed row rejects the Save before anything is written. Raises 404 (no
+    such member) or 403.
+    """
+    role = actor.get("role")
+    if can(get_permissions_for_role(role), "control_panel.members"):
+        return
+    current = {r["id"]: r["role"] for r in await db.list_all_users()}
+    for u in updates:
+        if u.id not in current:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+        if not can_role_moderate(role, current[u.id]):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This member is outside your editing scope",
+            )
+        if u.role != current[u.id]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can't change a member's role",
+            )
 
 
 class MemberUpdate(BaseModel):
@@ -140,19 +166,20 @@ class MemberUpdate(BaseModel):
 @router.put("")
 async def update_members(
     updates: list[MemberUpdate],
-    _: dict = Depends(require_members),
+    user: dict = Depends(require_roster_access),
 ):
     """Persist edits made in the Members roster grid.
 
     Accepts the list of rows the client changed and writes them in a single
-    transaction (see ``db.update_users``). Same ``control_panel.members`` gate as
-    the read, since editing everyone's role/profile is at least as privileged as
-    viewing it.
+    transaction (see ``db.update_users``). Captains, Mentors and the Scouting Lead
+    may edit anyone; Leads only their own subteam's members and alumni, and not
+    their role (see :func:`_authorize_edits`).
 
     :param updates: The changed member rows (validated by :class:`MemberUpdate`).
-    :param _: The authenticated, authorized user (enforces access; value unused).
+    :param user: The authenticated editor (scope is checked per row).
     :returns: ``{"ok": True, "updated": <count>}``.
     """
+    await _authorize_edits(user, updates)
     await db.update_users([u.model_dump() for u in updates])
     return {"ok": True, "updated": len(updates)}
 
