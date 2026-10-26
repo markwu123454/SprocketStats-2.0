@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { Link } from "react-router-dom"
-import { Ban, Check, ChevronLeft, Plus, RotateCcw, Tag, X } from "lucide-react"
+import { Ban, Check, ChevronLeft, ChevronRight, Pencil, Plus, RotateCcw, Tag, X } from "lucide-react"
 import { useAuth } from "@/contexts/authContext"
 import { can, canModerate, getPerm, type RoleCatalogEntry } from "@/lib/permissions"
 import Dropdown from "@/components/ui/Dropdown"
+import { useIsMobile } from "@/lib/useIsMobile"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -91,6 +92,9 @@ const BANNED_GROUP = "_banned"
 /** Shared column template for the header and every row. */
 const GRID_COLS = "minmax(0,1.5fr) minmax(0,1.6fr) minmax(0,1.3fr) minmax(0,1.1fr) 110px minmax(0,0.7fr) 40px"
 
+/** Text inputs stay at 16px on phones — iOS Safari zooms the page into anything smaller on focus. */
+const INPUT_TEXT = "text-base md:text-sm"
+
 const tagChip: CSSProperties = {
     background: "color-mix(in oklch, var(--theme-text-contrast) 18%, transparent)",
     color: "var(--theme-text-contrast)",
@@ -105,6 +109,42 @@ function gradeLabel(grade: string | null, year: string | null): string {
 
 function initials(name: string): string {
     return name.trim().split(/\s+/).map(w => w.charAt(0).toUpperCase()).join("").slice(0, 2) || "?"
+}
+
+const nameOf = (m: MemberRow): string => m.name ?? m.display_name ?? m.email ?? "Unnamed"
+
+/** Secondary line under a member's name: nickname, onboarding state, or hidden email. */
+function goesByOf(m: MemberRow): string {
+    const firstName = nameOf(m).split(" ")[0]
+    return !m.display_name ? "Hasn't finished onboarding"
+        : m.display_name !== firstName ? `Goes by ${m.display_name}`
+        : !m.email ? "Email hidden" : ""
+}
+
+/** Leads/members show their subteam (paired with a Lead badge); other roles show their label. */
+function roleTextOf(m: MemberRow, role: RoleCatalogEntry | undefined): string {
+    return role ? (role.subteam ? role.label.replace(/ (Lead|Member)$/, "") : role.label)
+        : m.role ? pretty(m.role) : "—"
+}
+
+function Avatar({ name, size = 32 }: { name: string; size?: number }) {
+    return (
+        <span
+            className="rounded-full shrink-0 grid place-items-center text-xs font-semibold theme-h1-color"
+            style={{ width: size, height: size, background: "var(--theme-button-hover)" }}
+        >
+            {initials(name)}
+        </span>
+    )
+}
+
+function LeadBadge() {
+    return (
+        <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border shrink-0 theme-text-contrast"
+              style={{ borderColor: "var(--theme-text-contrast)" }}>
+            LEAD
+        </span>
+    )
 }
 
 interface RowAction {
@@ -126,9 +166,14 @@ interface RowAction {
  * "Save" persists only the changed rows. The route guard and the `/members`
  * endpoint both enforce `control_panel.members` — this UI is cosmetic, the
  * backend is the real boundary.
+ *
+ * Below the `md` breakpoint the wide grid is swapped for a stacked list: tapping
+ * a member opens a bottom sheet holding every action (edit, tags, moderation),
+ * and Save/Reset move to a bar pinned under the list while changes are staged.
  */
 export default function MembersPage() {
     const { user } = useAuth()
+    const isMobile = useIsMobile()
 
     // Bootstrap pre-seeds — null means "not yet resolved", [] means "resolved but empty"
     const [bMembers] = useBootstrapped<MemberRow[] | null>("members", null)
@@ -149,7 +194,9 @@ export default function MembersPage() {
     const canEditTags = canManage || Boolean(getPerm(user?.permissions, "can_moderate"))
     const [editingTagsFor, setEditingTagsFor] = useState<string | null>(null)
     const [editingFor, setEditingFor]         = useState<string | null>(null)
-    const [loading, setLoading]               = useState(bMembers === null)
+    // Mobile only: the member whose action sheet is open.
+    const [sheetFor, setSheetFor]             = useState<string | null>(null)
+    const [loading, setLoading]              = useState(bMembers === null)
     // Tracks whether the real load() has started; prevents bootstrap from overwriting fresh data.
     const loadStarted = useRef(false)
     const [saving, setSaving] = useState(false)
@@ -372,11 +419,52 @@ export default function MembersPage() {
 
     const editingMember = editingFor ? rows.find(r => r.id === editingFor) : undefined
     const editingTagsMember = editingTagsFor ? rows.find(r => r.id === editingTagsFor) : undefined
+    const sheetMember = sheetFor ? rows.find(r => r.id === sheetFor) : undefined
+
+    const resetButton = (
+        <button
+            onClick={handleReset}
+            disabled={!hasChanges || saving}
+            className="rounded-lg border px-3.5 py-2 text-sm theme-text theme-border transition-opacity hover:opacity-80 disabled:cursor-not-allowed"
+        >
+            Reset
+        </button>
+    )
+    const saveButton = (
+        <button
+            onClick={() => void handleSave()}
+            disabled={!hasChanges || saving}
+            className="rounded-lg px-[18px] py-[9px] text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-45 disabled:cursor-not-allowed"
+            style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
+        >
+            {saving ? "Saving…" : "Save"}
+        </button>
+    )
+    const unsavedLabel = `${changes} unsaved change${changes > 1 ? "s" : ""}`
+
+    /** Loading / empty states, else each group's sticky header followed by its rows. */
+    const renderGroups = (renderRow: (m: MemberRowState) => ReactNode) =>
+        loading ? (
+            <div className="px-6 py-10 text-center text-sm theme-subtext-color">Loading members…</div>
+        ) : groups.length === 0 ? (
+            <div className="px-6 py-10 text-center text-sm theme-subtext-color">No members match these filters.</div>
+        ) : groups.map(g => (
+            <div key={g.key} className="flex flex-col">
+                <div className="sticky top-0 z-[1] flex items-baseline gap-2.5 px-4 md:px-6 pt-3.5 pb-2 border-b theme-border theme-bg">
+                    <span className="text-[15px] font-semibold theme-h1-color">{g.name}</span>
+                    <span className="text-[13px] theme-subtext-color">{g.rows.length}</span>
+                </div>
+                {g.rows.map(renderRow)}
+            </div>
+        ))
 
     return (
-        <div className="px-4 py-6 flex flex-col gap-4 h-full">
-            <div className="rounded-[14px] border overflow-hidden theme-border theme-bg flex flex-col flex-1 min-h-0">
-                <div className="flex flex-wrap items-center gap-4 px-6 py-5">
+        // Desktop pins the card to the viewport and scrolls the grid inside it; on
+        // mobile the whole page scrolls (overflow-clip, not hidden, so the group
+        // headers and the save bar can still stick) to give the list the full screen.
+        <div className="px-2 py-3 md:px-4 md:py-6 flex flex-col gap-4 md:h-full">
+            <div className="rounded-[14px] border overflow-clip md:overflow-hidden theme-border theme-bg flex flex-col md:flex-1 md:min-h-0">
+                <div className="flex flex-wrap items-center gap-4 px-4 py-4 md:px-6 md:py-5">
                     <Link
                         to="/control"
                         aria-label="Back to Control Panel"
@@ -390,35 +478,22 @@ export default function MembersPage() {
                             {counts.approved} approved · {counts.pending} pending · {counts.banned} banned
                         </span>
                     </div>
-                    {hasChanges && (
-                        <span className="text-[13px] theme-text-contrast">
-                            {changes} unsaved change{changes > 1 ? "s" : ""}
-                        </span>
+                    {!isMobile && (
+                        <>
+                            {hasChanges && <span className="text-[13px] theme-text-contrast">{unsavedLabel}</span>}
+                            {resetButton}
+                            {saveButton}
+                        </>
                     )}
-                    <button
-                        onClick={handleReset}
-                        disabled={!hasChanges || saving}
-                        className="rounded-lg border px-3.5 py-2 text-sm theme-text theme-border transition-opacity hover:opacity-80 disabled:cursor-not-allowed"
-                    >
-                        Reset
-                    </button>
-                    <button
-                        onClick={() => void handleSave()}
-                        disabled={!hasChanges || saving}
-                        className="rounded-lg px-[18px] py-[9px] text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-45 disabled:cursor-not-allowed"
-                        style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
-                    >
-                        {saving ? "Saving…" : "Save"}
-                    </button>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3 px-6 pb-4 border-b theme-border">
-                    <div className="flex gap-1 p-1 rounded-[10px]" style={{ background: "var(--ag-grid-chrome-bg)" }}>
+                <div className="flex flex-wrap items-center gap-3 px-4 md:px-6 pb-4 border-b theme-border">
+                    <div className="flex gap-1 p-1 rounded-[10px] max-w-full overflow-x-auto" style={{ background: "var(--ag-grid-chrome-bg)" }}>
                         {TABS.map(([k, label]) => (
                             <button
                                 key={k}
                                 onClick={() => setTab(k)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-[7px] text-[13px] cursor-pointer"
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-[7px] text-[13px] whitespace-nowrap cursor-pointer"
                                 style={{
                                     background: tab === k ? "var(--theme-button-hover)" : "transparent",
                                     color: tab === k ? "var(--theme-h1-color)" : "var(--theme-subtext-color)",
@@ -431,7 +506,7 @@ export default function MembersPage() {
                             </button>
                         ))}
                     </div>
-                    <div className="w-[200px]">
+                    <div className="w-full md:w-[200px]">
                         <Dropdown
                             value={subteam}
                             options={subteamOptions}
@@ -440,66 +515,95 @@ export default function MembersPage() {
                             triggerClassName="rounded-lg border px-3 py-2 text-sm transition theme-bg theme-border theme-text"
                         />
                     </div>
-                    <div className="flex-1" />
+                    <div className="hidden md:block flex-1" />
                     <input
                         value={query}
                         onChange={e => setQuery(e.target.value)}
                         placeholder="Search name, email, role…"
-                        className="members-search w-full sm:w-[280px] rounded-lg border px-3 py-2 text-sm outline-none theme-border theme-text"
+                        className={`members-search w-full md:w-[280px] rounded-lg border px-3 py-2 outline-none theme-border theme-text ${INPUT_TEXT}`}
                         style={{ background: "var(--ag-grid-chrome-bg)" }}
                     />
                 </div>
 
                 {error && (
-                    <p className="text-sm px-6 py-2 border-b theme-subtext-color theme-border"
+                    <p className="text-sm px-4 md:px-6 py-2 border-b theme-subtext-color theme-border"
                        style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
                         {error}
                     </p>
                 )}
 
-                {/* Wide grid scrolls sideways on narrow screens; groups scroll vertically under a fixed header. */}
-                <div className="flex-1 min-h-0 overflow-x-auto theme-scrollbar">
-                    <div className="min-w-[960px] h-full flex flex-col">
-                        <div
-                            className="grid gap-4 px-6 py-2.5 text-xs font-semibold uppercase tracking-[.06em] theme-subtext-color"
-                            style={{ gridTemplateColumns: GRID_COLS, background: "var(--ag-grid-header-bg)" }}
-                        >
-                            <span>Member</span><span>Email</span><span>Role</span><span>Grade</span><span>Status</span><span>Tags</span><span />
-                        </div>
-                        <div className="flex-1 min-h-0 overflow-y-auto theme-scrollbar">
-                            {loading ? (
-                                <div className="px-6 py-10 text-center text-sm theme-subtext-color">Loading members…</div>
-                            ) : groups.length === 0 ? (
-                                <div className="px-6 py-10 text-center text-sm theme-subtext-color">No members match these filters.</div>
-                            ) : groups.map(g => (
-                                <div key={g.key} className="flex flex-col">
-                                    <div className="sticky top-0 z-[1] flex items-baseline gap-2.5 px-6 pt-3.5 pb-2 border-b theme-border theme-bg">
-                                        <span className="text-[15px] font-semibold theme-h1-color">{g.name}</span>
-                                        <span className="text-[13px] theme-subtext-color">{g.rows.length}</span>
-                                    </div>
-                                    {g.rows.map(m => (
-                                        <MemberGridRow
-                                            key={m.id}
-                                            member={m}
-                                            role={m.role ? roleById.get(m.role) : undefined}
-                                            action={actionFor(m)}
-                                            onEdit={canManage ? () => setEditingFor(m.id) : undefined}
-                                            onEditTags={canEditTags ? () => setEditingTagsFor(m.id) : undefined}
-                                        />
-                                    ))}
-                                </div>
-                            ))}
+                {isMobile ? (
+                    <div className="flex flex-col">
+                        {renderGroups(m => (
+                            <MemberListRow
+                                key={m.id}
+                                member={m}
+                                role={m.role ? roleById.get(m.role) : undefined}
+                                onOpen={() => setSheetFor(m.id)}
+                            />
+                        ))}
+                    </div>
+                ) : (
+                    // Wide grid scrolls sideways on narrow desktop windows; groups scroll vertically under a fixed header.
+                    <div className="flex-1 min-h-0 overflow-x-auto theme-scrollbar">
+                        <div className="min-w-[960px] h-full flex flex-col">
+                            <div
+                                className="grid gap-4 px-6 py-2.5 text-xs font-semibold uppercase tracking-[.06em] theme-subtext-color"
+                                style={{ gridTemplateColumns: GRID_COLS, background: "var(--ag-grid-header-bg)" }}
+                            >
+                                <span>Member</span><span>Email</span><span>Role</span><span>Grade</span><span>Status</span><span>Tags</span><span />
+                            </div>
+                            <div className="flex-1 min-h-0 overflow-y-auto theme-scrollbar">
+                                {renderGroups(m => (
+                                    <MemberGridRow
+                                        key={m.id}
+                                        member={m}
+                                        role={m.role ? roleById.get(m.role) : undefined}
+                                        action={actionFor(m)}
+                                        onEdit={canManage ? () => setEditingFor(m.id) : undefined}
+                                        onEditTags={canEditTags ? () => setEditingTagsFor(m.id) : undefined}
+                                    />
+                                ))}
+                            </div>
                         </div>
                     </div>
-                </div>
+                )}
+
+                {/* Mobile: Save/Reset live in a bar under the list, shown only while something is staged. */}
+                {isMobile && hasChanges && (
+                    <div className="sticky bottom-0 z-[2] flex items-center gap-2 px-4 py-3 border-t theme-border theme-bg">
+                        <span className="flex-1 min-w-0 text-[13px] theme-text-contrast">{unsavedLabel}</span>
+                        {resetButton}
+                        {saveButton}
+                    </div>
+                )}
             </div>
 
+            {/* Hover-only affordances are gated on real hover so a tap on touch screens
+                isn't swallowed as a hover, and the tag button stays visible without one. */}
             <style>{`
                 .members-search::placeholder { color: var(--theme-subtext-color); opacity: .7; }
-                .members-row:hover { background: var(--ag-grid-hover-bg); }
-                .members-row:hover .members-tag-edit { opacity: 1; }
-                .members-action:not(:disabled):hover { border-color: var(--theme-border); color: var(--theme-h1-color); }
+                @media (hover: hover) {
+                    .members-row:hover { background: var(--ag-grid-hover-bg); }
+                    .members-row:hover .members-tag-edit { opacity: 1; }
+                    .members-action:not(:disabled):hover { border-color: var(--theme-border); color: var(--theme-h1-color); }
+                }
+                @media (hover: none) {
+                    .members-tag-edit { opacity: 1; }
+                }
+                .members-list-row:active { background: var(--ag-grid-hover-bg); }
             `}</style>
+
+            {sheetMember && (
+                <MemberSheet
+                    member={sheetMember}
+                    role={sheetMember.role ? roleById.get(sheetMember.role) : undefined}
+                    action={actionFor(sheetMember)}
+                    onClose={() => setSheetFor(null)}
+                    onEdit={canManage ? () => { setSheetFor(null); setEditingFor(sheetMember.id) } : undefined}
+                    onEditTags={canEditTags ? () => { setSheetFor(null); setEditingTagsFor(sheetMember.id) } : undefined}
+                />
+            )}
 
             {editingMember && (
                 <EditMemberModal
@@ -532,15 +636,8 @@ interface MemberGridRowProps {
 }
 
 function MemberGridRow({ member: m, role, action, onEdit, onEditTags }: MemberGridRowProps) {
-    const name = m.name ?? m.display_name ?? m.email ?? "Unnamed"
-    const firstName = name.split(" ")[0]
-    const goesBy = !m.display_name ? "Hasn't finished onboarding"
-        : m.display_name !== firstName ? `Goes by ${m.display_name}`
-        : !m.email ? "Email hidden" : ""
-    // Leads/members show their subteam plus a Lead badge; other roles show their label.
-    const roleText = role ? (role.subteam ? role.label.replace(/ (Lead|Member)$/, "") : role.label)
-        : m.role ? pretty(m.role) : "—"
-    const isLead = role?.level === "lead"
+    const name = nameOf(m)
+    const goesBy = goesByOf(m)
     // A staged, unsaved moderation change is italicised until Save/Reset.
     const statusDirty = isDirty(m, PENDING)
     const Icon = action.icon
@@ -561,12 +658,7 @@ function MemberGridRow({ member: m, role, action, onEdit, onEditTags }: MemberGr
                 title={onEdit ? "Edit member" : undefined}
                 className="flex items-center gap-3 min-w-0 text-left enabled:cursor-pointer"
             >
-                <span
-                    className="w-8 h-8 rounded-full shrink-0 grid place-items-center text-xs font-semibold theme-h1-color"
-                    style={{ background: "var(--theme-button-hover)" }}
-                >
-                    {initials(name)}
-                </span>
+                <Avatar name={name} />
                 <span className="flex flex-col min-w-0">
                     <span className={`text-sm font-medium truncate theme-h1-color ${isDirty(m, EDITABLE) ? "italic" : ""}`}>{name}</span>
                     {goesBy && <span className="text-xs truncate theme-subtext-color">{goesBy}</span>}
@@ -574,13 +666,8 @@ function MemberGridRow({ member: m, role, action, onEdit, onEditTags }: MemberGr
             </button>
             <span className="text-[13px] truncate theme-subtext-color">{m.email ?? "Hidden"}</span>
             <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm truncate theme-text">{roleText}</span>
-                {isLead && (
-                    <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border theme-text-contrast"
-                          style={{ borderColor: "var(--theme-text-contrast)" }}>
-                        LEAD
-                    </span>
-                )}
+                <span className="text-sm truncate theme-text">{roleTextOf(m, role)}</span>
+                {role?.level === "lead" && <LeadBadge />}
             </div>
             <span className="text-sm whitespace-nowrap theme-text">{gradeLabel(m.grade, m.team_year)}</span>
             <span className={`text-sm theme-text ${statusDirty ? "italic" : ""}`}>{STATUS_LABEL[statusOf(m)]}</span>
@@ -611,6 +698,193 @@ function MemberGridRow({ member: m, role, action, onEdit, onEditTags }: MemberGr
     )
 }
 
+/** Small status chip for the mobile list; approved members carry none to keep rows quiet. */
+function StatusPill({ status, dirty }: { status: Status; dirty: boolean }) {
+    return (
+        <span
+            className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${dirty ? "italic" : ""}`}
+            style={status === "pending"
+                ? tagChip
+                : { background: "var(--theme-button-hover)", color: "var(--theme-subtext-color)" }}
+        >
+            {STATUS_LABEL[status]}
+        </span>
+    )
+}
+
+interface MemberListRowProps {
+    member: MemberRowState
+    role: RoleCatalogEntry | undefined
+    onOpen: () => void
+}
+
+/** Mobile roster row: the whole row is one tap target that opens the member's sheet. */
+function MemberListRow({ member: m, role, onOpen }: MemberListRowProps) {
+    const name = nameOf(m)
+    const status = statusOf(m)
+    const statusDirty = isDirty(m, PENDING)
+    const sub = [roleTextOf(m, role), gradeLabel(m.grade, m.team_year)].filter(v => v !== "—").join(" · ")
+
+    return (
+        <button
+            type="button"
+            onClick={onOpen}
+            className="members-list-row w-full flex items-center gap-3 px-4 py-3 text-left cursor-pointer"
+            style={{ borderBottom: "1px solid var(--ag-grid-row-border)", opacity: m.banned_at ? 0.6 : 1 }}
+        >
+            <Avatar name={name} size={40} />
+            <span className="flex flex-col gap-1 flex-1 min-w-0">
+                <span className="flex items-center gap-2 min-w-0">
+                    <span className={`text-[15px] font-medium truncate theme-h1-color ${isDirty(m, EDITABLE) ? "italic" : ""}`}>{name}</span>
+                    {role?.level === "lead" && <LeadBadge />}
+                </span>
+                <span className="text-[13px] truncate theme-subtext-color">{sub || goesByOf(m) || "No role"}</span>
+                {m.tags.length > 0 && (
+                    <span className="flex flex-wrap gap-1">
+                        {m.tags.map(t => (
+                            <span key={t} className="text-[11px] px-1.5 py-0.5 rounded" style={tagChip}>{t}</span>
+                        ))}
+                    </span>
+                )}
+            </span>
+            {(status !== "approved" || statusDirty) && <StatusPill status={status} dirty={statusDirty} />}
+            <ChevronRight size={18} className="shrink-0 theme-subtext-color" />
+        </button>
+    )
+}
+
+interface MemberSheetProps {
+    member: MemberRowState
+    role: RoleCatalogEntry | undefined
+    action: RowAction
+    onClose: () => void
+    /** Absent for viewers who can't edit profiles (Leads). */
+    onEdit?: () => void
+    onEditTags?: () => void
+}
+
+/**
+ * Mobile bottom sheet for one member: their details plus every action the
+ * desktop row spreads across columns (profile edit, tags, approve/ban/unban).
+ * Like the grid, moderation only stages the change — Save still persists it.
+ */
+function MemberSheet({ member: m, role, action, onClose, onEdit, onEditTags }: MemberSheetProps) {
+    const name = nameOf(m)
+    const goesBy = goesByOf(m)
+    const statusDirty = isDirty(m, PENDING)
+    const Icon = action.icon
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
+        document.addEventListener("keydown", onKey)
+        return () => document.removeEventListener("keydown", onKey)
+    }, [onClose])
+
+    const sheetButton = "w-full flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-[15px] font-medium theme-border theme-text transition-opacity active:opacity-70 disabled:opacity-45 disabled:cursor-not-allowed"
+    const details: [string, ReactNode][] = [
+        ["Email", m.email ?? "Hidden"],
+        ["Role", (
+            <span className="flex items-center justify-end gap-2">
+                {role?.label ?? (m.role ? pretty(m.role) : "—")}
+                {role?.level === "lead" && <LeadBadge />}
+            </span>
+        )],
+        ["Grade", gradeLabel(m.grade, m.team_year)],
+        ["Status", (
+            <span className={statusDirty ? "italic" : ""}>
+                {STATUS_LABEL[statusOf(m)]}{statusDirty ? " (unsaved)" : ""}
+            </span>
+        )],
+    ]
+
+    return (
+        <div
+            className="fixed inset-0 z-50 flex items-end justify-center"
+            style={{ background: "rgba(0,0,0,0.5)" }}
+            onClick={e => { if (e.target === e.currentTarget) onClose() }}
+        >
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-label={name}
+                className="w-full max-h-[85dvh] overflow-y-auto rounded-t-2xl border-t border-x px-5 pt-5 flex flex-col gap-4 theme-bg theme-border"
+                style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
+            >
+                <div className="flex items-center gap-3">
+                    <Avatar name={name} size={44} />
+                    <div className="flex flex-col min-w-0 flex-1">
+                        <span className={`text-base font-semibold truncate theme-h1-color ${isDirty(m, EDITABLE) ? "italic" : ""}`}>{name}</span>
+                        {goesBy && <span className="text-[13px] truncate theme-subtext-color">{goesBy}</span>}
+                    </div>
+                    <button
+                        onClick={onClose}
+                        aria-label="Close"
+                        className="w-9 h-9 shrink-0 rounded-full border grid place-items-center theme-border theme-subtext-color"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
+
+                <dl className="flex flex-col rounded-xl border theme-border">
+                    {details.map(([label, value], i) => (
+                        <div
+                            key={label}
+                            className="flex items-center justify-between gap-4 px-4 py-2.5"
+                            style={i ? { borderTop: "1px solid var(--ag-grid-row-border)" } : undefined}
+                        >
+                            <dt className="text-[13px] shrink-0 theme-subtext-color">{label}</dt>
+                            <dd className="text-sm text-right min-w-0 truncate theme-text">{value}</dd>
+                        </div>
+                    ))}
+                </dl>
+
+                {(m.tags.length > 0 || onEditTags) && (
+                    <div className="flex flex-col gap-2">
+                        <span className="text-[13px] theme-subtext-color">Tags</span>
+                        <div className="flex flex-wrap gap-1.5">
+                            {m.tags.length === 0 && <span className="text-xs theme-subtext-color">No tags yet</span>}
+                            {m.tags.map(t => (
+                                <span key={t} className="text-xs px-2 py-0.5 rounded" style={tagChip}>{t}</span>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                <div className="flex flex-col gap-2">
+                    {onEdit && (
+                        <button
+                            onClick={onEdit}
+                            className={sheetButton}
+                            style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)", borderColor: "transparent" }}
+                        >
+                            <Pencil size={16} /> Edit profile &amp; role
+                        </button>
+                    )}
+                    {onEditTags && (
+                        <button onClick={onEditTags} className={sheetButton}>
+                            <Tag size={16} /> Edit tags
+                        </button>
+                    )}
+                    <button
+                        onClick={() => { action.onClick(); onClose() }}
+                        disabled={action.disabled}
+                        className={sheetButton}
+                    >
+                        <Icon size={16} /> {action.label}
+                    </button>
+                    {action.disabled && action.reason && (
+                        <p className="text-xs text-center theme-subtext-color">{action.reason}</p>
+                    )}
+                </div>
+
+                <p className="text-xs text-center theme-subtext-color">
+                    Profile and status changes are staged — press Save to keep them.
+                </p>
+            </div>
+        </div>
+    )
+}
+
 interface EditMemberModalProps {
     member: MemberRowState
     catalog: RoleCatalogEntry[]
@@ -627,7 +901,7 @@ function EditMemberModal({ member, catalog, onClose, onApply }: EditMemberModalP
     })
     const set = (patch: Partial<typeof draft>) => setDraft(d => ({ ...d, ...patch }))
 
-    const inputClass = "w-full rounded-lg border px-3 py-2 text-sm outline-none theme-border theme-text theme-bg"
+    const inputClass = `w-full rounded-lg border px-3 py-2 outline-none theme-border theme-text theme-bg ${INPUT_TEXT}`
     const triggerClass = "rounded-lg border px-3 py-2 text-sm transition theme-bg theme-border theme-text"
     const roleOptions = catalog.map(c => ({ value: c.value, label: c.label }))
     const enumOptions = (vals: string[]) => vals.map(v => ({ value: v, label: v ? pretty(v) : "—" }))
@@ -635,10 +909,10 @@ function EditMemberModal({ member, catalog, onClose, onApply }: EditMemberModalP
     return (
         <div
             className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
-            style={{ background: "rgba(0,0,0,0.5)" }}
+            style={{ background: "rgba(0,0,0,0.5)", paddingBottom: "max(1rem, env(safe-area-inset-bottom, 0px))" }}
             onClick={e => { if (e.target === e.currentTarget) onClose() }}
         >
-            <div className="w-full max-w-sm rounded-2xl border p-5 flex flex-col gap-4 theme-bg theme-border">
+            <div className="w-full max-w-sm max-h-full overflow-y-auto rounded-2xl border p-5 flex flex-col gap-4 theme-bg theme-border">
                 <div className="flex items-center gap-2">
                     <h2 className="text-sm font-semibold theme-text-contrast flex-1 truncate">
                         Edit — {member.name ?? member.display_name ?? member.email}
@@ -676,12 +950,12 @@ function EditMemberModal({ member, catalog, onClose, onApply }: EditMemberModalP
 
                 <div className="flex justify-end gap-2">
                     <button onClick={onClose}
-                            className="rounded-lg border px-3.5 py-1.5 text-sm theme-text theme-border hover:opacity-80 transition-opacity">
+                            className="rounded-lg border flex-1 md:flex-none px-3.5 py-2.5 md:py-1.5 text-sm theme-text theme-border hover:opacity-80 transition-opacity">
                         Cancel
                     </button>
                     <button
                         onClick={() => onApply({ ...draft, name: norm(draft.name), display_name: norm(draft.display_name) })}
-                        className="rounded-lg px-4 py-1.5 text-sm font-semibold hover:opacity-90 transition-opacity"
+                        className="rounded-lg flex-1 md:flex-none px-4 py-2.5 md:py-1.5 text-sm font-semibold hover:opacity-90 transition-opacity"
                         style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
                     >
                         Apply
@@ -746,11 +1020,11 @@ function TagsModal({ member, onClose, onAdd, onRemove }: TagsModalProps) {
     return (
         <div
             className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
-            style={{ background: "rgba(0,0,0,0.5)" }}
+            style={{ background: "rgba(0,0,0,0.5)", paddingBottom: "max(1rem, env(safe-area-inset-bottom, 0px))" }}
             onClick={e => { if (e.target === e.currentTarget) onClose() }}
         >
             <div
-                className="w-full max-w-sm rounded-2xl border p-5 flex flex-col gap-4 backdrop-blur-sm theme-bg theme-border"
+                className="w-full max-w-sm max-h-full overflow-y-auto rounded-2xl border p-5 flex flex-col gap-4 backdrop-blur-sm theme-bg theme-border"
             >
                 <div className="flex items-center gap-2">
                     <Tag size={16} className="theme-subtext-color" />
@@ -792,7 +1066,7 @@ function TagsModal({ member, onClose, onAdd, onRemove }: TagsModalProps) {
                         onKeyDown={e => { if (e.key === "Enter") void handleAdd() }}
                         placeholder="new_tag"
                         disabled={busy}
-                        className="flex-1 rounded-lg border px-3 py-1.5 text-sm theme-text theme-border theme-bg outline-none focus:ring-1 disabled:opacity-50"
+                        className={`flex-1 min-w-0 rounded-lg border px-3 py-1.5 theme-text theme-border theme-bg outline-none focus:ring-1 disabled:opacity-50 ${INPUT_TEXT}`}
                         style={{ background: "color-mix(in oklch, var(--theme-border) 30%, var(--theme-bg))" }}
                     />
                     <button
