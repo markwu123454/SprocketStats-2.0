@@ -239,7 +239,7 @@ async def get_notification_detail(notification_id: str) -> dict | None:
             )
             responses = await conn.fetch(
                 """
-                SELECT u.id, u.display_name, u.email, r.response, r.responded_at
+                SELECT u.id, u.display_name, u.email, u.role, r.response, r.responded_at
                 FROM notification_responses r
                 JOIN users u ON u.id = r.user_id
                 WHERE r.notification_id = $1
@@ -249,7 +249,7 @@ async def get_notification_detail(notification_id: str) -> dict | None:
             )
             non_responders = await conn.fetch(
                 """
-                SELECT u.id, u.display_name, u.email
+                SELECT u.id, u.display_name, u.email, u.role
                 FROM users u
                 WHERE u.banned_at IS NULL
                   AND ($1::text[] = '{}' OR u.role = ANY($1::text[]))
