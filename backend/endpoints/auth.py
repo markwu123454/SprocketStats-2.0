@@ -197,6 +197,15 @@ async def roles(_: dict = Depends(get_current_user)):
     return role_catalog()
 
 
+def _clean_display_name(v: str) -> str:
+    v = v.strip()
+    if not v:
+        raise ValueError("Name cannot be empty")
+    if len(v) > 64:
+        raise ValueError("Name must be 64 characters or fewer")
+    return v
+
+
 class OnboardingRequest(BaseModel):
     display_name: str
     role: str
@@ -206,12 +215,7 @@ class OnboardingRequest(BaseModel):
     @field_validator("display_name")
     @classmethod
     def validate_display_name(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("Name cannot be empty")
-        if len(v) > 64:
-            raise ValueError("Name must be 64 characters or fewer")
-        return v
+        return _clean_display_name(v)
 
     @field_validator("role")
     @classmethod
@@ -263,4 +267,39 @@ async def complete_onboarding(
 
     response = JSONResponse({"ok": True})
     set_auth_cookie(response, session_jwt)
+    return response
+
+
+class DisplayNameRequest(BaseModel):
+    display_name: str
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, v: str) -> str:
+        return _clean_display_name(v)
+
+
+@router.patch("/display-name")
+async def update_display_name(
+    body: DisplayNameRequest,
+    user: dict = Depends(require_active),
+):
+    """Change the signed-in user's display name.
+
+    ``display_name`` is a JWT claim, so the session cookie is reissued from the
+    updated row; the next ``/auth/me`` then reflects the new name.
+
+    :param body: The new display name (trimmed, 1-64 characters).
+    :param user: The authenticated user's JWT claims.
+    :returns: ``{"ok": True, "display_name": ...}``.
+    :raises HTTPException: 400 if the user hasn't finished onboarding.
+    """
+    if not user.get("onboarding_complete"):
+        raise HTTPException(status_code=400, detail="Finish onboarding first")
+    updated = await db.update_display_name(user["sub"], body.display_name)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    response = JSONResponse({"ok": True, "display_name": updated["display_name"]})
+    set_auth_cookie(response, issue_jwt(dict(updated)))
     return response

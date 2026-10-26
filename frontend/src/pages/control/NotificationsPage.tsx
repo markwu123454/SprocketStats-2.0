@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { ChevronLeft, Download, Plus, Search } from "lucide-react"
+import Checkbox from "@/components/ui/Checkbox"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -209,11 +210,9 @@ export default function NotificationsPage() {
                         <div className="flex flex-wrap md:flex-col gap-1.5">
                             {(["hard", "soft"] as const).map(t => (
                                 <label key={t} className="flex items-center gap-1.5 text-sm theme-subtext-color cursor-pointer">
-                                    <input
-                                        type="checkbox"
+                                    <Checkbox
                                         checked={types.has(t)}
                                         onChange={() => toggle(types, t, setTypes)}
-                                        className="h-3.5 w-3.5 accent-(--theme-text-contrast)"
                                     />
                                     {t === "hard" ? "Hard block" : "Soft"}
                                 </label>
@@ -227,11 +226,9 @@ export default function NotificationsPage() {
                             <div className="flex flex-wrap md:flex-col gap-1.5">
                                 {roleOptions.map(r => (
                                     <label key={r} className="flex items-center gap-1.5 text-sm theme-subtext-color cursor-pointer">
-                                        <input
-                                            type="checkbox"
+                                        <Checkbox
                                             checked={audiences.has(r)}
                                             onChange={() => toggle(audiences, r, setAudiences)}
-                                            className="h-3.5 w-3.5 accent-(--theme-text-contrast)"
                                         />
                                         {roleLabels[r] ?? pretty(r)}
                                     </label>
