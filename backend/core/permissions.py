@@ -22,8 +22,8 @@ is available, to avoid a circular import.
 from typing import Any
 
 # Moderation-authority specs, shared by role definitions below. `can_moderate`
-# governs who may approve/unapprove and ban/unban whom — one scope for all four
-# actions. `all` = any target; `subteam` = targets whose level is in
+# governs who may approve/unapprove, ban/unban, and (for Leads) edit the profile
+# of whom — one scope for all of them. `all` = any target; `subteam` = targets whose level is in
 # `target_levels` and whose subteam matches the actor's, plus any role listed in
 # `extra_roles` (subteam-agnostic, e.g. alumni). See `can_role_moderate`.
 _MODERATE_ALL: dict[str, Any] = {"scope": "all"}
@@ -159,8 +159,9 @@ def has_moderation_authority(role: str | None) -> bool:
     """Return whether ``role`` may moderate (approve/ban) at least someone.
 
     True when the role carries a ``can_moderate`` spec (Captains, Mentors, and
-    Leads). Used to admit Leads to the read-only member roster alongside the
-    roles that hold ``control_panel.members`` (Captains, Mentors, Scouting Lead).
+    Leads). Used to admit Leads to the member roster (where they can moderate and
+    edit their own subteam) alongside the roles that hold ``control_panel.members``
+    (Captains, Mentors, Scouting Lead), who can edit anyone.
 
     :param role: The role slug, or ``None``.
     :returns: ``True`` if the role has any moderation authority, else ``False``.
@@ -208,8 +209,8 @@ def task_buckets() -> list[str]:
 def can_role_moderate(actor_role: str | None, target_role: str | None) -> bool:
     """Return whether ``actor_role`` may moderate a user holding ``target_role``.
 
-    Moderation covers approve/unapprove and ban/unban — all four share this one
-    scope. Evaluates the actor's ``can_moderate`` spec against the target's role:
+    Moderation covers approve/unapprove, ban/unban, and (for Leads) editing a
+    member's profile (not their role) — all share this one scope. Evaluates the actor's ``can_moderate`` spec against the target's role:
 
       * no spec → ``False`` (members/alumni can't moderate);
       * ``scope == "all"`` → ``True`` (Captains/Mentors moderate anyone);

@@ -161,11 +161,11 @@ interface RowAction {
  *
  * Status tabs, a subteam filter and search narrow the groups as well as the
  * rows. Leads come first in each group and banned accounts are collected at the
- * bottom. Approve/ban/unban and (for Captains/Mentors) profile edits made in the
- * row editor are staged locally; "Reset" reverts every row to its DB snapshot and
- * "Save" persists only the changed rows. The route guard and the `/members`
- * endpoint both enforce `control_panel.members` — this UI is cosmetic, the
- * backend is the real boundary.
+ * bottom. Approve/ban/unban and profile edits made in the row editor are staged
+ * locally; "Reset" reverts every row to its DB snapshot and "Save" persists only
+ * the changed rows. Captains, Mentors and the Scouting Lead can edit anyone; Leads
+ * can edit their own subteam's members (and alumni), except for their role. The `/members` endpoints
+ * enforce the same scope — this UI is cosmetic, the backend is the real boundary.
  *
  * Below the `md` breakpoint the wide grid is swapped for a stacked list: tapping
  * a member opens a bottom sheet holding every action (edit, tags, moderation),
@@ -186,8 +186,9 @@ export default function MembersPage() {
     })
     const [catalog, setCatalog] = useState<RoleCatalogEntry[]>([])
 
-    // Full management (profile/role editing) is Captains/Mentors only; Leads
-    // reach this page to moderate their subteam but can't edit profiles.
+    // Captains, Mentors and the Scouting Lead (control_panel.members) edit anyone,
+    // role included. Leads edit within their moderation scope — their subteam's
+    // members and alumni — but can't change anyone's role.
     const canManage = can(user?.permissions, "control_panel.members")
     // Tag editing is available to anyone with roster access: Captains, Mentors,
     // and Leads (anyone with a can_moderate spec on their policy).
@@ -239,6 +240,10 @@ export default function MembersPage() {
     useEffect(() => { void load() }, [load])
 
     const roleById = useMemo(() => new Map(catalog.map(c => [c.value, c])), [catalog])
+
+    /** Whether the viewer may edit the profile of a member holding `role`. */
+    const canEditMember = useCallback((role: string | null) =>
+        canManage || canModerate(user?.permissions, role, catalog), [canManage, user, catalog])
 
     /** Patch one row's staged fields; dirty state is derived from `_orig`. */
     const patchRow = useCallback((id: string, patch: Partial<MemberRowState>) => {
@@ -560,7 +565,7 @@ export default function MembersPage() {
                                         member={m}
                                         role={m.role ? roleById.get(m.role) : undefined}
                                         action={actionFor(m)}
-                                        onEdit={canManage ? () => setEditingFor(m.id) : undefined}
+                                        onEdit={canEditMember(m.role) ? () => setEditingFor(m.id) : undefined}
                                         onEditTags={canEditTags ? () => setEditingTagsFor(m.id) : undefined}
                                     />
                                 ))}
@@ -600,7 +605,7 @@ export default function MembersPage() {
                     role={sheetMember.role ? roleById.get(sheetMember.role) : undefined}
                     action={actionFor(sheetMember)}
                     onClose={() => setSheetFor(null)}
-                    onEdit={canManage ? () => { setSheetFor(null); setEditingFor(sheetMember.id) } : undefined}
+                    onEdit={canEditMember(sheetMember.role) ? () => { setSheetFor(null); setEditingFor(sheetMember.id) } : undefined}
                     onEditTags={canEditTags ? () => { setSheetFor(null); setEditingTagsFor(sheetMember.id) } : undefined}
                 />
             )}
@@ -609,6 +614,7 @@ export default function MembersPage() {
                 <EditMemberModal
                     member={editingMember}
                     catalog={catalog}
+                    canChangeRole={canManage}
                     onClose={() => setEditingFor(null)}
                     onApply={patch => { patchRow(editingMember.id, patch); setEditingFor(null) }}
                 />
@@ -630,7 +636,7 @@ interface MemberGridRowProps {
     member: MemberRowState
     role: RoleCatalogEntry | undefined
     action: RowAction
-    /** Opens the profile editor; absent for viewers who can't edit profiles (Leads). */
+    /** Opens the profile editor; absent when the member is outside the viewer's editing scope. */
     onEdit?: () => void
     onEditTags?: () => void
 }
@@ -758,7 +764,7 @@ interface MemberSheetProps {
     role: RoleCatalogEntry | undefined
     action: RowAction
     onClose: () => void
-    /** Absent for viewers who can't edit profiles (Leads). */
+    /** Absent when the member is outside the viewer's editing scope. */
     onEdit?: () => void
     onEditTags?: () => void
 }
@@ -888,13 +894,15 @@ function MemberSheet({ member: m, role, action, onClose, onEdit, onEditTags }: M
 interface EditMemberModalProps {
     member: MemberRowState
     catalog: RoleCatalogEntry[]
+    /** False for Leads: they can edit names/grade/year but the role stays locked. */
+    canChangeRole: boolean
     onClose: () => void
     /** Stages the edited fields on the row; they persist on Save like any other change. */
     onApply: (patch: Pick<MemberRow, EditableField>) => void
 }
 
-/** Profile editor for Captains/Mentors — replaces the old inline grid editing. */
-function EditMemberModal({ member, catalog, onClose, onApply }: EditMemberModalProps) {
+/** Profile editor — opened from a member's row (desktop) or sheet (mobile). */
+function EditMemberModal({ member, catalog, canChangeRole, onClose, onApply }: EditMemberModalProps) {
     const [draft, setDraft] = useState<Pick<MemberRow, EditableField>>({
         name: member.name, display_name: member.display_name, role: member.role,
         grade: member.grade, team_year: member.team_year,
@@ -933,7 +941,8 @@ function EditMemberModal({ member, catalog, onClose, onApply }: EditMemberModalP
                 <div className="flex flex-col gap-1.5 text-xs theme-subtext-color">
                     Role
                     <Dropdown value={draft.role ?? ""} options={roleOptions} onChange={v => set({ role: v })}
-                              label="Role" placeholder="—" triggerClassName={triggerClass} />
+                              label="Role" placeholder="—" triggerClassName={triggerClass} disabled={!canChangeRole} />
+                    {!canChangeRole && <span>Only Captains, Mentors and the Scouting Lead can change roles.</span>}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                     <div className="flex flex-col gap-1.5 text-xs theme-subtext-color">
