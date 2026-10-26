@@ -49,7 +49,7 @@ ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
     "programming_member":   {"label": "Programming Member",   "level": "member", "subteam": "programming",   "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
     "programming_lead":     {"label": "Programming Lead",     "level": "lead",   "subteam": "programming",   "requires_approval": True, "student": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
     "scouting_member":      {"label": "Scouting Member",      "level": "member", "subteam": "scouting",      "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True}, "tasks": {"view": True, "assign": False}},
-    "scouting_lead":        {"label": "Scouting Lead",        "level": "lead",   "subteam": "scouting",      "requires_approval": True, "student": True,  "can_moderate": _MODERATE_ALL, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
+    "scouting_lead":        {"label": "Scouting Lead",        "level": "lead",   "subteam": "scouting",      "requires_approval": True, "student": True,  "can_moderate": _MODERATE_ALL, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True, "members": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
     "publicity_member":     {"label": "Publicity Member",     "level": "member", "subteam": "publicity",     "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
     "publicity_lead":       {"label": "Publicity Lead",       "level": "lead",   "subteam": "publicity",     "requires_approval": True, "student": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
     "operations_member":    {"label": "Operations Member",    "level": "member", "subteam": "operations",    "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
@@ -160,7 +160,7 @@ def has_moderation_authority(role: str | None) -> bool:
 
     True when the role carries a ``can_moderate`` spec (Captains, Mentors, and
     Leads). Used to admit Leads to the read-only member roster alongside the
-    Captains/Mentors who hold ``control_panel.members``.
+    roles that hold ``control_panel.members`` (Captains, Mentors, Scouting Lead).
 
     :param role: The role slug, or ``None``.
     :returns: ``True`` if the role has any moderation authority, else ``False``.

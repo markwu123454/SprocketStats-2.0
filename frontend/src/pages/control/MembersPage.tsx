@@ -11,8 +11,8 @@ const API = import.meta.env.VITE_BACKEND_URL
 
 interface MemberRow {
     id: string
-    // Null when the server masks it — currently only a Mentor's email, hidden
-    // from viewers who aren't Captain/Mentor themselves (Leads).
+    // Null when the server masks it — currently every Mentor's email, which is
+    // hidden from all viewers.
     email: string | null
     name: string | null
     display_name: string | null

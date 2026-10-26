@@ -8,8 +8,8 @@ from core.security import VALID_GRADES, VALID_ROLES, VALID_TEAM_YEARS, get_curre
 
 router = APIRouter()
 
-# Full roster management — view + inline edit of every profile. Captains + Mentors
-# only. Editing (roles, names, grades) stays exclusively theirs.
+# Full roster management — view + edit of every profile. Captains, Mentors and
+# the Scouting Lead. Editing (roles, names, grades) stays exclusively theirs.
 require_members = require_access(permissions="control_panel.members")
 
 
@@ -17,11 +17,11 @@ async def require_roster_access(user: dict = Depends(get_current_user)) -> dict:
     """Gate the read-only roster and the moderation (approve/ban) actions.
 
     Admits anyone who can either fully manage members (``control_panel.members``,
-    i.e. Captains/Mentors) or moderate at least someone (Leads, via their
-    ``can_moderate`` spec). This only decides who may reach the roster at all —
+    i.e. Captains/Mentors/Scouting Lead) or moderate at least someone (Leads,
+    via their ``can_moderate`` spec). This only decides who may reach the roster at all —
     the per-target scope (who may approve/ban whom) is enforced separately in each
     handler through :func:`_authorize_moderation`. Leads get the full roster read
-    (Mentor emails masked — see :func:`list_members`) but a Save/edit that they
+    (Mentor emails are masked for everyone — see :func:`list_members`) but a Save/edit that they
     attempt is still rejected by ``require_members`` on the write endpoint.
 
     Unlike the capability-gated routes (which flow through ``require_access``),
@@ -63,26 +63,23 @@ async def list_members(user: dict = Depends(require_roster_access)):
     """Return the full member roster for the Control Panel Members page.
 
     This endpoint exposes every user's email (plus role/grade/year/names). It is
-    gated on :func:`require_roster_access` — Captains and Mentors (who fully manage
-    members) plus Leads (who moderate their own subteam). All of them see the whole
-    roster; scope only limits *which rows they can act on*, enforced per action.
+    gated on :func:`require_roster_access` — Captains, Mentors and the Scouting
+    Lead (who fully manage members) plus Leads (who moderate their own subteam).
+    All of them see the whole roster; scope only limits *which rows they can act on*, enforced per action.
     The gate is the real enforcement; frontend section visibility is cosmetic.
     ``grade``/``team_year`` are null for roles without school info (mentor/alumni)
     and for anyone who hasn't finished onboarding.
 
-    One exception: a Mentor's email is masked (``null``) for viewers who aren't
-    themselves Captain/Mentor — i.e. Leads. Mentors are often adult volunteers
-    reachable at a personal (non-org) address, so it isn't shared as widely as
-    everyone else's org email; Captains still see it since they may legitimately
-    need to reach their Mentor directly.
+    One exception: a Mentor's email is always masked (``null``), whoever is
+    viewing — Captains and Mentors included. Mentors are often adult volunteers
+    reachable at a personal (non-org) address, so it isn't shared through the app.
 
-    :param user: The authenticated, authorized user (used to decide email masking).
+    :param user: The authenticated, authorized user (enforces access; value unused).
     :returns: A list of member rows with id, email, name, display_name, role,
         grade, and team_year.
     """
     rows = await db.list_all_users()
-    can_see_mentor_email = can(get_permissions_for_role(user.get("role")), "control_panel.members")
-    return [_row_to_member(r, mask_email=(r["role"] == "mentor" and not can_see_mentor_email)) for r in rows]
+    return [_row_to_member(r, mask_email=r["role"] == "mentor") for r in rows]
 
 
 class MemberUpdate(BaseModel):
@@ -240,8 +237,7 @@ def _row_to_member(r, *, mask_email: bool = False) -> dict:
     """Shape a DB user record into the member row the grid consumes.
 
     :param mask_email: When true, return ``None`` for email instead of the real
-        address (used to hide a Mentor's email from viewers who aren't
-        Captain/Mentor themselves).
+        address (used to hide every Mentor's email).
     """
     return {
         "id": r["id"],

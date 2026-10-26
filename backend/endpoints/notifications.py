@@ -114,6 +114,12 @@ async def create_notification(body: NotificationWrite, user: dict = Depends(requ
     return _row_to_notification(row, user)
 
 
+def _visible_email(r) -> str | None:
+    """A user's email for the response list, or ``None`` for a Mentor — Mentor
+    emails are never shown in the app (same rule as the Members roster)."""
+    return None if r["role"] == "mentor" else r["email"]
+
+
 @router.get("/{notification_id}")
 async def get_notification_detail(notification_id: str, user: dict = Depends(require_notifications)):
     detail = await db.get_notification_detail(notification_id)
@@ -128,14 +134,14 @@ async def get_notification_detail(notification_id: str, user: dict = Depends(req
             {
                 "id": r["id"],
                 "display_name": r["display_name"],
-                "email": r["email"],
+                "email": _visible_email(r),
                 "response": r["response"],
                 "responded_at": r["responded_at"].isoformat(),
             }
             for r in detail["responses"]
         ],
         "non_responders": [
-            {"id": r["id"], "display_name": r["display_name"], "email": r["email"]} for r in detail["non_responders"]
+            {"id": r["id"], "display_name": r["display_name"], "email": _visible_email(r)} for r in detail["non_responders"]
         ],
     }
 

@@ -29,14 +29,15 @@ interface NotificationDetail {
     tally: { option: string, count: number }[]
     ack_count: number
     eligible_count: number
-    responses: { id: string, display_name: string | null, email: string, response: string[], responded_at: string }[]
-    non_responders: { id: string, display_name: string | null, email: string }[]
+    responses: { id: string, display_name: string | null, email: string | null, response: string[], responded_at: string }[]
+    non_responders: { id: string, display_name: string | null, email: string | null }[]
 }
 
 interface ResponseRow {
     id: string
     display_name: string | null
-    email: string
+    // Null for Mentors — the backend never sends their email.
+    email: string | null
     status: "Responded" | "Not Responded"
     response: string
     responded_at: string | null
@@ -211,7 +212,7 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
 
     const gridColumnDefs = useMemo<ColDef<ResponseRow>[]>(() => [
         { field: "display_name", headerName: "Name", flex: 1.3, minWidth: 140, valueFormatter: p => p.value ?? "—" },
-        { field: "email", headerName: "Email", flex: 1.6, minWidth: 180 },
+        { field: "email", headerName: "Email", flex: 1.6, minWidth: 180, valueFormatter: p => p.value ?? "Hidden" },
         { field: "status", headerName: "Status", flex: 1, minWidth: 120 },
         { field: "response", headerName: "Response", flex: 1.3, minWidth: 140, valueFormatter: p => p.value || "—" },
         {
