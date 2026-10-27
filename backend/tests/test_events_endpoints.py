@@ -74,6 +74,9 @@ class FakeStore:
 
     async def upsert_comp_event(self, event_key, content):
         data = content.model_dump()
+        for entry in data.get("roster") or []:
+            if not entry.get("dismissed"):
+                entry.pop("dismissed", None)
         row = {
             "event_key": event_key,
             "event_name": data["event_name"],
@@ -94,8 +97,10 @@ class FakeStore:
         if row.get("roster") is None:
             row["roster"] = []
         roster = row["roster"]
-        if any(entry.get("user_id") == member["user_id"] for entry in roster):
+        if any(e.get("user_id") == member["user_id"] and not db.is_dismissal(e) for e in roster):
             return roster
+        # A dismissal entry is replaced by the check-in, like the real query.
+        roster[:] = [e for e in roster if e.get("user_id") != member["user_id"]]
         roster.append(member)
         return roster
 
@@ -103,7 +108,7 @@ class FakeStore:
         row = self.events.get(event_key)
         if row is None:
             return None
-        return any(entry.get("user_id") == user_id for entry in row.get("roster") or [])
+        return any(e.get("user_id") == user_id and not db.is_dismissal(e) for e in row.get("roster") or [])
 
     async def update_comp_event_content(self, event_key, fields):
         if not fields:
@@ -122,7 +127,7 @@ class FakeStore:
             return None
         roster = row.get("roster") or []
         for entry in roster:
-            if entry.get("user_id") == user_id:
+            if entry.get("user_id") == user_id and not db.is_dismissal(entry):
                 entry.update(fields)
                 return roster
         raise db.RosterMemberNotFound(user_id)
@@ -131,14 +136,25 @@ class FakeStore:
         schedule = self.schedules.get(event_key)
         return dict(schedule) if schedule else None
 
+    # Dismissals live in the roster as {"dismissed": True} entries, same as
+    # the real db.comp_events functions.
     async def is_check_in_dismissed(self, event_key, user_id):
-        return (event_key, user_id) in self.dismissals
+        roster = (self.events.get(event_key) or {}).get("roster") or []
+        return any(e.get("user_id") == user_id and db.is_dismissal(e) for e in roster)
 
-    async def set_check_in_dismissed(self, event_key, user_id, dismissed):
+    async def set_check_in_dismissed(self, event_key, user_id, display_name, dismissed):
+        row = self.events.get(event_key)
+        if row is None:
+            return
+        if row.get("roster") is None:
+            row["roster"] = []
+        roster = row["roster"]
         if dismissed:
-            self.dismissals.add((event_key, user_id))
+            if not any(e.get("user_id") == user_id for e in roster):
+                roster.append({"user_id": user_id, "display_name": display_name, "role": None,
+                               "phone": None, "days": None, "dismissed": True})
         else:
-            self.dismissals.discard((event_key, user_id))
+            roster[:] = [e for e in roster if not (e.get("user_id") == user_id and db.is_dismissal(e))]
 
     async def ensure_comp_event(self, event_key):
         # A schedule row stands in for an `events` row with this tba_key.
@@ -173,7 +189,6 @@ class FakeStore:
 def store(monkeypatch):
     fake = FakeStore()
     fake.schedule_rows = {}
-    fake.dismissals = set()
     for name in (
         "get_comp_event", "upsert_comp_event", "add_roster_member", "is_on_roster",
         "update_comp_event_content", "update_roster_member", "get_event_schedule",
@@ -1063,3 +1078,68 @@ def test_schedule_patch_rejects_bad_roles(app, store, roles):
     store.add_schedule_row(1)
     resp = _as(app, LEAD).patch("/events/schedule/1", json={"checkin_roles": roles})
     assert resp.status_code == 422
+
+
+# ── Dismissals live in the roster ───────────────────────────────────────
+
+def test_dismissal_is_a_hidden_roster_entry(app, store):
+    store.add_event("2026test")
+    _as(app, MEMBER).post("/events/2026test/check-in/dismiss")
+    # Stored on the roster...
+    assert store.events["2026test"]["roster"] == [{
+        "user_id": "member-1", "display_name": "Member One", "role": None,
+        "phone": None, "days": None, "dismissed": True,
+    }]
+    # ...but never shown, and doesn't count as checked in.
+    app.dependency_overrides[get_current_user] = lambda: MEMBER
+    assert TestClient(app).get("/events/2026test/info").json()["roster"] == []
+    assert _as(app, MEMBER).get("/events/2026test/check-in").json() == {"checked_in": False, "dismissed": True}
+
+
+def test_checking_in_replaces_dismissal(app, store):
+    store.add_event("2026test")
+    client = _as(app, MEMBER)
+    client.post("/events/2026test/check-in/dismiss")
+    resp = client.post("/events/2026test/check-in", json={"role": "mentor"})
+    assert [e["role"] for e in resp.json()["roster"]] == ["mentor"]
+    assert store.events["2026test"]["roster"][0].get("dismissed") is not True
+    assert client.get("/events/2026test/check-in").json() == {"checked_in": True, "dismissed": False}
+
+
+def test_dismissing_after_check_in_is_a_no_op(app, store):
+    store.add_event("2026test")
+    client = _as(app, MEMBER)
+    client.post("/events/2026test/check-in")
+    assert client.post("/events/2026test/check-in/dismiss").json() == {"dismissed": False}
+    assert client.get("/events/2026test/check-in").json()["checked_in"] is True
+
+
+def test_roster_patch_ignores_dismissal_entries(app, store):
+    store.add_event("2026test")
+    _as(app, MEMBER).post("/events/2026test/check-in/dismiss")
+    resp = _as(app, LEAD).patch("/events/2026test/roster/member-1", json={"role": "mentor"})
+    assert resp.status_code == 404
+
+
+def test_put_content_keeps_stored_dismissals(app, store, monkeypatch):
+    # Clients never see dismissals, so a full roster PUT can't include them;
+    # the stored ones must survive it.
+    async def _noop_assert_active(sub):
+        return None
+
+    monkeypatch.setattr(account_state, "assert_active", _noop_assert_active)
+    store.add_event("2026test", roster=[
+        {"user_id": "u1", "display_name": "One", "role": "attending", "phone": None, "days": None},
+        {"user_id": "u2", "display_name": "Two", "role": None, "phone": None, "days": None, "dismissed": True},
+    ])
+    fastapi_app = FastAPI()
+    fastapi_app.include_router(events_router, prefix="/events")
+    fastapi_app.dependency_overrides[get_current_user] = lambda: CAPTAIN
+    resp = TestClient(fastapi_app).put("/events/2026test/content", json={
+        "event_name": "Test Event",
+        "roster": [{"user_id": "u1", "display_name": "One", "role": "mentor", "phone": None, "days": None}],
+    })
+    assert resp.status_code == 200
+    assert [e["user_id"] for e in resp.json()["roster"]] == ["u1"]
+    stored = store.events["2026test"]["roster"]
+    assert [(e["user_id"], e.get("dismissed", False)) for e in stored] == [("u1", False), ("u2", True)]

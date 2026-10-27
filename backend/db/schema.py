@@ -599,16 +599,6 @@ async def run_migrations():
                 "REFERENCES comp_events(event_key) ON DELETE SET NULL"
             )
             await conn.execute("CREATE INDEX IF NOT EXISTS tasks_event_key_idx ON tasks (event_key)")
-            # One row per (event, member) who dismissed that event's check-in
-            # prompt -- absence means they haven't.
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS checkin_dismissals (
-                    event_key    TEXT        NOT NULL REFERENCES comp_events(event_key) ON DELETE CASCADE,
-                    user_id      TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    dismissed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                    PRIMARY KEY (event_key, user_id)
-                )
-            """)
             # Widen the priority CHECK for 'critical' ("Perish if not done") on
             # databases created before it existed. Only swaps the constraint
             # when its current definition doesn't already allow it.

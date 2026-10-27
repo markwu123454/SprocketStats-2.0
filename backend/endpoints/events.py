@@ -12,6 +12,7 @@ from db.comp_events import (
     CheckInRequest,
     CompEventContent,
     CompEventContentPatch,
+    RosterMember,
     RosterUpdate,
 )
 from db.events import EventScheduleUpdate, check_schedule_order, is_tba_key, normalize_checkin_roles, role_keys
@@ -118,7 +119,18 @@ async def put_content(
     body: CompEventContent,
     _: dict = Depends(require_access(permissions="control_panel.upcoming_event")),
 ):
-    return await db.upsert_comp_event(event_key, body)
+    # Clients never see dismissal entries, so a full roster sent back here
+    # won't contain them -- carry over the stored ones (for anyone the new
+    # roster doesn't list) instead of silently un-dismissing everyone.
+    existing = await db.get_comp_event(event_key)
+    if existing and body.roster is not None:
+        listed = {m.user_id for m in body.roster}
+        kept = [
+            RosterMember(**e) for e in existing.get("roster") or []
+            if db.is_dismissal(e) and e.get("user_id") not in listed
+        ]
+        body = body.model_copy(update={"roster": body.roster + kept})
+    return _with_visible_roster(await db.upsert_comp_event(event_key, body))
 
 
 async def _event_role_keys(event_key: str) -> list[str]:
@@ -148,8 +160,24 @@ async def _set_dismissed(event_key: str, user: dict, dismissed: bool) -> dict:
     await db.ensure_comp_event(event_key)
     if await db.get_comp_event(event_key) is None:
         raise HTTPException(status_code=404, detail="Event not found")
-    await db.set_check_in_dismissed(event_key, str(user["sub"]), dismissed)
-    return {"dismissed": dismissed}
+    await db.set_check_in_dismissed(event_key, str(user["sub"]), _display_name(user), dismissed)
+    # Read back rather than echo `dismissed`: dismissing after checking in is
+    # a no-op, so the answer can be False even for a dismiss request.
+    return {"dismissed": await db.is_check_in_dismissed(event_key, str(user["sub"]))}
+
+
+def _display_name(user: dict) -> str:
+    # display_name is null for an account that hasn't finished onboarding
+    # (require_active doesn't check that), but RosterMember.display_name is a
+    # required str -- fall back through other JWT claims so the roster entry
+    # (and any later PUT /content round-trip of it through CompEventContent)
+    # always has a non-empty name.
+    return user.get("display_name") or user.get("name") or user.get("email")
+
+
+def _with_visible_roster(row: dict) -> dict:
+    """A comp_events row as clients see it: dismissal entries left out."""
+    return {**row, "roster": db.visible_roster(row.get("roster"))}
 
 
 @router.post("/{event_key}/check-in/dismiss")
@@ -189,12 +217,7 @@ async def check_in(
         await _enforce_days_in_range(event_key, checkin.days)
     member = {
         "user_id": str(user["sub"]),
-        # display_name is null for an account that hasn't finished onboarding
-        # (require_active doesn't check that), but RosterMember.display_name
-        # is a required str -- fall back through other JWT claims so the
-        # roster entry (and any later PUT /content round-trip of it through
-        # CompEventContent) always has a non-empty name.
-        "display_name": user.get("display_name") or user.get("name") or user.get("email"),
+        "display_name": _display_name(user),
         "role": checkin.role,
         "phone": checkin.phone,
         "days": checkin.days,
@@ -202,7 +225,7 @@ async def check_in(
     roster = await db.add_roster_member(event_key, member)
     if roster is None:
         raise HTTPException(status_code=404, detail="Event not found")
-    return {"checked_in": True, "roster": roster}
+    return {"checked_in": True, "roster": db.visible_roster(roster)}
 
 
 @router.patch("/{event_key}/roster/{user_id}")
@@ -246,7 +269,7 @@ async def patch_roster_member(
         raise HTTPException(status_code=404, detail="Roster member not found")
     if roster is None:
         raise HTTPException(status_code=404, detail="Event not found")
-    return {"roster": roster}
+    return {"roster": db.visible_roster(roster)}
 
 
 @router.patch("/{event_key}/content")
@@ -263,7 +286,7 @@ async def patch_content(
     row = await db.update_comp_event_content(event_key, fields)
     if row is None:
         raise HTTPException(status_code=404, detail="Event not found")
-    return row
+    return _with_visible_roster(row)
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
@@ -314,7 +337,7 @@ async def get_event_info(event_key: str, _: dict = Depends(get_current_user)):
     if not row:
         raise HTTPException(status_code=404, detail="Event not found")
     matches, rankings, nexus_data = await _fetch_live(event_key)
-    return {**row, **_live_payload(matches, rankings, nexus_data)}
+    return {**_with_visible_roster(row), **_live_payload(matches, rankings, nexus_data)}
 
 
 @router.get("/{event_key}/update")

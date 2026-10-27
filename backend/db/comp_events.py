@@ -34,7 +34,8 @@ class Instruction(BaseModel):
 class RosterMember(BaseModel):
     user_id: str | None = None
     display_name: str
-    role: str
+    # None only on a dismissal entry (see `dismissed`).
+    role: str | None = None
     phone: str | None = None
     # Dates the member expects to attend, as "YYYY-MM-DD" strings, or `None`
     # if never given. No validation here -- this field only exists so the
@@ -42,6 +43,9 @@ class RosterMember(BaseModel):
     # silently drop `days` off of roster entries that already have it; the
     # actual validation lives on CheckInRequest/RosterUpdate below.
     days: list[str] | None = None
+    # True marks a dismissal, not a check-in: the member hid this event's
+    # check-in prompt. See `visible_roster` and the dismissal functions below.
+    dismissed: bool = False
 
 
 # ── Roster role set ─────────────────────────────────────────────────────────
@@ -353,6 +357,10 @@ async def ensure_comp_event(event_key: str) -> None:
 
 async def upsert_comp_event(event_key: str, content: CompEventContent) -> dict:
     data = content.model_dump()
+    # Only dismissal entries carry the flag; a check-in stays in its usual shape.
+    for entry in data.get("roster") or []:
+        if not entry.get("dismissed"):
+            entry.pop("dismissed", None)
     async with db_connection(DB_NAME) as conn:
         row = await conn.fetchrow(
             """
@@ -379,34 +387,63 @@ async def upsert_comp_event(event_key: str, content: CompEventContent) -> dict:
 
 
 # ── Check-in (roster) ───────────────────────────────────────────────────────
+#
+# The roster holds two kinds of entry per member: a check-in, or a dismissal
+# (`"dismissed": true`, no role) recording that they hid the event's
+# check-in prompt. A member has at most one entry. Dismissals are bookkeeping,
+# not attendance: every API response shows the roster through
+# `visible_roster`, and "checked in" / role and day edits ignore them.
+
+# SQL predicate over a jsonb roster element `e`: is it a dismissal entry?
+_IS_DISMISSAL = "COALESCE((e->>'dismissed')::boolean, false)"
+
+
+def is_dismissal(entry: dict) -> bool:
+    return bool(entry.get("dismissed"))
+
+
+def visible_roster(roster: list | None) -> list | None:
+    """The roster as members see it: check-ins only, dismissals left out."""
+    if roster is None:
+        return None
+    return [e for e in roster if not is_dismissal(e)]
+
 
 async def add_roster_member(event_key: str, member: dict) -> list | None:
-    """Idempotently append `member` to an event's roster, atomically.
+    """Idempotently check `member` in to an event's roster, atomically.
 
-    One UPDATE does both the append and the duplicate check (`roster @>
-    [{"user_id": ...}]` guards against a second check-in from the same user),
+    One UPDATE does both the append and the duplicate check -- the NOT
+    EXISTS guard skips the update when this user already has a check-in --
     so there is no read-modify-write race between two simultaneous check-ins.
-    If the row wasn't touched (either the user is already on the roster, or
-    the event doesn't exist), falls back to `get_comp_event` to disambiguate
-    those two cases.
+    A dismissal entry of theirs doesn't block it: it's dropped and replaced
+    by the check-in. If the row wasn't touched (already checked in, or the
+    event doesn't exist), falls back to `get_comp_event` to disambiguate.
 
     :param member: The full roster entry to append, e.g.
         ``{"user_id": ..., "display_name": ..., "role": "attending", "phone": None}``.
-    :returns: The full roster after the append (or after confirming the caller
-        was already on it), or `None` if `event_key` doesn't exist.
+    :returns: The full roster (dismissals included) after the append (or
+        after confirming the caller was already on it), or `None` if
+        `event_key` doesn't exist.
     """
     async with db_connection(DB_NAME) as conn:
         row = await conn.fetchrow(
-            """
+            f"""
             UPDATE comp_events
-            SET roster = COALESCE(roster, '[]'::jsonb) || $2::jsonb
+            SET roster = COALESCE((
+                    SELECT jsonb_agg(e ORDER BY ord)
+                    FROM jsonb_array_elements(COALESCE(roster, '[]'::jsonb)) WITH ORDINALITY AS t(e, ord)
+                    WHERE e->>'user_id' IS DISTINCT FROM $3
+                ), '[]'::jsonb) || $2::jsonb
             WHERE event_key = $1
-              AND NOT COALESCE(roster, '[]'::jsonb) @> $3::jsonb
+              AND NOT EXISTS (
+                  SELECT 1 FROM jsonb_array_elements(COALESCE(roster, '[]'::jsonb)) AS x(e)
+                  WHERE e->>'user_id' = $3 AND NOT {_IS_DISMISSAL}
+              )
             RETURNING roster
             """,
             event_key,
             [member],
-            [{"user_id": member["user_id"]}],
+            member["user_id"],
         )
     if row is not None:
         return row["roster"]
@@ -415,7 +452,8 @@ async def add_roster_member(event_key: str, member: dict) -> list | None:
 
 
 async def is_on_roster(event_key: str, user_id: str) -> bool | None:
-    """Return whether `user_id` already has a roster entry for `event_key`.
+    """Return whether `user_id` is checked in to `event_key` (a dismissal
+    entry doesn't count).
 
     :returns: `True`/`False`, or `None` if the event does not exist.
     """
@@ -423,7 +461,7 @@ async def is_on_roster(event_key: str, user_id: str) -> bool | None:
     if row is None:
         return None
     roster = row.get("roster") or []
-    return any(entry.get("user_id") == user_id for entry in roster)
+    return any(entry.get("user_id") == user_id and not is_dismissal(entry) for entry in roster)
 
 
 # Columns `update_roster_member` may set on one roster entry.
@@ -438,11 +476,11 @@ async def update_roster_member(event_key: str, user_id: str, fields: dict) -> li
     pattern, but at the single-roster-entry level: builds a
     `jsonb_set(jsonb_set(e, '{col1}', ...), '{col2}', ...)` chain over only
     the columns present in `fields`, applied (via the `CASE WHEN` below) to
-    the one array element whose `user_id` matches; every other field of that
+    the one check-in whose `user_id` matches; every other field of that
     entry (e.g. `days` when only `role` was sent, or vice versa), and every
-    other entry, passes straight through unchanged. The
-    `roster @> [{"user_id": ...}]` guard both targets the UPDATE and doubles
-    as an existence check, the same way `add_roster_member`'s guard does.
+    other entry, passes straight through unchanged. Dismissal entries are
+    never edited. The EXISTS guard both targets the UPDATE and doubles as an
+    existence check, the same way `add_roster_member`'s guard does.
 
     :param fields: Column -> new value, restricted to
         `_ROSTER_UPDATABLE_COLUMNS`. `role` is a plain string; `days` is a
@@ -470,20 +508,21 @@ async def update_roster_member(event_key: str, user_id: str, fields: dict) -> li
         # as a jsonb value directly.
         value_expr = f"to_jsonb(${n}::text)" if col == "role" else f"${n}::jsonb"
         expr = f"jsonb_set({expr}, '{{{col}}}', {value_expr})"
-    params.append([{"user_id": user_id}])
-    guard_n = len(params)
 
     query = f"""
         UPDATE comp_events
         SET roster = (
             SELECT jsonb_agg(
-                CASE WHEN e->>'user_id' = $2 THEN {expr} ELSE e END
+                CASE WHEN e->>'user_id' = $2 AND NOT {_IS_DISMISSAL} THEN {expr} ELSE e END
                 ORDER BY ord
             )
             FROM jsonb_array_elements(COALESCE(roster, '[]'::jsonb)) WITH ORDINALITY AS t(e, ord)
         )
         WHERE event_key = $1
-          AND COALESCE(roster, '[]'::jsonb) @> ${guard_n}::jsonb
+          AND EXISTS (
+              SELECT 1 FROM jsonb_array_elements(COALESCE(roster, '[]'::jsonb)) AS x(e)
+              WHERE e->>'user_id' = $2 AND NOT {_IS_DISMISSAL}
+          )
         RETURNING roster
     """
     async with db_connection(DB_NAME) as conn:
@@ -559,27 +598,45 @@ async def update_comp_event_content(event_key: str, fields: dict) -> dict | None
     return await get_comp_event(event_key)
 
 
-# ── Check-in dismissals ─────────────────────────────────────────────────
+# ── Check-in dismissals (roster entries with "dismissed": true) ─────────
 
 async def is_check_in_dismissed(event_key: str, user_id: str) -> bool:
-    async with db_connection(DB_NAME) as conn:
-        return await conn.fetchval(
-            "SELECT EXISTS (SELECT 1 FROM checkin_dismissals WHERE event_key = $1 AND user_id = $2)",
-            event_key, user_id,
-        )
+    row = await get_comp_event(event_key)
+    roster = (row or {}).get("roster") or []
+    return any(e.get("user_id") == user_id and is_dismissal(e) for e in roster)
 
 
-async def set_check_in_dismissed(event_key: str, user_id: str, dismissed: bool) -> None:
-    """Record (or clear) that `user_id` dismissed `event_key`'s check-in
-    prompt. Idempotent either way. The event's hub row must already exist."""
+async def set_check_in_dismissed(event_key: str, user_id: str, display_name: str, dismissed: bool) -> None:
+    """Add (or remove) `user_id`'s dismissal entry on `event_key`'s roster.
+    Idempotent either way, and atomic like `add_roster_member`. Dismissing
+    is a no-op for someone already checked in -- a check-in isn't undone by
+    dismissing the prompt. The event's hub row must already exist."""
     async with db_connection(DB_NAME) as conn:
         if dismissed:
+            entry = {"user_id": user_id, "display_name": display_name, "role": None,
+                     "phone": None, "days": None, "dismissed": True}
             await conn.execute(
-                "INSERT INTO checkin_dismissals (event_key, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                event_key, user_id,
+                """
+                UPDATE comp_events
+                SET roster = COALESCE(roster, '[]'::jsonb) || $2::jsonb
+                WHERE event_key = $1
+                  AND NOT EXISTS (
+                      SELECT 1 FROM jsonb_array_elements(COALESCE(roster, '[]'::jsonb)) AS x(e)
+                      WHERE e->>'user_id' = $3
+                  )
+                """,
+                event_key, [entry], user_id,
             )
         else:
             await conn.execute(
-                "DELETE FROM checkin_dismissals WHERE event_key = $1 AND user_id = $2",
+                f"""
+                UPDATE comp_events
+                SET roster = COALESCE((
+                        SELECT jsonb_agg(e ORDER BY ord)
+                        FROM jsonb_array_elements(roster) WITH ORDINALITY AS t(e, ord)
+                        WHERE NOT (e->>'user_id' = $2 AND {_IS_DISMISSAL})
+                    ), '[]'::jsonb)
+                WHERE event_key = $1 AND roster IS NOT NULL
+                """,
                 event_key, user_id,
             )
