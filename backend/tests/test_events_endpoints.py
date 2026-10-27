@@ -150,7 +150,8 @@ class FakeStore:
         row = self.schedule_rows.get(event_id)
         if row is None:
             return None
-        api_names = {"start": "start", "end": "end", "checkin_opens": "checkinOpens", "hidden_tabs": "hiddenTabs"}
+        api_names = {"start": "start", "end": "end", "checkin_opens": "checkinOpens", "hidden_tabs": "hiddenTabs",
+                     "description": "description"}
         for key, val in fields.items():
             row[api_names[key]] = val
         return dict(row)
@@ -906,3 +907,25 @@ def test_info_for_non_tba_hub_skips_tba(app, store, monkeypatch):
     resp = TestClient(app).get("/events/e12/info")
     assert resp.status_code == 200
     assert resp.json()["matches"] == []
+
+
+# ── Overview description ────────────────────────────────────────────────
+
+def test_schedule_patch_sets_description_trimmed(app, store):
+    store.add_schedule_row(1)
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={"description": "  Bring water.\n\nMeet at 9.  "})
+    assert resp.status_code == 200
+    assert resp.json()["description"] == "Bring water.\n\nMeet at 9."
+
+
+def test_schedule_patch_blank_description_clears(app, store):
+    store.add_schedule_row(1, description="Old")
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={"description": "   "})
+    assert resp.status_code == 200
+    assert resp.json()["description"] is None
+
+
+def test_schedule_patch_rejects_overlong_description(app, store):
+    store.add_schedule_row(1)
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={"description": "x" * 5001})
+    assert resp.status_code == 422

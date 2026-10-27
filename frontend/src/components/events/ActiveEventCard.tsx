@@ -3,7 +3,7 @@ import { Link } from "react-router-dom"
 import { Check } from "lucide-react"
 import Dropdown from "@/components/ui/Dropdown"
 import DayChips from "@/components/events/DayChips"
-import { eventDays, isTabHidden, STATUS_META, type ResolvedEvent } from "@/lib/events"
+import { eventDays, hasEventPage, isTabHidden, STATUS_META, type ResolvedEvent } from "@/lib/events"
 import {
     checkInToEvent, fetchCheckInStatus, fetchEventUpdate,
     type EventInfo, type TBAMatch,
@@ -60,6 +60,7 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
     const happening = active.status === "current"
     const headerLabel = happening ? STATUS_META.current.label : "Check-in open"
     const showMatches = happening && !isTabHidden(active, "comp")
+    const hasPage = hasEventPage(active)
 
     // Match data for the next-match row -- seeded from bootstrap, then kept
     // fresh with a 60s poll (only runs once `hasHub` is true).
@@ -153,11 +154,11 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                                     <Link to={`/events/${eventKey}/comp`} className={primaryButtonClass}>
                                         Go to matches
                                     </Link>
-                                ) : (
+                                ) : hasPage ? (
                                     <Link to={`/events/${eventKey}`} className={primaryButtonClass}>
                                         View event
                                     </Link>
-                                )}
+                                ) : null}
                             </>
                         ) : (
                             <button
@@ -255,7 +256,7 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                 </p>
             )}
 
-            {hasHub && checkedIn === false && (
+            {hasHub && hasPage && checkedIn === false && (
                 <Link
                     to={`/events/${eventKey}`}
                     className="inline-flex items-center min-h-11 self-start rounded-lg text-sm theme-text-contrast hover:underline outline-none focus:ring-2"

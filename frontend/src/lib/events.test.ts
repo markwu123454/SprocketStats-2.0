@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { findByHubKey, formatCountdown, hiddenTabsOf, isCheckInOpen, isHubOpen, pickActiveEvent, resolveEvent } from "./events"
+import { findByHubKey, formatCountdown, hasEventPage, hiddenTabsOf, isCheckInOpen, isHubOpen, pickActiveEvent, resolveEvent } from "./events"
 
 const DAY = 24 * 60 * 60 * 1000
 const now = new Date("2026-10-21T12:00")
@@ -97,5 +97,29 @@ describe("hub keys for non-TBA events", () => {
         expect(hiddenTabsOf(outreach)).toEqual(["comp"])
         expect(hiddenTabsOf({ ...outreach, hiddenTabs: ["packing"] })).toEqual(["packing", "comp"])
         expect(hiddenTabsOf(comp)).toEqual([])
+    })
+})
+
+describe("hasEventPage", () => {
+    const allHidden = ["itinerary", "packing", "roster", "comp", "tasks"] as const
+    const base = { name: "A", start: "2026-11-01", location: "", type: "" }
+
+    it("has a page by default", () => {
+        expect(hasEventPage(base)).toBe(true)
+    })
+
+    it("has no page with every tab hidden and no Overview text", () => {
+        expect(hasEventPage({ ...base, hiddenTabs: [...allHidden] })).toBe(false)
+        expect(hasEventPage({ ...base, hiddenTabs: [...allHidden], description: "   " })).toBe(false)
+    })
+
+    it("keeps the page when there's Overview text or any tab left", () => {
+        expect(hasEventPage({ ...base, hiddenTabs: [...allHidden], description: "Come help!" })).toBe(true)
+        expect(hasEventPage({ ...base, hiddenTabs: ["itinerary", "packing", "comp", "tasks"] })).toBe(true)
+    })
+
+    it("doesn't count Comp for an event without a TBA key", () => {
+        // Comp is forced hidden here, so hiding the other four leaves nothing.
+        expect(hasEventPage({ ...base, hiddenTabs: ["itinerary", "packing", "roster", "tasks"] })).toBe(false)
     })
 })

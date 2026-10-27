@@ -19,6 +19,7 @@ export interface EventEntry {
     hubKey?: string // hub address: tbaKey, or "e<id>" for events without one
     checkinOpens?: string // omit to open check-in when the event starts
     hiddenTabs?: HubTab[]
+    description?: string // intro text at the top of the hub's Overview
 }
 
 export interface ResolvedEvent extends EventEntry {
@@ -134,6 +135,13 @@ export function hiddenTabsOf(entry: EventEntry | undefined): HubTab[] {
 
 export function isTabHidden(entry: EventEntry | undefined, tab: HubTab): boolean {
     return hiddenTabsOf(entry).includes(tab)
+}
+
+// An event has a page unless there'd be nothing on it: no Overview text and
+// every other tab hidden. Then its card doesn't link anywhere and the hub
+// redirects back to Events -- check-in still works from the dashboard.
+export function hasEventPage(entry: EventEntry): boolean {
+    return !!entry.description?.trim() || HIDEABLE_TABS.some((t) => !isTabHidden(entry, t))
 }
 
 // "Mar 1" or "Mar 1, 6:00 PM" for a date-only / datetime schedule value.

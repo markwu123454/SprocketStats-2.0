@@ -8,6 +8,7 @@ from .connection import DB_NAME, db_connection
 # Hub tabs an event may hide. "Overview" is the hub's landing page and is
 # never hideable. Mirrors HUB_TABS in frontend/src/pages/events/EventShell.tsx.
 HIDEABLE_TABS = ["itinerary", "packing", "roster", "comp", "tasks"]
+MAX_DESCRIPTION = 5000
 
 # `events.start_time`/`end_time`/`checkin_opens` are TEXT holding either a
 # bare "YYYY-MM-DD" or a local "YYYY-MM-DDTHH:MM" wall time -- the two forms
@@ -54,6 +55,18 @@ class EventScheduleUpdate(BaseModel):
     end: str | None = None
     checkin_opens: str | None = None
     hidden_tabs: list[str] | None = None
+    # Free text shown at the top of the hub's Overview. Blank/null clears it.
+    description: str | None = None
+
+    @field_validator("description")
+    @classmethod
+    def _description_valid(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if len(v) > MAX_DESCRIPTION:
+            raise ValueError(f"description must be {MAX_DESCRIPTION} characters or fewer")
+        return v or None
 
     @field_validator("start")
     @classmethod
@@ -122,11 +135,12 @@ _SCHEDULE_COLUMNS = {
     "end": "end_time",
     "checkin_opens": "checkin_opens",
     "hidden_tabs": "hidden_tabs",
+    "description": "description",
 }
 
 _SELECT_EVENT = """
     SELECT id, name, start_time, end_time, location, event_type, url, tba_key,
-           checkin_opens, hidden_tabs
+           checkin_opens, hidden_tabs, description
     FROM events
 """
 
@@ -192,6 +206,8 @@ def _row_to_event(r) -> dict:
     if r["tba_key"]:
         d["tbaKey"] = r["tba_key"]
     d["hubKey"] = hub_key_for(r["id"], r["tba_key"])
+    if r["description"]:
+        d["description"] = r["description"]
     if r["checkin_opens"]:
         d["checkinOpens"] = r["checkin_opens"]
     return d

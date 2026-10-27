@@ -328,7 +328,8 @@ async def init_db():
                         url           TEXT,
                         tba_key       TEXT,
                         checkin_opens TEXT,
-                        hidden_tabs   TEXT[] NOT NULL DEFAULT '{}'
+                        hidden_tabs   TEXT[] NOT NULL DEFAULT '{}',
+                        description   TEXT
                     )
                 """)
                 await conn.execute("""
@@ -513,6 +514,8 @@ async def run_migrations():
             # this event hides -- both edited from the Events page.
             await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS checkin_opens TEXT")
             await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS hidden_tabs TEXT[] NOT NULL DEFAULT '{}'")
+            # Intro text for the hub's Overview.
+            await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS description TEXT")
             # Events are listed by date now; the manual ordering column is gone.
             await conn.execute("ALTER TABLE events DROP COLUMN IF EXISTS display_order")
             await conn.execute("""

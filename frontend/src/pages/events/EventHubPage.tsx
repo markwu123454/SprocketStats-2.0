@@ -28,8 +28,10 @@ function getTimelineSlice(items: ItineraryItem[]) {
 }
 
 export default function EventHubPage() {
-    const { info, archived, hiddenTabs } = useEventContext()
+    const { info, archived, hiddenTabs, description } = useEventContext()
     const compHidden = hiddenTabs.includes("comp")
+    // "Today" is a slice of the itinerary, so it hides along with that tab.
+    const itineraryHidden = hiddenTabs.includes("itinerary")
 
     const matches    = info?.matches ?? []
     const rankings   = info?.rankings ?? null
@@ -73,8 +75,17 @@ export default function EventHubPage() {
     return (
         <div className="max-w-xl mx-auto px-4 py-5 flex flex-col gap-6 pb-8">
 
+            {/* Intro text an editor wrote for this event */}
+            {description && (
+                <section>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--theme-text)" }}>
+                        {description}
+                    </p>
+                </section>
+            )}
+
             {/* Day timeline (live only) */}
-            {!archived && <section>
+            {!archived && !itineraryHidden && <section>
                 <SectionLabel>Today</SectionLabel>
                 <div className="rounded-xl border overflow-hidden" style={cardBase}>
                     {timeline && (timeline.current || timeline.upcoming.length > 0) ? (
