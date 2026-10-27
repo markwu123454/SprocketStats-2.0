@@ -28,8 +28,10 @@ function getTimelineSlice(items: ItineraryItem[]) {
 }
 
 export default function EventHubPage() {
-    const { info, archived, hiddenTabs } = useEventContext()
+    const { info, archived, hiddenTabs, description } = useEventContext()
     const compHidden = hiddenTabs.includes("comp")
+    // "Today" is a slice of the itinerary, so it hides along with that tab.
+    const itineraryHidden = hiddenTabs.includes("itinerary")
 
     const matches    = info?.matches ?? []
     const rankings   = info?.rankings ?? null
@@ -73,8 +75,17 @@ export default function EventHubPage() {
     return (
         <div className="max-w-xl mx-auto px-4 py-5 flex flex-col gap-6 pb-8">
 
+            {/* Intro text an editor wrote for this event */}
+            {description && (
+                <section>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--theme-text)" }}>
+                        {description}
+                    </p>
+                </section>
+            )}
+
             {/* Day timeline (live only) */}
-            {!archived && <section>
+            {!archived && !itineraryHidden && <section>
                 <SectionLabel>Today</SectionLabel>
                 <div className="rounded-xl border overflow-hidden" style={cardBase}>
                     {timeline && (timeline.current || timeline.upcoming.length > 0) ? (
@@ -88,8 +99,9 @@ export default function EventHubPage() {
                 </div>
             </section>}
 
-            {/* Our team */}
-            <section className="flex flex-col gap-2">
+            {/* Our team -- competition info, so it goes wherever Comp does
+                (hidden by an editor, or a non-TBA event like outreach). */}
+            {!compHidden && <section className="flex flex-col gap-2">
                 <SectionLabel>{archived ? "Final Result" : "Our Team"}</SectionLabel>
                 {rankEntry ? (
                     <div className="flex items-center gap-4 px-4 py-3 rounded-xl border" style={cardBase}>
@@ -107,7 +119,7 @@ export default function EventHubPage() {
                         </span>
                     </div>
                 )}
-                {archived ? (compHidden ? null : (
+                {archived ? (
                     <Link
                         to="comp"
                         className="flex items-center justify-between gap-3 px-4 py-3 min-h-11 rounded-xl border transition-colors hover:border-(--theme-text-contrast)"
@@ -118,17 +130,17 @@ export default function EventHubPage() {
                         </span>
                         <ChevronRight size={16} className="theme-subtext-color" />
                     </Link>
-                )) : ourNext ? (
+                ) : ourNext ? (
                     <NextMatchCard match={ourNext} />
                 ) : (
                     <div className="flex items-center px-4 py-3 rounded-xl border" style={cardBase}>
                         <span className="text-sm" style={{ color: "var(--theme-subtext-color)" }}>No upcoming match</span>
                     </div>
                 )}
-            </section>
+            </section>}
 
             {/* Watch teams (live only -- grouped by each team's next match) */}
-            {!archived && <section>
+            {!archived && !compHidden && <section>
                 <SectionLabel>Watch</SectionLabel>
                 <div className="rounded-xl border overflow-hidden" style={cardBase}>
                     {watchGroups.length > 0 ? (
@@ -141,8 +153,9 @@ export default function EventHubPage() {
                 </div>
             </section>}
 
-            {/* Quick links */}
-            <section>
+            {/* Quick links -- all competition services, so the "not yet
+                available" placeholder is only worth showing for a competition. */}
+            {(hasLinks || !compHidden) && <section>
                 <SectionLabel>Links</SectionLabel>
                 {hasLinks ? (
                     <div className="flex gap-3">
@@ -157,7 +170,7 @@ export default function EventHubPage() {
                         <span className="text-sm" style={{ color: "var(--theme-subtext-color)" }}>Links not yet available</span>
                     </div>
                 )}
-            </section>
+            </section>}
         </div>
     )
 }

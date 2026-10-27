@@ -7,7 +7,7 @@ import { useOnboardedUser } from "@/contexts/authContext"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { can } from "@/lib/permissions"
 import { updateRosterMember, type RosterMember } from "@/lib/eventApi"
-import { eventDayLabel, eventDays, unionRosterDays, type EventEntry } from "@/lib/events"
+import { eventDayLabel, eventDays, findByHubKey, unionRosterDays, type EventEntry } from "@/lib/events"
 import { ASSIGNABLE_ROLES, ROSTER_ROLES, rosterRoleLabel, type AssignableRole, type RosterRole } from "@/lib/rosterRoles"
 import { DANGER_RED, tintColor } from "@/lib/taskFormat"
 import Dropdown from "@/components/ui/Dropdown"
@@ -157,7 +157,7 @@ export default function RosterPage() {
     // event isn't on it), fall back to whatever days the roster itself
     // already has recorded -- still empty (and no day columns at all) when
     // nobody has any days on file.
-    const scheduleEntry = rawEvents.find(e => e.tbaKey === eventKey)
+    const scheduleEntry = findByHubKey(rawEvents, eventKey)
     const eventDayList = useMemo(
         () => (scheduleEntry ? eventDays(scheduleEntry) : unionRosterDays(info?.roster ?? [])),
         [scheduleEntry, info?.roster]

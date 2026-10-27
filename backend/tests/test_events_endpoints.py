@@ -61,8 +61,9 @@ class FakeStore:
         return event_key
 
     def add_schedule(self, event_key: str, start_time: str, end_time: str | None = None,
-                     checkin_opens: str | None = None) -> None:
-        self.schedules[event_key] = {"start_time": start_time, "end_time": end_time, "checkin_opens": checkin_opens}
+                     checkin_opens: str | None = None, checkin_enabled: bool = True) -> None:
+        self.schedules[event_key] = {"start_time": start_time, "end_time": end_time, "checkin_opens": checkin_opens,
+                                     "checkin_enabled": checkin_enabled}
 
     # -- db.comp_events-shaped async methods, monkeypatched onto `db` --
 
@@ -88,7 +89,10 @@ class FakeStore:
         row = self.events.get(event_key)
         if row is None:
             return None
-        roster = row.setdefault("roster", [])
+        # A NULL roster counts as empty, like the real query's COALESCE.
+        if row.get("roster") is None:
+            row["roster"] = []
+        roster = row["roster"]
         if any(entry.get("user_id") == member["user_id"] for entry in roster):
             return roster
         roster.append(member)
@@ -126,6 +130,11 @@ class FakeStore:
         schedule = self.schedules.get(event_key)
         return dict(schedule) if schedule else None
 
+    async def ensure_comp_event(self, event_key):
+        # A schedule row stands in for an `events` row with this tba_key.
+        if event_key in self.schedules and event_key not in self.events:
+            self.add_event(event_key, itinerary=None, packing_list=None, instructions=None, roster=None)
+
     # -- db.events-shaped: `events` rows by id, in get_events()'s shape --
 
     def add_schedule_row(self, event_id: int, **overrides) -> None:
@@ -142,7 +151,8 @@ class FakeStore:
         row = self.schedule_rows.get(event_id)
         if row is None:
             return None
-        api_names = {"start": "start", "end": "end", "checkin_opens": "checkinOpens", "hidden_tabs": "hiddenTabs"}
+        api_names = {"start": "start", "end": "end", "checkin_opens": "checkinOpens", "hidden_tabs": "hiddenTabs",
+                     "description": "description", "checkin_enabled": "checkinEnabled"}
         for key, val in fields.items():
             row[api_names[key]] = val
         return dict(row)
@@ -155,7 +165,7 @@ def store(monkeypatch):
     for name in (
         "get_comp_event", "upsert_comp_event", "add_roster_member", "is_on_roster",
         "update_comp_event_content", "update_roster_member", "get_event_schedule",
-        "get_event_by_id", "update_event_schedule",
+        "get_event_by_id", "update_event_schedule", "ensure_comp_event",
     ):
         monkeypatch.setattr(db, name, getattr(fake, name))
     return fake
@@ -860,3 +870,90 @@ def test_schedule_patch_forbidden_for_member(app, store, monkeypatch):
     fastapi_app.dependency_overrides[get_current_user] = lambda: MEMBER
     resp = TestClient(fastapi_app).patch("/events/schedule/1", json={"hidden_tabs": []})
     assert resp.status_code == 403
+
+
+# ── Scheduled events get a hub on first use ─────────────────────────────
+
+def test_check_in_creates_hub_for_scheduled_event(app, store):
+    store.add_schedule("2026sched", "2026-03-19", "2026-03-21", checkin_opens="2020-01-01")
+    client = _as(app, MEMBER)
+    assert client.get("/events/2026sched/check-in").json() == {"checked_in": False}
+    resp = client.post("/events/2026sched/check-in")
+    assert resp.status_code == 200
+    assert resp.json()["roster"][0]["user_id"] == "member-1"
+
+
+def test_check_in_still_404_for_unscheduled_event(app, store):
+    resp = _as(app, MEMBER).post("/events/nowhere/check-in")
+    assert resp.status_code == 404
+
+
+def test_check_in_works_for_event_without_tba_key(app, store):
+    # Outreach-style event: its hub key is "e<id>", not a TBA key.
+    store.add_schedule("e12", "2026-03-19")
+    resp = _as(app, MEMBER).post("/events/e12/check-in")
+    assert resp.status_code == 200
+
+
+def test_info_for_non_tba_hub_skips_tba(app, store, monkeypatch):
+    import endpoints.events as events_mod
+
+    async def _boom(*_a, **_k):
+        raise AssertionError("TBA/Nexus should not be called for an e<id> hub")
+
+    monkeypatch.setattr(events_mod.tba, "get", _boom)
+    monkeypatch.setattr(events_mod.nexus, "get", _boom)
+    store.add_schedule("e12", "2026-03-19")
+    app.dependency_overrides[get_current_user] = lambda: MEMBER
+    resp = TestClient(app).get("/events/e12/info")
+    assert resp.status_code == 200
+    assert resp.json()["matches"] == []
+
+
+# ── Overview description ────────────────────────────────────────────────
+
+def test_schedule_patch_sets_description_trimmed(app, store):
+    store.add_schedule_row(1)
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={"description": "  Bring water.\n\nMeet at 9.  "})
+    assert resp.status_code == 200
+    assert resp.json()["description"] == "Bring water.\n\nMeet at 9."
+
+
+def test_schedule_patch_blank_description_clears(app, store):
+    store.add_schedule_row(1, description="Old")
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={"description": "   "})
+    assert resp.status_code == 200
+    assert resp.json()["description"] is None
+
+
+def test_schedule_patch_rejects_overlong_description(app, store):
+    store.add_schedule_row(1)
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={"description": "x" * 5001})
+    assert resp.status_code == 422
+
+
+# ── Check-in on/off ─────────────────────────────────────────────────────
+
+def test_check_in_rejected_when_disabled(app, store):
+    store.add_event("2026test")
+    store.add_schedule("2026test", "2026-03-19", checkin_enabled=False)
+    resp = _as(app, MEMBER).post("/events/2026test/check-in")
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "This event doesn't use check-in"
+
+
+def test_schedule_patch_toggles_checkin_and_keeps_opening_time(app, store):
+    store.add_schedule_row(1, checkinOpens="2026-03-01")
+    client = _as(app, LEAD)
+    resp = client.patch("/events/schedule/1", json={"checkin_enabled": False})
+    assert resp.status_code == 200
+    assert resp.json()["checkinEnabled"] is False
+    assert resp.json()["checkinOpens"] == "2026-03-01"
+    resp = client.patch("/events/schedule/1", json={"checkin_enabled": True})
+    assert resp.json()["checkinEnabled"] is True
+
+
+def test_schedule_patch_rejects_null_checkin_enabled(app, store):
+    store.add_schedule_row(1)
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={"checkin_enabled": None})
+    assert resp.status_code == 422

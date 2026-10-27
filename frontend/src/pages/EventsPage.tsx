@@ -2,7 +2,7 @@ import {useEffect, useState} from "react"
 import {ChevronRight, Pencil} from "lucide-react"
 import {Link} from "react-router-dom";
 import {
-    type EventEntry, checkInOpensAt, formatCountdown, formatScheduleMoment, isCheckInOpen, isHubOpen, resolveEvents,
+    type EventEntry, checkInOpensAt, formatCountdown, formatScheduleMoment, hasEventPage, hubKeyOf, isCheckInOpen, isHubOpen, resolveEvents, usesCheckIn,
     STATUS_META,
 } from "@/lib/events.ts"
 import {useBootstrapped} from "@/contexts/bootstrapContext"
@@ -38,7 +38,9 @@ export default function EventsPage() {
         return () => clearInterval(id)
     }, [])
 
-    const events = resolveEvents(rawEvents, new Date(now))
+    // Date order -- the server sends it this way too, but a date edited here
+    // has to move its card without a reload.
+    const events = resolveEvents(rawEvents, new Date(now)).sort((a, b) => a.startsAt - b.startsAt)
 
     const user = useOnboardedUser()
     const isEditor = can(user.permissions, "events.edit")
@@ -59,12 +61,16 @@ return (
                 const meta = STATUS_META[event.status]
                 const isLast = i === events.length - 1
                 const archived = event.status === "done"
-                const link = event.url && isHubOpen(event, now) ? event.url : null
+                // Every scheduled event has a hub (the backend creates it on
+                // first visit), even when its row has no explicit url.
+                const key = hubKeyOf(event)
+                const hubUrl = event.url ?? (key ? `/events/${key}` : undefined)
+                const link = hubUrl && isHubOpen(event, now) && hasEventPage(event) ? hubUrl : null
                 const editable = isEditor && event.id !== undefined
                 const editing = editable && editingId === event.id
                 // Only worth a line while it's ahead of the event itself --
                 // once an event is current, check-in being open is a given.
-                const checkInNote = event.status === "upcoming" && event.checkinOpens
+                const checkInNote = event.status === "upcoming" && event.checkinOpens && usesCheckIn(event)
                     ? (isCheckInOpen(event, now) ? "Check-in open" : `Check-in opens ${formatScheduleMoment(event.checkinOpens)}`)
                     : null
                 const cardClassName = [

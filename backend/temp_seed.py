@@ -98,7 +98,6 @@ EVENTS_ROW = {
     "event_type":   "regional",
     "url":          f"/events/{EVENT_KEY}",
     "tba_key":      EVENT_KEY,
-    "display_order": 1,
 }
 
 
@@ -129,18 +128,18 @@ async def main():
         if existing:
             await conn.execute("""
                 UPDATE events SET name=$1, start_time=$2, end_time=$3, location=$4,
-                    event_type=$5, url=$6, display_order=$7
-                WHERE tba_key=$8
+                    event_type=$5, url=$6
+                WHERE tba_key=$7
             """, EVENTS_ROW["name"], EVENTS_ROW["start_time"], EVENTS_ROW["end_time"],
                 EVENTS_ROW["location"], EVENTS_ROW["event_type"], EVENTS_ROW["url"],
-                EVENTS_ROW["display_order"], EVENT_KEY)
+                EVENT_KEY)
         else:
             await conn.execute("""
-                INSERT INTO events (name, start_time, end_time, location, event_type, url, tba_key, display_order)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                INSERT INTO events (name, start_time, end_time, location, event_type, url, tba_key)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
             """, EVENTS_ROW["name"], EVENTS_ROW["start_time"], EVENTS_ROW["end_time"],
                 EVENTS_ROW["location"], EVENTS_ROW["event_type"], EVENTS_ROW["url"],
-                EVENT_KEY, EVENTS_ROW["display_order"])
+                EVENT_KEY)
         print(f"✓ events list row upserted: {EVENT_KEY}")
 
         # Set prefetch

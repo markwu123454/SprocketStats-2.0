@@ -10,6 +10,8 @@ export interface EventContextValue {
     archived: boolean
     /** Hub tabs this event hides -- pages shouldn't link into them. */
     hiddenTabs: HubTab[]
+    /** Overview intro text from the schedule, or null. */
+    description: string | null
     updateInfo: (patch: Partial<EventInfo>) => void
 }
 

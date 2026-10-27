@@ -16,8 +16,11 @@ export interface EventEntry {
     type: string
     url?: string    // omit for no link
     tbaKey?: string // TBA event key, e.g. "2026cass"
+    hubKey?: string // hub address: tbaKey, or "e<id>" for events without one
     checkinOpens?: string // omit to open check-in when the event starts
     hiddenTabs?: HubTab[]
+    description?: string // intro text at the top of the hub's Overview
+    checkinEnabled?: boolean // false: this event doesn't use self check-in
 }
 
 export interface ResolvedEvent extends EventEntry {
@@ -107,13 +110,45 @@ export function checkInOpensAt(entry: EventEntry): number {
     return parseEventDate(entry.checkinOpens ?? entry.start).getTime()
 }
 
-// Check-in is open from `checkInOpensAt` until the event is over.
+// Missing means on -- only an explicit `false` turns check-in off.
+export function usesCheckIn(entry: EventEntry): boolean {
+    return entry.checkinEnabled !== false
+}
+
+// Check-in is open from `checkInOpensAt` until the event is over, for an
+// event that uses check-in at all.
 export function isCheckInOpen(event: ResolvedEvent, now: number = Date.now()): boolean {
-    return event.status !== "done" && now >= checkInOpensAt(event)
+    return usesCheckIn(event) && event.status !== "done" && now >= checkInOpensAt(event)
+}
+
+// The key an event's hub lives under (/events/<key>). Every scheduled event
+// has one; `tbaKey` is the fallback for a schedule sent before hubKey existed.
+export function hubKeyOf(entry: EventEntry): string | undefined {
+    return entry.hubKey ?? entry.tbaKey
+}
+
+export function findByHubKey(events: EventEntry[], key: string | undefined): EventEntry | undefined {
+    if (!key) return undefined
+    return events.find((e) => hubKeyOf(e) === key || e.url === `/events/${key}`)
+}
+
+// Comp (matches, rankings) only exists for TBA events, so it's always hidden
+// for one without a tbaKey, on top of whatever tabs an editor hid.
+export function hiddenTabsOf(entry: EventEntry | undefined): HubTab[] {
+    if (!entry) return []
+    const hidden = entry.hiddenTabs ?? []
+    return entry.tbaKey || hidden.includes("comp") ? hidden : [...hidden, "comp"]
 }
 
 export function isTabHidden(entry: EventEntry | undefined, tab: HubTab): boolean {
-    return entry?.hiddenTabs?.includes(tab) ?? false
+    return hiddenTabsOf(entry).includes(tab)
+}
+
+// An event has a page unless there'd be nothing on it: no Overview text and
+// every other tab hidden. Then its card doesn't link anywhere and the hub
+// redirects back to Events -- check-in still works from the dashboard.
+export function hasEventPage(entry: EventEntry): boolean {
+    return !!entry.description?.trim() || HIDEABLE_TABS.some((t) => !isTabHidden(entry, t))
 }
 
 // "Mar 1" or "Mar 1, 6:00 PM" for a date-only / datetime schedule value.
@@ -138,9 +173,8 @@ export function formatCountdown(ms: number): string {
 
 // Picks the one event to show on the dashboard's active-event card: anything
 // currently happening, or upcoming with its check-in already open. Happening
-// now beats check-in-only, and within each a TBA-linked event (it has a hub
-// page with check-in/matches) wins over one that's merely on the schedule,
-// since that's the only kind the card can actually act on.
+// now beats check-in-only, and within each a TBA-linked event (it also has
+// matches to show) wins over a non-competition one like outreach.
 export function pickActiveEvent(events: EventEntry[], now: Date = new Date()): ResolvedEvent | null {
     const resolved = resolveEvents(events, now)
     const current = resolved.filter((e) => e.status === "current")

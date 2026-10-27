@@ -1,6 +1,6 @@
 import { useState } from "react"
 import Checkbox from "@/components/ui/Checkbox"
-import { HIDEABLE_TABS, type EventEntry, type HubTab } from "@/lib/events"
+import { HIDEABLE_TABS, hasEventPage, usesCheckIn, type EventEntry, type HubTab } from "@/lib/events"
 import { patchEventSchedule, type EventSchedulePatch } from "@/lib/eventApi"
 import { saveErrorMessage } from "@/lib/eventContent"
 import { DANGER_RED, tintColor } from "@/lib/taskFormat"
@@ -18,6 +18,9 @@ const ghostButtonClass =
 const inputClass =
     "rounded-lg border theme-border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-text " +
     "disabled:opacity-60 min-w-0"
+
+// Mirrors MAX_DESCRIPTION in backend/db/events.py.
+const MAX_DESCRIPTION = 5000
 
 const TAB_LABEL: Record<HubTab, string> = {
     itinerary: "Itinerary",
@@ -53,10 +56,16 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
     const [end, setEnd] = useState(() => splitMoment(event.end))
     const [checkin, setCheckin] = useState(() => splitMoment(event.checkinOpens))
     const [hidden, setHidden] = useState<HubTab[]>(event.hiddenTabs ?? [])
+    const [description, setDescription] = useState(event.description ?? "")
+    const [checkInOn, setCheckInOn] = useState(usesCheckIn(event))
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
-    const hasHub = !!(event.tbaKey || event.url)
+    const hasHub = !!(event.hubKey || event.tbaKey || event.url)
+    // Comp only exists for TBA events -- not offered as a toggle otherwise.
+    const tabChoices = HIDEABLE_TABS.filter(t => t !== "comp" || event.tbaKey)
+    // Previewed against the unsaved draft, so the warning tracks the form.
+    const willHavePage = hasEventPage({ ...event, description, hiddenTabs: hidden })
 
     function toggleTab(tab: HubTab) {
         setHidden(prev => prev.includes(tab) ? prev.filter(t => t !== tab) : [...prev, tab])
@@ -77,6 +86,10 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
         const nextHidden = HIDEABLE_TABS.filter(t => hidden.includes(t))
         const prevHidden = HIDEABLE_TABS.filter(t => event.hiddenTabs?.includes(t))
         if (nextHidden.join() !== prevHidden.join()) patch.hidden_tabs = nextHidden
+        const nextDescription = description.trim() || null
+        if (description.length > MAX_DESCRIPTION) { setError(`Overview text must be ${MAX_DESCRIPTION} characters or fewer.`); return }
+        if (nextDescription !== (event.description?.trim() || null)) patch.description = nextDescription
+        if (checkInOn !== usesCheckIn(event)) patch.checkin_enabled = checkInOn
 
         if (Object.keys(patch).length === 0) { onCancel(); return }
 
@@ -106,27 +119,56 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
 
             <MomentField label="Starts" value={start} onChange={setStart} disabled={saving} />
             <MomentField label="Ends" hint="Leave empty for a single-day event." value={end} onChange={setEnd} disabled={saving} clearable />
-            <MomentField
-                label="Check-in opens"
-                hint="Leave empty to open check-in when the event starts."
-                value={checkin}
-                onChange={setCheckin}
-                disabled={saving}
-                clearable
-            />
+            <label className="inline-flex items-center gap-2 min-h-11 text-sm theme-text cursor-pointer self-start">
+                <Checkbox checked={checkInOn} onChange={() => setCheckInOn(v => !v)} />
+                Members check in to this event
+            </label>
+            {checkInOn && (
+                <MomentField
+                    label="Check-in opens"
+                    hint="Leave empty to open check-in when the event starts."
+                    value={checkin}
+                    onChange={setCheckin}
+                    disabled={saving}
+                    clearable
+                />
+            )}
+
+            {hasHub && (
+                <div className="flex flex-col gap-1">
+                    <label htmlFor={`event-desc-${event.id}`} className="text-sm font-semibold theme-text">Overview text</label>
+                    <textarea
+                        id={`event-desc-${event.id}`}
+                        value={description}
+                        disabled={saving}
+                        onChange={e => setDescription(e.target.value)}
+                        rows={4}
+                        maxLength={MAX_DESCRIPTION}
+                        placeholder="Introduce the event: what it is, who should come, what to bring…"
+                        className={`${inputClass} resize-y`}
+                    />
+                    <p className="text-xs theme-subtext-color">Shown at the top of the event's Overview page.</p>
+                </div>
+            )}
 
             {hasHub && (
                 <fieldset className="flex flex-col gap-2">
                     <legend className="text-sm font-semibold theme-text mb-1">Event pages</legend>
-                    <p className="text-xs theme-subtext-color -mt-1">Unchecked pages are hidden from this event. Overview always shows.</p>
+                    <p className="text-xs theme-subtext-color -mt-1">Unchecked pages are hidden from this event. Overview shows whenever the event has a page.</p>
                     <div className="flex flex-wrap gap-x-5 gap-y-2">
-                        {HIDEABLE_TABS.map(tab => (
+                        {tabChoices.map(tab => (
                             <label key={tab} className="inline-flex items-center gap-2 min-h-11 text-sm theme-text cursor-pointer">
                                 <Checkbox checked={!hidden.includes(tab)} onChange={() => toggleTab(tab)} />
                                 {TAB_LABEL[tab]}
                             </label>
                         ))}
                     </div>
+                    {!willHavePage && (
+                        <p className="text-xs theme-subtext-color">
+                            With no Overview text and every page unchecked, this event won't have a page.
+                            {checkInOn && " Members can still check in from the dashboard."}
+                        </p>
+                    )}
                 </fieldset>
             )}
 

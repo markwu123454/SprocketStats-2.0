@@ -8,6 +8,7 @@ from .connection import DB_NAME, db_connection
 # Hub tabs an event may hide. "Overview" is the hub's landing page and is
 # never hideable. Mirrors HUB_TABS in frontend/src/pages/events/EventShell.tsx.
 HIDEABLE_TABS = ["itinerary", "packing", "roster", "comp", "tasks"]
+MAX_DESCRIPTION = 5000
 
 # `events.start_time`/`end_time`/`checkin_opens` are TEXT holding either a
 # bare "YYYY-MM-DD" or a local "YYYY-MM-DDTHH:MM" wall time -- the two forms
@@ -54,6 +55,28 @@ class EventScheduleUpdate(BaseModel):
     end: str | None = None
     checkin_opens: str | None = None
     hidden_tabs: list[str] | None = None
+    # Free text shown at the top of the hub's Overview. Blank/null clears it.
+    description: str | None = None
+    # False turns self check-in off for this event entirely. `checkin_opens`
+    # is kept as-is, so turning it back on restores the old opening time.
+    checkin_enabled: bool | None = None
+
+    @field_validator("checkin_enabled")
+    @classmethod
+    def _checkin_enabled_valid(cls, v: bool | None) -> bool:
+        if v is None:
+            raise ValueError("checkin_enabled must be true or false")
+        return v
+
+    @field_validator("description")
+    @classmethod
+    def _description_valid(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if len(v) > MAX_DESCRIPTION:
+            raise ValueError(f"description must be {MAX_DESCRIPTION} characters or fewer")
+        return v or None
 
     @field_validator("start")
     @classmethod
@@ -98,25 +121,46 @@ def check_schedule_order(start: str | None, end: str | None, checkin_opens: str 
         raise ValueError("check-in must open before the event ends")
 
 
+# Every scheduled event has a hub, addressed by its "hub key": the TBA event
+# key for competitions, or "e<id>" for events without one (outreach etc.).
+# TBA keys always start with a 4-digit year, so the two never collide.
+# HUB_KEY_SQL is the same rule as a SQL expression over the `events` table.
+HUB_KEY_SQL = "COALESCE(tba_key, 'e' || id::text)"
+_TBA_KEY_RE = re.compile(r"^\d{4}[a-z0-9]+$")
+
+
+def hub_key_for(event_id: int, tba_key: str | None) -> str:
+    return tba_key or f"e{event_id}"
+
+
+def is_tba_key(event_key: str) -> bool:
+    """Whether `event_key` is a real TBA event key (worth asking TBA/Nexus
+    about), as opposed to an "e<id>" key for a non-competition event."""
+    return bool(_TBA_KEY_RE.fullmatch(event_key))
+
+
 # Columns update_event_schedule() may set, keyed by the API field name.
 _SCHEDULE_COLUMNS = {
     "start": "start_time",
     "end": "end_time",
     "checkin_opens": "checkin_opens",
     "hidden_tabs": "hidden_tabs",
+    "description": "description",
+    "checkin_enabled": "checkin_enabled",
 }
 
 _SELECT_EVENT = """
     SELECT id, name, start_time, end_time, location, event_type, url, tba_key,
-           checkin_opens, hidden_tabs
+           checkin_opens, hidden_tabs, description, checkin_enabled
     FROM events
 """
 
 
 async def get_events() -> list[dict]:
-    """Return all events ordered for display."""
+    """Return all events in date order. `start_time` is TEXT, but both stored
+    forms ("YYYY-MM-DD" / "YYYY-MM-DDTHH:MM") sort chronologically as strings."""
     async with db_connection(DB_NAME) as conn:
-        rows = await conn.fetch(_SELECT_EVENT + " ORDER BY display_order, start_time")
+        rows = await conn.fetch(_SELECT_EVENT + " ORDER BY start_time, id")
         return [_row_to_event(r) for r in rows]
 
 
@@ -165,6 +209,7 @@ def _row_to_event(r) -> dict:
         "location":   r["location"],
         "type":       r["event_type"],
         "hiddenTabs": list(r["hidden_tabs"] or []),
+        "checkinEnabled": r["checkin_enabled"] is not False,
     }
     if r["end_time"]:
         d["end"] = r["end_time"]
@@ -172,6 +217,9 @@ def _row_to_event(r) -> dict:
         d["url"] = r["url"]
     if r["tba_key"]:
         d["tbaKey"] = r["tba_key"]
+    d["hubKey"] = hub_key_for(r["id"], r["tba_key"])
+    if r["description"]:
+        d["description"] = r["description"]
     if r["checkin_opens"]:
         d["checkinOpens"] = r["checkin_opens"]
     return d

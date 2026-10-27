@@ -14,7 +14,7 @@ from db.comp_events import (
     CompEventContentPatch,
     RosterUpdate,
 )
-from db.events import EventScheduleUpdate, check_schedule_order
+from db.events import EventScheduleUpdate, check_schedule_order, is_tba_key
 
 router = APIRouter()
 
@@ -59,10 +59,13 @@ async def _enforce_days_in_range(event_key: str, days: list[str]) -> None:
 
 
 async def _enforce_check_in_open(event_key: str) -> None:
-    """403 if `event_key`'s schedule row sets a `checkin_opens` time that
-    hasn't arrived yet (read as team-local wall time, like reminder pushes).
-    No schedule row, or no `checkin_opens`, means check-in isn't gated."""
+    """403 if `event_key`'s schedule row turns check-in off, or sets a
+    `checkin_opens` time that hasn't arrived yet (read as team-local wall
+    time, like reminder pushes). No schedule row, or no `checkin_opens`,
+    means check-in isn't time-gated."""
     schedule = await db.get_event_schedule(event_key)
+    if schedule is not None and schedule.get("checkin_enabled") is False:
+        raise HTTPException(status_code=403, detail="This event doesn't use check-in")
     opens = push_notify.parse_event_start((schedule or {}).get("checkin_opens"))
     if opens is not None and datetime.now(push_notify.TEAM_TZ) < opens:
         raise HTTPException(status_code=403, detail="Check-in isn't open yet")
@@ -116,6 +119,7 @@ async def put_content(
 @router.get("/{event_key}/check-in")
 async def get_check_in_status(event_key: str, user: dict = Depends(require_active)):
     """Whether the calling user is on `event_key`'s roster."""
+    await db.ensure_comp_event(event_key)
     on_roster = await db.is_on_roster(event_key, str(user["sub"]))
     if on_roster is None:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -135,6 +139,7 @@ async def check_in(
     calling it again just confirms the existing entry (role, phone, and days
     are NOT overwritten) rather than duplicating or changing it."""
     await _enforce_check_in_open(event_key)
+    await db.ensure_comp_event(event_key)
     checkin = body or CheckInRequest()
     if checkin.days is not None:
         await _enforce_days_in_range(event_key, checkin.days)
@@ -230,7 +235,11 @@ async def _fetch_nexus(event_key: str) -> dict:
 
 
 async def _fetch_live(event_key: str) -> tuple:
-    """Fetch matches, rankings, and nexus in parallel. Each item may be an Exception."""
+    """Fetch matches, rankings, and nexus in parallel. Each item may be an
+    Exception. A non-competition hub ("e<id>" key) has nothing on TBA/Nexus,
+    so it skips the calls and gets the empty payload."""
+    if not is_tba_key(event_key):
+        return [], None, None
     return await asyncio.gather(
         tba.get(f"/team/{TEAM_KEY}/event/{event_key}/matches"),
         tba.get(f"/event/{event_key}/rankings"),
@@ -252,6 +261,10 @@ def _live_payload(matches, rankings, nexus_data) -> dict:
 @router.get("/{event_key}/info")
 async def get_event_info(event_key: str, _: dict = Depends(get_current_user)):
     row = await db.get_comp_event(event_key)
+    if not row:
+        # A scheduled event's hub opens even if nobody set it up first.
+        await db.ensure_comp_event(event_key)
+        row = await db.get_comp_event(event_key)
     if not row:
         raise HTTPException(status_code=404, detail="Event not found")
     matches, rankings, nexus_data = await _fetch_live(event_key)
