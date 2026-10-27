@@ -15,7 +15,7 @@ from db.comp_events import (
     RosterMember,
     RosterUpdate,
 )
-from db.events import EventScheduleUpdate, check_schedule_order, is_tba_key, normalize_checkin_roles, role_keys
+from db.events import EventCreate, EventScheduleUpdate, check_schedule_order, is_tba_key, normalize_checkin_roles, role_keys
 
 router = APIRouter()
 
@@ -75,6 +75,13 @@ async def _enforce_check_in_open(event_key: str) -> None:
 @router.get("")
 async def list_events(_: dict = Depends(get_current_user)):
     return await db.get_events()
+
+
+@router.post("/schedule", status_code=201)
+async def create_schedule_entry(body: EventCreate, _: dict = Depends(require_event_edit)):
+    """Add a new event to the season schedule. Its hub is created on first
+    visit, like every other scheduled event's."""
+    return await db.create_event(body)
 
 
 @router.patch("/schedule/{event_id}")

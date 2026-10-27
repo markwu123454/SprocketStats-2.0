@@ -113,6 +113,9 @@ export interface RosterUpdateResult {
 /** Body for `PATCH /events/schedule/{id}`. `end`/`checkin_opens` accept
  *  null to clear; values are "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM". */
 export interface EventSchedulePatch {
+    name?: string
+    location?: string
+    type?: string
     start?: string
     end?: string | null
     checkin_opens?: string | null
@@ -122,6 +125,17 @@ export interface EventSchedulePatch {
     checkin_enabled?: boolean
     /** Replaces the whole list. Keep a role's `key` to rename it; omit it for a new role. */
     checkin_roles?: { key?: string; label: string }[]
+}
+
+/** Body for `POST /events/schedule`. Values are "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM". */
+export interface EventCreateBody {
+    name: string
+    start: string
+    end?: string | null
+    location: string
+    type: string
+    checkin_opens?: string | null
+    checkin_enabled?: boolean
 }
 
 export type EventContentPatch =Partial<Pick<EventInfo, "itinerary" | "packing_list" | "instructions">>
@@ -194,4 +208,8 @@ export function patchEventSchedule(eventId: number, patch: EventSchedulePatch): 
 
 export function patchEventContent(eventKey: string, patch: EventContentPatch): Promise<EventContent> {
     return apiFetch<EventContent>(`/events/${eventKey}/content`, { method: "PATCH", body: JSON.stringify(patch) })
+}
+
+export function createEvent(body: EventCreateBody): Promise<EventEntry> {
+    return apiFetch<EventEntry>("/events/schedule", { method: "POST", body: JSON.stringify(body) })
 }

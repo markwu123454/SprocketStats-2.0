@@ -128,6 +128,62 @@ def _as_end(value: str) -> datetime:
     return datetime.combine(parsed.date(), time.max) if _DATE_RE.fullmatch(value) else parsed
 
 
+MAX_EVENT_TEXT = 120
+
+
+def _clean_text(v: str, field: str, *, required: bool) -> str:
+    v = v.strip()
+    if required and not v:
+        raise ValueError(f"{field} must not be blank")
+    if len(v) > MAX_EVENT_TEXT:
+        raise ValueError(f"{field} must be {MAX_EVENT_TEXT} characters or fewer")
+    return v
+
+
+class EventCreate(BaseModel):
+    """Body for `POST /events/schedule` -- a new schedule entry. Everything
+    else (description, hidden tabs, check-in roles) starts at its default and
+    is edited afterwards through the schedule PATCH."""
+
+    name: str
+    start: str
+    end: str | None = None
+    location: str = ""
+    type: str
+    checkin_opens: str | None = None
+    checkin_enabled: bool = True
+
+    @field_validator("name", "type")
+    @classmethod
+    def _required_text_valid(cls, v: str, info) -> str:
+        return _clean_text(v, info.field_name, required=True)
+
+    @field_validator("location")
+    @classmethod
+    def _location_valid(cls, v: str) -> str:
+        return _clean_text(v, "location", required=False)
+
+    @field_validator("start")
+    @classmethod
+    def _start_valid(cls, v: str) -> str:
+        return _validate_schedule_value(v, "start")
+
+    @field_validator("end")
+    @classmethod
+    def _end_valid(cls, v: str | None) -> str | None:
+        return _validate_schedule_value(v, "end")
+
+    @field_validator("checkin_opens")
+    @classmethod
+    def _checkin_opens_valid(cls, v: str | None) -> str | None:
+        return _validate_schedule_value(v, "checkin_opens")
+
+    @model_validator(mode="after")
+    def _ordered(self) -> "EventCreate":
+        check_schedule_order(self.start, self.end, self.checkin_opens)
+        return self
+
+
 class EventScheduleUpdate(BaseModel):
     """Body for `PATCH /events/schedule/{event_id}` -- any subset of the
     schedule fields an editor may change. `end` and `checkin_opens` may be
@@ -138,6 +194,9 @@ class EventScheduleUpdate(BaseModel):
     can only be checked against the stored row when just one side is sent,
     so the endpoint re-runs `check_schedule_order` on the merged result."""
 
+    name: str | None = None
+    location: str | None = None
+    type: str | None = None
     start: str | None = None
     end: str | None = None
     checkin_opens: str | None = None
@@ -152,6 +211,20 @@ class EventScheduleUpdate(BaseModel):
     # names, key assignment) is normalized by the endpoint via
     # `normalize_checkin_roles`.
     checkin_roles: list[CheckinRoleIn] | None = None
+
+    @field_validator("name", "type")
+    @classmethod
+    def _required_text_valid(cls, v: str | None, info) -> str:
+        if v is None:
+            raise ValueError(f"{info.field_name} can't be cleared")
+        return _clean_text(v, info.field_name, required=True)
+
+    @field_validator("location")
+    @classmethod
+    def _location_valid(cls, v: str | None) -> str:
+        if v is None:
+            raise ValueError("location can't be cleared")
+        return _clean_text(v, "location", required=False)
 
     @field_validator("checkin_roles")
     @classmethod
@@ -242,6 +315,9 @@ def is_tba_key(event_key: str) -> bool:
 
 # Columns update_event_schedule() may set, keyed by the API field name.
 _SCHEDULE_COLUMNS = {
+    "name": "name",
+    "location": "location",
+    "type": "event_type",
     "start": "start_time",
     "end": "end_time",
     "checkin_opens": "checkin_opens",
@@ -299,6 +375,21 @@ async def update_event_schedule(event_id: int, fields: dict) -> dict | None:
     async with db_connection(DB_NAME) as conn:
         row = await conn.fetchrow(query, *params)
     return _row_to_event(row) if row else None
+
+
+async def create_event(body: EventCreate) -> dict:
+    """Insert a new `events` row and return it in `get_events()`'s shape."""
+    query = f"""
+        INSERT INTO events (name, start_time, end_time, location, event_type, checkin_opens, checkin_enabled)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING {_EVENT_COLUMNS}
+    """
+    async with db_connection(DB_NAME) as conn:
+        row = await conn.fetchrow(
+            query, body.name, body.start, body.end, body.location, body.type,
+            body.checkin_opens, body.checkin_enabled,
+        )
+    return _row_to_event(row)
 
 
 def _row_to_event(r) -> dict:

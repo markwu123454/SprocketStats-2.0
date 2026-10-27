@@ -2,7 +2,7 @@ import { useState } from "react"
 import Checkbox from "@/components/ui/Checkbox"
 import { Plus, X } from "lucide-react"
 import { HIDEABLE_TABS, checkInRolesOf, hasEventPage, usesCheckIn, type EventEntry, type HubTab } from "@/lib/events"
-import { patchEventSchedule, type EventSchedulePatch } from "@/lib/eventApi"
+import { createEvent, patchEventSchedule, type EventSchedulePatch } from "@/lib/eventApi"
 import { saveErrorMessage } from "@/lib/eventContent"
 import { DANGER_RED, tintColor } from "@/lib/taskFormat"
 
@@ -60,13 +60,23 @@ function joinMoment({ date, time }: Moment): string | null {
     return time ? `${date}T${time}` : date
 }
 
+const MAX_TEXT = 120
+const TYPE_SUGGESTIONS = ["regional", "district", "outreach", "meeting", "workshop", "off-season"]
+
 interface EventScheduleEditorProps {
-    event: EventEntry & { id: number }
+    /** The event to edit; omit to create a new one. */
+    event?: EventEntry & { id: number }
     onSaved: (updated: EventEntry) => void
     onCancel: () => void
 }
 
-export default function EventScheduleEditor({ event, onSaved, onCancel }: EventScheduleEditorProps) {
+export default function EventScheduleEditor({ event: existing, onSaved, onCancel }: EventScheduleEditorProps) {
+    const creating = !existing
+    // A blank stand-in keeps every draft initializer below working unchanged.
+    const event = existing ?? ({ name: "", start: "", location: "", type: "", id: -1 } as EventEntry & { id: number })
+    const [name, setName] = useState(event.name)
+    const [location, setLocation] = useState(event.location)
+    const [type, setType] = useState(event.type)
     const [start, setStart] = useState(() => splitMoment(event.start))
     const [end, setEnd] = useState(() => splitMoment(event.end))
     const [checkin, setCheckin] = useState(() => splitMoment(event.checkinOpens))
@@ -95,7 +105,7 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
-    const hasHub = !!(event.hubKey || event.tbaKey || event.url)
+    const hasHub = !creating && !!(event.hubKey || event.tbaKey || event.url)
     // Comp only exists for TBA events -- not offered as a toggle otherwise.
     const tabChoices = HIDEABLE_TABS.filter(t => t !== "comp" || event.tbaKey)
     // Previewed against the unsaved draft, so the warning tracks the form.
@@ -106,12 +116,20 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
     }
 
     async function handleSave() {
+        const nextName = name.trim()
+        if (!nextName) { setError("Give the event a name."); return }
+        const nextType = type.trim()
+        if (!nextType) { setError("Pick or type an event type."); return }
+        const nextLocation = location.trim()
         const nextStart = joinMoment(start)
         if (!nextStart) { setError("Start date is required."); return }
 
         // Only send what changed, compared against the same normalization
         // the inputs apply (so an untouched "09:00:00" isn't a change).
         const patch: EventSchedulePatch = {}
+        if (nextName !== event.name) patch.name = nextName
+        if (nextType !== event.type) patch.type = nextType
+        if (nextLocation !== event.location) patch.location = nextLocation
         if (nextStart !== joinMoment(splitMoment(event.start))) patch.start = nextStart
         const nextEnd = joinMoment(end)
         if (nextEnd !== joinMoment(splitMoment(event.end))) patch.end = nextEnd
@@ -133,21 +151,26 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
             || nextRoles.some((r, i) => r.key !== prevRoles[i].key || r.label !== prevRoles[i].label)
         if (rolesChanged) patch.checkin_roles = nextRoles
 
-        if (Object.keys(patch).length === 0) { onCancel(); return }
+        if (!creating && Object.keys(patch).length === 0) { onCancel(); return }
 
         setSaving(true)
         setError(null)
         try {
-            onSaved(await patchEventSchedule(event.id, patch))
+            onSaved(creating
+                ? await createEvent({
+                    name: nextName, type: nextType, location: nextLocation, start: nextStart,
+                    end: nextEnd, checkin_opens: checkInOn ? nextCheckin : null, checkin_enabled: checkInOn,
+                })
+                : await patchEventSchedule(event.id, patch))
         } catch (e) {
-            setError(saveErrorMessage(e, "Couldn't save this event. Try again."))
+            setError(saveErrorMessage(e, creating ? "Couldn't create this event. Try again." : "Couldn't save this event. Try again."))
             setSaving(false)
         }
     }
 
     return (
         <div className="flex flex-col gap-4">
-            <p className="text-sm font-semibold theme-text truncate">Edit {event.name}</p>
+            {!creating && <p className="text-sm font-semibold theme-text truncate">Edit {event.name}</p>}
 
             {error && (
                 <p
@@ -159,6 +182,9 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
                 </p>
             )}
 
+            <TextField label="Name" value={name} onChange={setName} disabled={saving} placeholder="e.g. Cascade Regional" />
+            <TextField label="Type" value={type} onChange={setType} disabled={saving} placeholder="e.g. regional, outreach" suggestions={TYPE_SUGGESTIONS} />
+            <TextField label="Location" value={location} onChange={setLocation} disabled={saving} placeholder="City, venue or address" />
             <MomentField label="Starts" value={start} onChange={setStart} disabled={saving} />
             <MomentField label="Ends" hint="Leave empty for a single-day event." value={end} onChange={setEnd} disabled={saving} clearable />
             <label className="inline-flex items-center gap-2 min-h-11 text-sm theme-text cursor-pointer self-start">
@@ -249,9 +275,11 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
                 </fieldset>
             )}
 
-            <div className="flex items-center gap-3">
+            {/* Sticks to the bottom of the sheet so Save stays under the thumb
+                on a long form. */}
+            <div className="sticky bottom-0 -mx-4 px-4 py-3 -mb-4 flex items-center gap-3 border-t theme-border" style={{ background: "var(--theme-bg)" }}>
                 <button type="button" onClick={() => void handleSave()} disabled={saving} className={primaryButtonClass}>
-                    {saving ? "Saving…" : "Save"}
+                    {saving ? "Saving…" : creating ? "Create event" : "Save"}
                 </button>
                 <button type="button" onClick={onCancel} disabled={saving} className={ghostButtonClass}>
                     Cancel
@@ -303,6 +331,40 @@ function MomentField({ label, hint, value, onChange, disabled, clearable }: Mome
                 )}
             </div>
             <p className="text-xs theme-subtext-color">{hint ?? "Time is optional. Leave it empty for all day."}</p>
+        </div>
+    )
+}
+
+interface TextFieldProps {
+    label: string
+    value: string
+    onChange: (next: string) => void
+    disabled: boolean
+    placeholder?: string
+    suggestions?: string[]
+}
+
+function TextField({ label, value, onChange, disabled, placeholder, suggestions }: TextFieldProps) {
+    const id = `event-field-${label.toLowerCase()}`
+    return (
+        <div className="flex flex-col gap-1">
+            <label htmlFor={id} className="text-sm font-semibold theme-text">{label}</label>
+            <input
+                id={id}
+                value={value}
+                disabled={disabled}
+                maxLength={MAX_TEXT}
+                placeholder={placeholder}
+                list={suggestions ? `${id}-options` : undefined}
+                onChange={e => onChange(e.target.value)}
+                // 16px keeps iOS Safari from zooming the page when the field is focused.
+                className={`${inputClass} text-base sm:text-sm`}
+            />
+            {suggestions && (
+                <datalist id={`${id}-options`}>
+                    {suggestions.map(s => <option key={s} value={s} />)}
+                </datalist>
+            )}
         </div>
     )
 }

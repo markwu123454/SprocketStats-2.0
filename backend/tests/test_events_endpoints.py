@@ -169,6 +169,12 @@ class FakeStore:
         row.update(overrides)
         self.schedule_rows[event_id] = row
 
+    async def create_event(self, body):
+        event_id = max(self.schedule_rows, default=0) + 1
+        self.add_schedule_row(event_id, name=body.name, start=body.start, end=body.end,
+                              location=body.location, type=body.type)
+        return dict(self.schedule_rows[event_id])
+
     async def get_event_by_id(self, event_id):
         row = self.schedule_rows.get(event_id)
         return dict(row) if row else None
@@ -177,7 +183,7 @@ class FakeStore:
         row = self.schedule_rows.get(event_id)
         if row is None:
             return None
-        api_names = {"start": "start", "end": "end", "checkin_opens": "checkinOpens", "hidden_tabs": "hiddenTabs",
+        api_names = {"name": "name", "location": "location", "type": "type", "start": "start", "end": "end", "checkin_opens": "checkinOpens", "hidden_tabs": "hiddenTabs",
                      "description": "description", "checkin_enabled": "checkinEnabled",
                      "checkin_roles": "checkinRoles"}
         for key, val in fields.items():
@@ -192,7 +198,7 @@ def store(monkeypatch):
     for name in (
         "get_comp_event", "upsert_comp_event", "add_roster_member", "is_on_roster",
         "update_comp_event_content", "update_roster_member", "get_event_schedule",
-        "get_event_by_id", "update_event_schedule", "ensure_comp_event",
+        "get_event_by_id", "update_event_schedule", "create_event", "ensure_comp_event",
         "is_check_in_dismissed", "set_check_in_dismissed",
     ):
         monkeypatch.setattr(db, name, getattr(fake, name))
@@ -1143,3 +1149,54 @@ def test_put_content_keeps_stored_dismissals(app, store, monkeypatch):
     assert [e["user_id"] for e in resp.json()["roster"]] == ["u1"]
     stored = store.events["2026test"]["roster"]
     assert [(e["user_id"], e.get("dismissed", False)) for e in stored] == [("u1", False), ("u2", True)]
+
+
+# ── Schedule: create + rename ───────────────────────────────────────────
+
+def test_create_event_returns_201_and_row(app, store):
+    resp = _as(app, LEAD).post("/events/schedule", json={
+        "name": "  Kickoff  ", "start": "2026-01-03", "type": "outreach", "location": "School gym",
+    })
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["name"] == "Kickoff"
+    assert body["type"] == "outreach"
+    assert body["id"] in store.schedule_rows
+
+
+def test_create_event_rejects_blank_name(app, store):
+    resp = _as(app, LEAD).post("/events/schedule", json={"name": "  ", "start": "2026-01-03", "type": "outreach"})
+    assert resp.status_code == 422
+
+
+def test_create_event_rejects_end_before_start(app, store):
+    resp = _as(app, LEAD).post("/events/schedule", json={
+        "name": "X", "start": "2026-01-03", "end": "2026-01-01", "type": "outreach",
+    })
+    assert resp.status_code == 422
+
+
+def test_create_event_forbidden_for_member(app, store, monkeypatch):
+    async def _noop_assert_active(sub):
+        return None
+
+    monkeypatch.setattr(account_state, "assert_active", _noop_assert_active)
+
+    fastapi_app = FastAPI()
+    fastapi_app.include_router(events_router, prefix="/events")
+    fastapi_app.dependency_overrides[get_current_user] = lambda: MEMBER
+    resp = TestClient(fastapi_app).post("/events/schedule", json={"name": "X", "start": "2026-01-03", "type": "t"})
+    assert resp.status_code == 403
+
+
+def test_patch_schedule_renames_event(app, store):
+    store.add_schedule_row(1)
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={"name": " New Name ", "location": "Elsewhere"})
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "New Name"
+    assert resp.json()["location"] == "Elsewhere"
+
+
+def test_patch_schedule_rejects_blank_name(app, store):
+    store.add_schedule_row(1)
+    assert _as(app, LEAD).patch("/events/schedule/1", json={"name": ""}).status_code == 422
