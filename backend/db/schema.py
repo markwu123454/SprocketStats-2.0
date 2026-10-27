@@ -327,7 +327,6 @@ async def init_db():
                         event_type    TEXT   NOT NULL,
                         url           TEXT,
                         tba_key       TEXT,
-                        display_order INT    NOT NULL DEFAULT 0,
                         checkin_opens TEXT,
                         hidden_tabs   TEXT[] NOT NULL DEFAULT '{}'
                     )
@@ -502,8 +501,7 @@ async def run_migrations():
                     end_time      TEXT,
                     location      TEXT   NOT NULL,
                     event_type    TEXT   NOT NULL,
-                    url           TEXT,
-                    display_order INT    NOT NULL DEFAULT 0
+                    url           TEXT
                 )
             """)
             await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS tba_key TEXT")
@@ -515,6 +513,8 @@ async def run_migrations():
             # this event hides -- both edited from the Events page.
             await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS checkin_opens TEXT")
             await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS hidden_tabs TEXT[] NOT NULL DEFAULT '{}'")
+            # Events are listed by date now; the manual ordering column is gone.
+            await conn.execute("ALTER TABLE events DROP COLUMN IF EXISTS display_order")
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS comp_events (
                     event_key    TEXT PRIMARY KEY,

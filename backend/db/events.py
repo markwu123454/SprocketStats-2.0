@@ -114,9 +114,10 @@ _SELECT_EVENT = """
 
 
 async def get_events() -> list[dict]:
-    """Return all events ordered for display."""
+    """Return all events in date order. `start_time` is TEXT, but both stored
+    forms ("YYYY-MM-DD" / "YYYY-MM-DDTHH:MM") sort chronologically as strings."""
     async with db_connection(DB_NAME) as conn:
-        rows = await conn.fetch(_SELECT_EVENT + " ORDER BY display_order, start_time")
+        rows = await conn.fetch(_SELECT_EVENT + " ORDER BY start_time, id")
         return [_row_to_event(r) for r in rows]
 
 

@@ -88,7 +88,10 @@ class FakeStore:
         row = self.events.get(event_key)
         if row is None:
             return None
-        roster = row.setdefault("roster", [])
+        # A NULL roster counts as empty, like the real query's COALESCE.
+        if row.get("roster") is None:
+            row["roster"] = []
+        roster = row["roster"]
         if any(entry.get("user_id") == member["user_id"] for entry in roster):
             return roster
         roster.append(member)
@@ -126,6 +129,11 @@ class FakeStore:
         schedule = self.schedules.get(event_key)
         return dict(schedule) if schedule else None
 
+    async def ensure_comp_event(self, event_key):
+        # A schedule row stands in for an `events` row with this tba_key.
+        if event_key in self.schedules and event_key not in self.events:
+            self.add_event(event_key, itinerary=None, packing_list=None, instructions=None, roster=None)
+
     # -- db.events-shaped: `events` rows by id, in get_events()'s shape --
 
     def add_schedule_row(self, event_id: int, **overrides) -> None:
@@ -155,7 +163,7 @@ def store(monkeypatch):
     for name in (
         "get_comp_event", "upsert_comp_event", "add_roster_member", "is_on_roster",
         "update_comp_event_content", "update_roster_member", "get_event_schedule",
-        "get_event_by_id", "update_event_schedule",
+        "get_event_by_id", "update_event_schedule", "ensure_comp_event",
     ):
         monkeypatch.setattr(db, name, getattr(fake, name))
     return fake
@@ -860,3 +868,19 @@ def test_schedule_patch_forbidden_for_member(app, store, monkeypatch):
     fastapi_app.dependency_overrides[get_current_user] = lambda: MEMBER
     resp = TestClient(fastapi_app).patch("/events/schedule/1", json={"hidden_tabs": []})
     assert resp.status_code == 403
+
+
+# ── Scheduled events get a hub on first use ─────────────────────────────
+
+def test_check_in_creates_hub_for_scheduled_event(app, store):
+    store.add_schedule("2026sched", "2026-03-19", "2026-03-21", checkin_opens="2020-01-01")
+    client = _as(app, MEMBER)
+    assert client.get("/events/2026sched/check-in").json() == {"checked_in": False}
+    resp = client.post("/events/2026sched/check-in")
+    assert resp.status_code == 200
+    assert resp.json()["roster"][0]["user_id"] == "member-1"
+
+
+def test_check_in_still_404_for_unscheduled_event(app, store):
+    resp = _as(app, MEMBER).post("/events/nowhere/check-in")
+    assert resp.status_code == 404

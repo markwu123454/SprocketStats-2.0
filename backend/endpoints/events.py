@@ -116,6 +116,7 @@ async def put_content(
 @router.get("/{event_key}/check-in")
 async def get_check_in_status(event_key: str, user: dict = Depends(require_active)):
     """Whether the calling user is on `event_key`'s roster."""
+    await db.ensure_comp_event(event_key)
     on_roster = await db.is_on_roster(event_key, str(user["sub"]))
     if on_roster is None:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -135,6 +136,7 @@ async def check_in(
     calling it again just confirms the existing entry (role, phone, and days
     are NOT overwritten) rather than duplicating or changing it."""
     await _enforce_check_in_open(event_key)
+    await db.ensure_comp_event(event_key)
     checkin = body or CheckInRequest()
     if checkin.days is not None:
         await _enforce_days_in_range(event_key, checkin.days)
@@ -252,6 +254,10 @@ def _live_payload(matches, rankings, nexus_data) -> dict:
 @router.get("/{event_key}/info")
 async def get_event_info(event_key: str, _: dict = Depends(get_current_user)):
     row = await db.get_comp_event(event_key)
+    if not row:
+        # A scheduled event's hub opens even if nobody set it up first.
+        await db.ensure_comp_event(event_key)
+        row = await db.get_comp_event(event_key)
     if not row:
         raise HTTPException(status_code=404, detail="Event not found")
     matches, rankings, nexus_data = await _fetch_live(event_key)

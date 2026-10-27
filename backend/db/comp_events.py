@@ -311,11 +311,36 @@ async def get_comp_event(event_key: str) -> dict | None:
 
 
 async def get_comp_event_keys() -> list[str]:
-    """All event_keys with a hub page. Bootstrapped so the frontend can tell
-    a real event from a 404 without waiting on a per-event fetch."""
+    """All event_keys with a hub page -- an existing comp_events row, or a
+    scheduled event with a tba_key (whose row `ensure_comp_event` creates on
+    first use). Bootstrapped so the frontend can tell a real event from a 404
+    without waiting on a per-event fetch."""
     async with db_connection(DB_NAME) as conn:
-        rows = await conn.fetch("SELECT event_key FROM comp_events")
+        rows = await conn.fetch(
+            """
+            SELECT event_key FROM comp_events
+            UNION
+            SELECT tba_key FROM events WHERE tba_key IS NOT NULL
+            """
+        )
         return [r["event_key"] for r in rows]
+
+
+async def ensure_comp_event(event_key: str) -> None:
+    """Create an empty hub row for `event_key` if the schedule has an event
+    with that tba_key and no hub exists yet, so a scheduled event's page and
+    check-in work without first setting it up in the control panel. A no-op
+    otherwise (including when the hub already exists)."""
+    async with db_connection(DB_NAME) as conn:
+        await conn.execute(
+            """
+            INSERT INTO comp_events (event_key, event_name)
+            SELECT tba_key, name FROM events WHERE tba_key = $1
+            ORDER BY id LIMIT 1
+            ON CONFLICT (event_key) DO NOTHING
+            """,
+            event_key,
+        )
 
 
 async def upsert_comp_event(event_key: str, content: CompEventContent) -> dict:

@@ -38,7 +38,9 @@ export default function EventsPage() {
         return () => clearInterval(id)
     }, [])
 
-    const events = resolveEvents(rawEvents, new Date(now))
+    // Date order -- the server sends it this way too, but a date edited here
+    // has to move its card without a reload.
+    const events = resolveEvents(rawEvents, new Date(now)).sort((a, b) => a.startsAt - b.startsAt)
 
     const user = useOnboardedUser()
     const isEditor = can(user.permissions, "events.edit")
@@ -59,7 +61,10 @@ return (
                 const meta = STATUS_META[event.status]
                 const isLast = i === events.length - 1
                 const archived = event.status === "done"
-                const link = event.url && isHubOpen(event, now) ? event.url : null
+                // Any TBA-keyed event has a hub (the backend creates it on first
+                // visit), even when its schedule row has no explicit url.
+                const hubUrl = event.url ?? (event.tbaKey ? `/events/${event.tbaKey}` : undefined)
+                const link = hubUrl && isHubOpen(event, now) ? hubUrl : null
                 const editable = isEditor && event.id !== undefined
                 const editing = editable && editingId === event.id
                 // Only worth a line while it's ahead of the event itself --
