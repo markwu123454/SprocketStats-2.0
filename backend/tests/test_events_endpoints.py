@@ -2,8 +2,8 @@
 routes on the Events router (endpoints/events.py).
 
 Runs with no real database: every `db.*` call the router makes is
-monkeypatched to an in-memory FakeStore that mimics the `comp_events` and
-`events` tables' relevant shape closely enough to exercise the business rules
+monkeypatched to an in-memory FakeStore that mimics the `events` table's
+relevant shape (schedule plus hub content) closely enough to exercise the business rules
 the endpoints enforce -- idempotent check-in (role/phone/days all held fixed
 on repeat calls), roster/links/event_name never touched by the content PATCH,
 the 404-never-creates rule, and the day-range check against a schedule row.
@@ -37,13 +37,14 @@ CAPTAIN = {"sub": "captain-1", "role": "captain", "display_name": "Captain One"}
 
 
 class FakeStore:
-    """In-memory stand-in for the `comp_events` and `events` tables, shaped
-    like the real `db.comp_events` functions (see backend/db/comp_events.py)."""
+    """In-memory stand-in for the `events` table, shaped like the real
+    `db.comp_events` functions (see backend/db/comp_events.py)."""
 
     def __init__(self):
+        # event_key -> hub content (what `get_comp_event` returns).
         self.events: dict[str, dict] = {}
-        # event_key -> {"start_time": ..., "end_time": ...}, mirroring the
-        # `events` table row `get_event_schedule` looks up by tba_key.
+        # event_key -> {"start_time": ..., "end_time": ...}, the schedule
+        # columns `get_event_schedule` reads from the same `events` row.
         self.schedules: dict[str, dict] = {}
 
     def add_event(self, event_key: str, **overrides) -> str:
@@ -66,13 +67,22 @@ class FakeStore:
         self.schedules[event_key] = {"start_time": start_time, "end_time": end_time, "checkin_opens": checkin_opens,
                                      "checkin_enabled": checkin_enabled, "checkin_roles": checkin_roles}
 
+    def _hub(self, event_key):
+        """The hub row for `event_key`, or None. Every event is a hub, so a
+        schedule row alone stands for an event whose content is still empty."""
+        if event_key in self.schedules and event_key not in self.events:
+            self.add_event(event_key, itinerary=None, packing_list=None, instructions=None, roster=None)
+        return self.events.get(event_key)
+
     # -- db.comp_events-shaped async methods, monkeypatched onto `db` --
 
     async def get_comp_event(self, event_key):
-        row = self.events.get(event_key)
+        row = self._hub(event_key)
         return dict(row) if row else None
 
-    async def upsert_comp_event(self, event_key, content):
+    async def replace_comp_event(self, event_key, content):
+        if self._hub(event_key) is None:
+            return None
         data = content.model_dump()
         for entry in data.get("roster") or []:
             if not entry.get("dismissed"):
@@ -90,7 +100,7 @@ class FakeStore:
         return dict(row)
 
     async def add_roster_member(self, event_key, member):
-        row = self.events.get(event_key)
+        row = self._hub(event_key)
         if row is None:
             return None
         # A NULL roster counts as empty, like the real query's COALESCE.
@@ -105,7 +115,7 @@ class FakeStore:
         return roster
 
     async def is_on_roster(self, event_key, user_id):
-        row = self.events.get(event_key)
+        row = self._hub(event_key)
         if row is None:
             return None
         return any(e.get("user_id") == user_id and not db.is_dismissal(e) for e in row.get("roster") or [])
@@ -113,7 +123,7 @@ class FakeStore:
     async def update_comp_event_content(self, event_key, fields):
         if not fields:
             raise ValueError("update_comp_event_content requires at least one field to set")
-        row = self.events.get(event_key)
+        row = self._hub(event_key)
         if row is None:
             return None
         row.update(fields)
@@ -122,7 +132,7 @@ class FakeStore:
     async def update_roster_member(self, event_key, user_id, fields):
         if not fields:
             raise ValueError("update_roster_member requires at least one field to set")
-        row = self.events.get(event_key)
+        row = self._hub(event_key)
         if row is None:
             return None
         roster = row.get("roster") or []
@@ -139,11 +149,11 @@ class FakeStore:
     # Dismissals live in the roster as {"dismissed": True} entries, same as
     # the real db.comp_events functions.
     async def is_check_in_dismissed(self, event_key, user_id):
-        roster = (self.events.get(event_key) or {}).get("roster") or []
+        roster = (self._hub(event_key) or {}).get("roster") or []
         return any(e.get("user_id") == user_id and db.is_dismissal(e) for e in roster)
 
     async def set_check_in_dismissed(self, event_key, user_id, display_name, dismissed):
-        row = self.events.get(event_key)
+        row = self._hub(event_key)
         if row is None:
             return
         if row.get("roster") is None:
@@ -155,11 +165,6 @@ class FakeStore:
                                "phone": None, "days": None, "dismissed": True})
         else:
             roster[:] = [e for e in roster if not (e.get("user_id") == user_id and db.is_dismissal(e))]
-
-    async def ensure_comp_event(self, event_key):
-        # A schedule row stands in for an `events` row with this tba_key.
-        if event_key in self.schedules and event_key not in self.events:
-            self.add_event(event_key, itinerary=None, packing_list=None, instructions=None, roster=None)
 
     # -- db.events-shaped: `events` rows by id, in get_events()'s shape --
 
@@ -190,9 +195,9 @@ def store(monkeypatch):
     fake = FakeStore()
     fake.schedule_rows = {}
     for name in (
-        "get_comp_event", "upsert_comp_event", "add_roster_member", "is_on_roster",
+        "get_comp_event", "replace_comp_event", "add_roster_member", "is_on_roster",
         "update_comp_event_content", "update_roster_member", "get_event_schedule",
-        "get_event_by_id", "update_event_schedule", "ensure_comp_event",
+        "get_event_by_id", "update_event_schedule",
         "is_check_in_dismissed", "set_check_in_dismissed",
     ):
         monkeypatch.setattr(db, name, getattr(fake, name))
@@ -748,6 +753,7 @@ def test_put_content_round_trip_keeps_roster_days(app, store, monkeypatch):
     fastapi_app.include_router(events_router, prefix="/events")
     fastapi_app.dependency_overrides[get_current_user] = lambda: CAPTAIN
     client = TestClient(fastapi_app)
+    store.add_event("2026test")
 
     body = {
         "event_name": "Test Event",
@@ -762,6 +768,20 @@ def test_put_content_round_trip_keeps_roster_days(app, store, monkeypatch):
         {"user_id": "u1", "display_name": "User One", "role": "attending",
          "phone": None, "days": ["2026-03-20", "2026-03-21"]}
     ]
+
+
+def test_put_content_404_unknown_event_and_does_not_create(app, store, monkeypatch):
+    # A hub is part of its event now, so PUT can't conjure one up.
+    async def _noop_assert_active(sub):
+        return None
+
+    monkeypatch.setattr(account_state, "assert_active", _noop_assert_active)
+    fastapi_app = FastAPI()
+    fastapi_app.include_router(events_router, prefix="/events")
+    fastapi_app.dependency_overrides[get_current_user] = lambda: CAPTAIN
+    resp = TestClient(fastapi_app).put("/events/nowhere/content", json={"event_name": "Nowhere"})
+    assert resp.status_code == 404
+    assert "nowhere" not in store.events
 
 
 # ── Validation ───────────────────────────────────────────────────────────
@@ -900,9 +920,9 @@ def test_schedule_patch_forbidden_for_member(app, store, monkeypatch):
     assert resp.status_code == 403
 
 
-# ── Scheduled events get a hub on first use ─────────────────────────────
+# ── Every scheduled event is a hub ──────────────────────────────────────
 
-def test_check_in_creates_hub_for_scheduled_event(app, store):
+def test_check_in_works_for_scheduled_event_with_empty_hub(app, store):
     store.add_schedule("2026sched", "2026-03-19", "2026-03-21", checkin_opens="2020-01-01")
     client = _as(app, MEMBER)
     assert client.get("/events/2026sched/check-in").json() == {"checked_in": False, "dismissed": False}
@@ -1143,3 +1163,19 @@ def test_put_content_keeps_stored_dismissals(app, store, monkeypatch):
     assert [e["user_id"] for e in resp.json()["roster"]] == ["u1"]
     stored = store.events["2026test"]["roster"]
     assert [(e["user_id"], e.get("dismissed", False)) for e in stored] == [("u1", False), ("u2", True)]
+
+
+def test_check_in_reads_schedule_once(app, store, monkeypatch):
+    # The open gate, the role list and the day range all come from one read.
+    store.add_schedule("2026test", "2099-03-19", "2099-03-21", checkin_opens="2020-01-01T09:00")
+    calls = []
+    real = store.get_event_schedule
+
+    async def counted(event_key):
+        calls.append(event_key)
+        return await real(event_key)
+
+    monkeypatch.setattr(db, "get_event_schedule", counted)
+    resp = _as(app, MEMBER).post("/events/2026test/check-in", json={"role": "attending", "days": ["2099-03-20"]})
+    assert resp.status_code == 200
+    assert calls == ["2026test"]

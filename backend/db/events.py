@@ -223,10 +223,8 @@ def check_schedule_order(start: str | None, end: str | None, checkin_opens: str 
 # Every scheduled event has a hub, addressed by its "hub key": the TBA event
 # key for competitions, or "e<id>" for events without one (outreach etc.).
 # TBA keys always start with a 4-digit year, so the two never collide.
-# HUB_KEY_SQL is the same rule as a SQL expression over the `events` table.
-# events_hub_key_idx (db/schema.py) indexes this exact expression -- change
-# one without the other and hub-key lookups fall back to a full table scan.
-HUB_KEY_SQL = "COALESCE(tba_key, 'e' || id::text)"
+# The `events.hub_key` generated column (db/schema.py) is the same rule in
+# SQL, so queries look hubs up by that column.
 _TBA_KEY_RE = re.compile(r"^\d{4}[a-z0-9]+$")
 
 
