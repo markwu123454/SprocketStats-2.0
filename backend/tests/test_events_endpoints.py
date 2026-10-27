@@ -61,8 +61,9 @@ class FakeStore:
         return event_key
 
     def add_schedule(self, event_key: str, start_time: str, end_time: str | None = None,
-                     checkin_opens: str | None = None) -> None:
-        self.schedules[event_key] = {"start_time": start_time, "end_time": end_time, "checkin_opens": checkin_opens}
+                     checkin_opens: str | None = None, checkin_enabled: bool = True) -> None:
+        self.schedules[event_key] = {"start_time": start_time, "end_time": end_time, "checkin_opens": checkin_opens,
+                                     "checkin_enabled": checkin_enabled}
 
     # -- db.comp_events-shaped async methods, monkeypatched onto `db` --
 
@@ -151,7 +152,7 @@ class FakeStore:
         if row is None:
             return None
         api_names = {"start": "start", "end": "end", "checkin_opens": "checkinOpens", "hidden_tabs": "hiddenTabs",
-                     "description": "description"}
+                     "description": "description", "checkin_enabled": "checkinEnabled"}
         for key, val in fields.items():
             row[api_names[key]] = val
         return dict(row)
@@ -928,4 +929,31 @@ def test_schedule_patch_blank_description_clears(app, store):
 def test_schedule_patch_rejects_overlong_description(app, store):
     store.add_schedule_row(1)
     resp = _as(app, LEAD).patch("/events/schedule/1", json={"description": "x" * 5001})
+    assert resp.status_code == 422
+
+
+# ── Check-in on/off ─────────────────────────────────────────────────────
+
+def test_check_in_rejected_when_disabled(app, store):
+    store.add_event("2026test")
+    store.add_schedule("2026test", "2026-03-19", checkin_enabled=False)
+    resp = _as(app, MEMBER).post("/events/2026test/check-in")
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "This event doesn't use check-in"
+
+
+def test_schedule_patch_toggles_checkin_and_keeps_opening_time(app, store):
+    store.add_schedule_row(1, checkinOpens="2026-03-01")
+    client = _as(app, LEAD)
+    resp = client.patch("/events/schedule/1", json={"checkin_enabled": False})
+    assert resp.status_code == 200
+    assert resp.json()["checkinEnabled"] is False
+    assert resp.json()["checkinOpens"] == "2026-03-01"
+    resp = client.patch("/events/schedule/1", json={"checkin_enabled": True})
+    assert resp.json()["checkinEnabled"] is True
+
+
+def test_schedule_patch_rejects_null_checkin_enabled(app, store):
+    store.add_schedule_row(1)
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={"checkin_enabled": None})
     assert resp.status_code == 422

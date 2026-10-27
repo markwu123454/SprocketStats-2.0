@@ -2,7 +2,7 @@ import {useEffect, useState} from "react"
 import {ChevronRight, Pencil} from "lucide-react"
 import {Link} from "react-router-dom";
 import {
-    type EventEntry, checkInOpensAt, formatCountdown, formatScheduleMoment, hasEventPage, hubKeyOf, isCheckInOpen, isHubOpen, resolveEvents,
+    type EventEntry, checkInOpensAt, formatCountdown, formatScheduleMoment, hasEventPage, hubKeyOf, isCheckInOpen, isHubOpen, resolveEvents, usesCheckIn,
     STATUS_META,
 } from "@/lib/events.ts"
 import {useBootstrapped} from "@/contexts/bootstrapContext"
@@ -70,7 +70,7 @@ return (
                 const editing = editable && editingId === event.id
                 // Only worth a line while it's ahead of the event itself --
                 // once an event is current, check-in being open is a given.
-                const checkInNote = event.status === "upcoming" && event.checkinOpens
+                const checkInNote = event.status === "upcoming" && event.checkinOpens && usesCheckIn(event)
                     ? (isCheckInOpen(event, now) ? "Check-in open" : `Check-in opens ${formatScheduleMoment(event.checkinOpens)}`)
                     : null
                 const cardClassName = [

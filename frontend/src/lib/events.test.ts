@@ -123,3 +123,17 @@ describe("hasEventPage", () => {
         expect(hasEventPage({ ...base, hiddenTabs: ["itinerary", "packing", "roster", "tasks"] })).toBe(false)
     })
 })
+
+describe("check-in turned off", () => {
+    it("never opens check-in, even with an opening time in the past", () => {
+        const off = resolveEvent({ name: "A", start: "2026-10-21", checkinOpens: "2026-10-01", checkinEnabled: false, location: "", type: "" }, now)
+        expect(isCheckInOpen(off, now.getTime())).toBe(false)
+    })
+
+    it("still shows a happening event on the dashboard, but not ahead of time", () => {
+        const happening = { name: "Now", start: "2026-10-21", checkinEnabled: false, location: "", type: "" }
+        const early = { name: "Soon", start: "2026-11-20", checkinOpens: "2026-10-01", checkinEnabled: false, location: "", type: "" }
+        expect(pickActiveEvent([happening], now)?.name).toBe("Now")
+        expect(pickActiveEvent([early], now)).toBeNull()
+    })
+})

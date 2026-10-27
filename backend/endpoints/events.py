@@ -59,10 +59,13 @@ async def _enforce_days_in_range(event_key: str, days: list[str]) -> None:
 
 
 async def _enforce_check_in_open(event_key: str) -> None:
-    """403 if `event_key`'s schedule row sets a `checkin_opens` time that
-    hasn't arrived yet (read as team-local wall time, like reminder pushes).
-    No schedule row, or no `checkin_opens`, means check-in isn't gated."""
+    """403 if `event_key`'s schedule row turns check-in off, or sets a
+    `checkin_opens` time that hasn't arrived yet (read as team-local wall
+    time, like reminder pushes). No schedule row, or no `checkin_opens`,
+    means check-in isn't time-gated."""
     schedule = await db.get_event_schedule(event_key)
+    if schedule is not None and schedule.get("checkin_enabled") is False:
+        raise HTTPException(status_code=403, detail="This event doesn't use check-in")
     opens = push_notify.parse_event_start((schedule or {}).get("checkin_opens"))
     if opens is not None and datetime.now(push_notify.TEAM_TZ) < opens:
         raise HTTPException(status_code=403, detail="Check-in isn't open yet")

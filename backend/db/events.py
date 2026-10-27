@@ -57,6 +57,16 @@ class EventScheduleUpdate(BaseModel):
     hidden_tabs: list[str] | None = None
     # Free text shown at the top of the hub's Overview. Blank/null clears it.
     description: str | None = None
+    # False turns self check-in off for this event entirely. `checkin_opens`
+    # is kept as-is, so turning it back on restores the old opening time.
+    checkin_enabled: bool | None = None
+
+    @field_validator("checkin_enabled")
+    @classmethod
+    def _checkin_enabled_valid(cls, v: bool | None) -> bool:
+        if v is None:
+            raise ValueError("checkin_enabled must be true or false")
+        return v
 
     @field_validator("description")
     @classmethod
@@ -136,11 +146,12 @@ _SCHEDULE_COLUMNS = {
     "checkin_opens": "checkin_opens",
     "hidden_tabs": "hidden_tabs",
     "description": "description",
+    "checkin_enabled": "checkin_enabled",
 }
 
 _SELECT_EVENT = """
     SELECT id, name, start_time, end_time, location, event_type, url, tba_key,
-           checkin_opens, hidden_tabs, description
+           checkin_opens, hidden_tabs, description, checkin_enabled
     FROM events
 """
 
@@ -198,6 +209,7 @@ def _row_to_event(r) -> dict:
         "location":   r["location"],
         "type":       r["event_type"],
         "hiddenTabs": list(r["hidden_tabs"] or []),
+        "checkinEnabled": r["checkin_enabled"] is not False,
     }
     if r["end_time"]:
         d["end"] = r["end_time"]

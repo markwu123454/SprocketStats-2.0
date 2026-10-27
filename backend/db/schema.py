@@ -329,7 +329,8 @@ async def init_db():
                         tba_key       TEXT,
                         checkin_opens TEXT,
                         hidden_tabs   TEXT[] NOT NULL DEFAULT '{}',
-                        description   TEXT
+                        description   TEXT,
+                        checkin_enabled BOOLEAN NOT NULL DEFAULT true
                     )
                 """)
                 await conn.execute("""
@@ -516,6 +517,8 @@ async def run_migrations():
             await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS hidden_tabs TEXT[] NOT NULL DEFAULT '{}'")
             # Intro text for the hub's Overview.
             await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS description TEXT")
+            # Per-event switch for self check-in (outreach etc. may not use it).
+            await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS checkin_enabled BOOLEAN NOT NULL DEFAULT true")
             # Events are listed by date now; the manual ordering column is gone.
             await conn.execute("ALTER TABLE events DROP COLUMN IF EXISTS display_order")
             await conn.execute("""

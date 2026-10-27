@@ -118,6 +118,7 @@ export interface EventSchedulePatch {
     hidden_tabs?: HubTab[]
     /** Overview intro text; null or blank clears it. */
     description?: string | null
+    checkin_enabled?: boolean
 }
 
 export type EventContentPatch =Partial<Pick<EventInfo, "itinerary" | "packing_list" | "instructions">>

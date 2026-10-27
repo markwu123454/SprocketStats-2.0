@@ -3,7 +3,7 @@ import { Link } from "react-router-dom"
 import { Check } from "lucide-react"
 import Dropdown from "@/components/ui/Dropdown"
 import DayChips from "@/components/events/DayChips"
-import { eventDays, hasEventPage, isTabHidden, STATUS_META, type ResolvedEvent } from "@/lib/events"
+import { eventDays, hasEventPage, isTabHidden, STATUS_META, usesCheckIn, type ResolvedEvent } from "@/lib/events"
 import {
     checkInToEvent, fetchCheckInStatus, fetchEventUpdate,
     type EventInfo, type TBAMatch,
@@ -61,6 +61,9 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
     const headerLabel = happening ? STATUS_META.current.label : "Check-in open"
     const showMatches = happening && !isTabHidden(active, "comp")
     const hasPage = hasEventPage(active)
+    // An event that doesn't use check-in still gets the card while it's
+    // happening, just without the check-in prompt.
+    const checkInOn = usesCheckIn(active)
 
     // Match data for the next-match row -- seeded from bootstrap, then kept
     // fresh with a 60s poll (only runs once `hasHub` is true).
@@ -83,13 +86,13 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
     // Check in button stuck disabled forever -- the check-in POST is
     // idempotent, so letting the user press it is safe.
     useEffect(() => {
-        if (!hasHub || !eventKey) return
+        if (!hasHub || !eventKey || !checkInOn) return
         let cancelled = false
         fetchCheckInStatus(eventKey)
             .then(res => { if (!cancelled) setCheckedIn(res.checked_in) })
             .catch(() => { if (!cancelled) setCheckedIn(prev => prev ?? false) })
         return () => { cancelled = true }
-    }, [hasHub, eventKey])
+    }, [hasHub, eventKey, checkInOn])
 
     function toggleDay(day: string) {
         setDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day])
@@ -144,12 +147,14 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
 
                 {hasHub && !showForm && (
                     <div className="flex items-center gap-3 shrink-0">
-                        {checkedIn ? (
+                        {checkedIn || !checkInOn ? (
                             <>
-                                <span className="inline-flex items-center gap-1.5 text-sm theme-subtext-color">
-                                    <Check size={15} className="theme-text-contrast" />
-                                    You're checked in
-                                </span>
+                                {checkInOn && (
+                                    <span className="inline-flex items-center gap-1.5 text-sm theme-subtext-color">
+                                        <Check size={15} className="theme-text-contrast" />
+                                        You're checked in
+                                    </span>
+                                )}
                                 {showMatches ? (
                                     <Link to={`/events/${eventKey}/comp`} className={primaryButtonClass}>
                                         Go to matches
@@ -174,7 +179,7 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                 )}
             </div>
 
-            {hasHub && showForm && !checkedIn && (
+            {hasHub && checkInOn && showForm && !checkedIn && (
                 <div className="flex flex-col gap-3">
                     {/* Dropdown's trigger doesn't take an id/aria-label of its own
                         (see Dropdown.d.ts) -- role="group" + aria-labelledby is
@@ -256,7 +261,7 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                 </p>
             )}
 
-            {hasHub && hasPage && checkedIn === false && (
+            {hasHub && hasPage && checkInOn && checkedIn === false && (
                 <Link
                     to={`/events/${eventKey}`}
                     className="inline-flex items-center min-h-11 self-start rounded-lg text-sm theme-text-contrast hover:underline outline-none focus:ring-2"

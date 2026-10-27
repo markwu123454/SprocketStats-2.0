@@ -20,6 +20,7 @@ export interface EventEntry {
     checkinOpens?: string // omit to open check-in when the event starts
     hiddenTabs?: HubTab[]
     description?: string // intro text at the top of the hub's Overview
+    checkinEnabled?: boolean // false: this event doesn't use self check-in
 }
 
 export interface ResolvedEvent extends EventEntry {
@@ -109,9 +110,15 @@ export function checkInOpensAt(entry: EventEntry): number {
     return parseEventDate(entry.checkinOpens ?? entry.start).getTime()
 }
 
-// Check-in is open from `checkInOpensAt` until the event is over.
+// Missing means on -- only an explicit `false` turns check-in off.
+export function usesCheckIn(entry: EventEntry): boolean {
+    return entry.checkinEnabled !== false
+}
+
+// Check-in is open from `checkInOpensAt` until the event is over, for an
+// event that uses check-in at all.
 export function isCheckInOpen(event: ResolvedEvent, now: number = Date.now()): boolean {
-    return event.status !== "done" && now >= checkInOpensAt(event)
+    return usesCheckIn(event) && event.status !== "done" && now >= checkInOpensAt(event)
 }
 
 // The key an event's hub lives under (/events/<key>). Every scheduled event

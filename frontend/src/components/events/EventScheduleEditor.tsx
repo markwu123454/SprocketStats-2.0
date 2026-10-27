@@ -1,6 +1,6 @@
 import { useState } from "react"
 import Checkbox from "@/components/ui/Checkbox"
-import { HIDEABLE_TABS, hasEventPage, type EventEntry, type HubTab } from "@/lib/events"
+import { HIDEABLE_TABS, hasEventPage, usesCheckIn, type EventEntry, type HubTab } from "@/lib/events"
 import { patchEventSchedule, type EventSchedulePatch } from "@/lib/eventApi"
 import { saveErrorMessage } from "@/lib/eventContent"
 import { DANGER_RED, tintColor } from "@/lib/taskFormat"
@@ -57,6 +57,7 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
     const [checkin, setCheckin] = useState(() => splitMoment(event.checkinOpens))
     const [hidden, setHidden] = useState<HubTab[]>(event.hiddenTabs ?? [])
     const [description, setDescription] = useState(event.description ?? "")
+    const [checkInOn, setCheckInOn] = useState(usesCheckIn(event))
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
@@ -88,6 +89,7 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
         const nextDescription = description.trim() || null
         if (description.length > MAX_DESCRIPTION) { setError(`Overview text must be ${MAX_DESCRIPTION} characters or fewer.`); return }
         if (nextDescription !== (event.description?.trim() || null)) patch.description = nextDescription
+        if (checkInOn !== usesCheckIn(event)) patch.checkin_enabled = checkInOn
 
         if (Object.keys(patch).length === 0) { onCancel(); return }
 
@@ -117,14 +119,20 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
 
             <MomentField label="Starts" value={start} onChange={setStart} disabled={saving} />
             <MomentField label="Ends" hint="Leave empty for a single-day event." value={end} onChange={setEnd} disabled={saving} clearable />
-            <MomentField
-                label="Check-in opens"
-                hint="Leave empty to open check-in when the event starts."
-                value={checkin}
-                onChange={setCheckin}
-                disabled={saving}
-                clearable
-            />
+            <label className="inline-flex items-center gap-2 min-h-11 text-sm theme-text cursor-pointer self-start">
+                <Checkbox checked={checkInOn} onChange={() => setCheckInOn(v => !v)} />
+                Members check in to this event
+            </label>
+            {checkInOn && (
+                <MomentField
+                    label="Check-in opens"
+                    hint="Leave empty to open check-in when the event starts."
+                    value={checkin}
+                    onChange={setCheckin}
+                    disabled={saving}
+                    clearable
+                />
+            )}
 
             {hasHub && (
                 <div className="flex flex-col gap-1">
@@ -158,7 +166,7 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
                     {!willHavePage && (
                         <p className="text-xs theme-subtext-color">
                             With no Overview text and every page unchecked, this event won't have a page.
-                            Members can still check in from the dashboard.
+                            {checkInOn && " Members can still check in from the dashboard."}
                         </p>
                     )}
                 </fieldset>

@@ -490,7 +490,7 @@ async def update_roster_member(event_key: str, user_id: str, fields: dict) -> li
 
 
 async def get_event_schedule(event_key: str) -> dict | None:
-    """Return `{"start_time", "end_time", "checkin_opens"}` for the `events`
+    """Return `{"start_time", "end_time", "checkin_opens", "checkin_enabled"}` for the `events`
     row whose hub key is `event_key` (see `db.events.HUB_KEY_SQL`), or `None` if there's
     no such row.
 
@@ -504,7 +504,7 @@ async def get_event_schedule(event_key: str) -> dict | None:
     """
     async with db_connection(DB_NAME) as conn:
         row = await conn.fetchrow(
-            f"SELECT start_time, end_time, checkin_opens FROM events WHERE {HUB_KEY_SQL} = $1",
+            f"SELECT start_time, end_time, checkin_opens, checkin_enabled FROM events WHERE {HUB_KEY_SQL} = $1",
             event_key,
         )
         return dict(row) if row else None
