@@ -1,8 +1,14 @@
 import {useEffect, useState} from "react"
-import {ChevronRight} from "lucide-react"
+import {ChevronRight, Pencil} from "lucide-react"
 import {Link} from "react-router-dom";
-import {type EventEntry, formatCountdown, isHubOpen, resolveEvents, STATUS_META} from "@/lib/events.ts"
+import {
+    type EventEntry, checkInOpensAt, formatCountdown, formatScheduleMoment, isCheckInOpen, isHubOpen, resolveEvents,
+    STATUS_META,
+} from "@/lib/events.ts"
 import {useBootstrapped} from "@/contexts/bootstrapContext"
+import {useOnboardedUser} from "@/contexts/authContext"
+import {can} from "@/lib/permissions"
+import EventScheduleEditor from "@/components/events/EventScheduleEditor"
 
 const API = import.meta.env.VITE_BACKEND_URL
 const cardStyle = {background: "var(--theme-bg)", borderColor: "var(--theme-border)"}
@@ -34,6 +40,15 @@ export default function EventsPage() {
 
     const events = resolveEvents(rawEvents, new Date(now))
 
+    const user = useOnboardedUser()
+    const isEditor = can(user.permissions, "events.edit")
+    const [editingId, setEditingId] = useState<number | null>(null)
+
+    function applySaved(updated: EventEntry) {
+        setRawEvents(prev => prev.map(e => e.id === updated.id ? updated : e))
+        setEditingId(null)
+    }
+
 return (
     <div className="mx-auto px-4 py-8 flex flex-col gap-1">
         <h1 className="text-2xl font-bold theme-h1-color">Events</h1>
@@ -45,6 +60,13 @@ return (
                 const isLast = i === events.length - 1
                 const archived = event.status === "done"
                 const link = event.url && isHubOpen(event, now) ? event.url : null
+                const editable = isEditor && event.id !== undefined
+                const editing = editable && editingId === event.id
+                // Only worth a line while it's ahead of the event itself --
+                // once an event is current, check-in being open is a given.
+                const checkInNote = event.status === "upcoming" && event.checkinOpens
+                    ? (isCheckInOpen(event, now) ? "Check-in open" : `Check-in opens ${formatScheduleMoment(event.checkinOpens)}`)
+                    : null
                 const cardClassName = [
                     "flex items-center gap-3 sm:gap-5 rounded-xl border backdrop-blur-sm p-3 sm:p-4 pl-4 sm:pl-5 transition-[border-color,opacity]",
                     link ? "hover:border-(--theme-text-contrast)" : "",
@@ -66,6 +88,14 @@ return (
                                     style={{color: "var(--theme-text-contrast)"}}
                                 >
                                     in {formatCountdown(event.startsAt - now)}
+                                </span>
+                            )}
+                            {checkInNote && (
+                                <span
+                                    className="text-xs mt-0.5 whitespace-nowrap"
+                                    style={{color: checkInOpensAt(event) <= now ? "var(--theme-text-contrast)" : "var(--theme-subtext-color)"}}
+                                >
+                                    {checkInNote}
                                 </span>
                             )}
                         </div>
@@ -104,15 +134,41 @@ return (
                                 {!isLast && <div className="w-0.5 flex-1" style={{background: "var(--theme-border)"}}/>}
                             </div>
 
-                            {/* Event card */}
-                            <div className="flex-1 min-w-0 pb-6">
-                                {link ? (
-                                    <Link to={link} className={cardClassName} style={cardStyle}>
-                                        {cardContent}
-                                    </Link>
-                                ) : (
-                                    <div className={cardClassName} style={cardStyle}>
-                                        {cardContent}
+                            {/* Event card -- the edit button sits beside it, not inside,
+                                so it never triggers the card's own link. */}
+                            <div className="flex-1 min-w-0 pb-6 flex flex-col gap-2">
+                                <div className="flex items-stretch gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        {link ? (
+                                            <Link to={link} className={cardClassName} style={cardStyle}>
+                                                {cardContent}
+                                            </Link>
+                                        ) : (
+                                            <div className={cardClassName} style={cardStyle}>
+                                                {cardContent}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {editable && (
+                                        <button
+                                            type="button"
+                                            aria-label={`Edit ${event.name}`}
+                                            aria-expanded={editing}
+                                            onClick={() => setEditingId(editing ? null : event.id!)}
+                                            className="shrink-0 w-11 flex items-center justify-center rounded-xl border opacity-60 hover:opacity-100 transition-opacity outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
+                                            style={cardStyle}
+                                        >
+                                            <Pencil size={15} className="theme-subtext-color"/>
+                                        </button>
+                                    )}
+                                </div>
+                                {editing && (
+                                    <div className="rounded-xl border p-4" style={cardStyle}>
+                                        <EventScheduleEditor
+                                            event={{...event, id: event.id!}}
+                                            onSaved={applySaved}
+                                            onCancel={() => setEditingId(null)}
+                                        />
                                     </div>
                                 )}
                             </div>

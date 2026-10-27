@@ -1,4 +1,5 @@
 import type { AssignableRole } from "@/lib/rosterRoles"
+import type { EventEntry, HubTab } from "@/lib/events"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -108,7 +109,16 @@ export interface RosterUpdateResult {
     roster: RosterMember[]
 }
 
-export type EventContentPatch = Partial<Pick<EventInfo, "itinerary" | "packing_list" | "instructions">>
+/** Body for `PATCH /events/schedule/{id}`. `end`/`checkin_opens` accept
+ *  null to clear; values are "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM". */
+export interface EventSchedulePatch {
+    start?: string
+    end?: string | null
+    checkin_opens?: string | null
+    hidden_tabs?: HubTab[]
+}
+
+export type EventContentPatch =Partial<Pick<EventInfo, "itinerary" | "packing_list" | "instructions">>
 
 export type EventContent = Pick<
     EventInfo,
@@ -161,6 +171,14 @@ export function updateRosterMember(eventKey: string, userId: string, patch: Rost
         method: "PATCH",
         body: JSON.stringify(patch),
     })
+}
+
+export function fetchEvents(): Promise<EventEntry[]> {
+    return apiFetch<EventEntry[]>("/events")
+}
+
+export function patchEventSchedule(eventId: number, patch: EventSchedulePatch): Promise<EventEntry> {
+    return apiFetch<EventEntry>(`/events/schedule/${eventId}`, { method: "PATCH", body: JSON.stringify(patch) })
 }
 
 export function patchEventContent(eventKey: string, patch: EventContentPatch): Promise<EventContent> {

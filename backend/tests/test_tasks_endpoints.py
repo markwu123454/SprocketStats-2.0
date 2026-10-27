@@ -38,6 +38,8 @@ class FakeStore:
         # mirroring `ORDER BY added_at` in the real query).
         self.contributors: dict[str, list[str]] = {}
         self.notes: dict[str, dict] = {}
+        # event_keys with a hub (comp_events row) a task may link to.
+        self.comp_events: set[str] = set()
         # (user_ids, category, title, body) for every push the router fired.
         self.pushes: list[tuple] = []
 
@@ -66,6 +68,7 @@ class FakeStore:
             "created_by": "creator",
             "finished_by": None,
             "reviewed_by": None,
+            "event_key": None,
             "created_at": now,
             "updated_at": now,
         }
@@ -93,8 +96,14 @@ class FakeStore:
 
     # -- db.tasks-shaped async methods, monkeypatched onto the `db` module --
 
-    async def list_tasks(self):
-        return [self._joined(t) for t in self.tasks.values()]
+    async def list_tasks(self, event_key=None):
+        return [
+            self._joined(t) for t in self.tasks.values()
+            if event_key is None or t.get("event_key") == event_key
+        ]
+
+    async def get_comp_event(self, event_key):
+        return {"event_key": event_key} if event_key in self.comp_events else None
 
     async def get_task(self, task_id):
         t = self.tasks.get(task_id)
@@ -111,10 +120,11 @@ class FakeStore:
         matches.sort(key=lambda t: t["created_at"])
         return matches[0]["area"] if matches else None
 
-    async def create_task(self, title, area, bucket, priority, due_date, assignee_id, created_by):
+    async def create_task(self, title, area, bucket, priority, due_date, assignee_id, created_by, event_key=None):
         tid = self.add_task(
             title=title, area=area, bucket=bucket, priority=priority,
             due_date=due_date, assignee_id=assignee_id, created_by=created_by,
+            event_key=event_key,
         )
         return self._joined(self.tasks[tid])
 
@@ -227,7 +237,7 @@ def store(monkeypatch):
         "update_task", "claim_task", "review_task", "unreview_task",
         "delete_task", "get_user", "add_contributor", "remove_contributor",
         "release_assignee", "list_task_notes", "get_task_note",
-        "create_task_note", "delete_task_note",
+        "create_task_note", "delete_task_note", "get_comp_event",
     ):
         monkeypatch.setattr(db, name, getattr(fake, name))
     monkeypatch.setattr(
@@ -1062,3 +1072,46 @@ def test_adding_self_as_contributor_does_not_push(app, store):
     resp = _as(app, {"sub": "member-2", "role": "cad_member"}).post(f"/tasks/{task_id}/contributors")
     assert resp.status_code == 200
     assert store.pushes == []
+
+
+# ── Event links ─────────────────────────────────────────────────────────
+
+def test_create_task_linked_to_event(app, store):
+    store.comp_events.add("2026test")
+    resp = _as(app, MEMBER).post("/tasks", json={"title": "Pack batteries", "bucket": "general", "event_key": "2026test"})
+    assert resp.status_code == 200
+    assert resp.json()["event_key"] == "2026test"
+
+
+def test_create_task_unknown_event_400(app, store):
+    resp = _as(app, MEMBER).post("/tasks", json={"title": "T", "bucket": "general", "event_key": "nope"})
+    assert resp.status_code == 400
+
+
+def test_list_tasks_filters_by_event(app, store):
+    linked = store.add_task(event_key="2026test")
+    store.add_task()
+    resp = _as(app, MEMBER).get("/tasks", params={"event_key": "2026test"})
+    assert resp.status_code == 200
+    assert [t["id"] for t in resp.json()] == [linked]
+
+
+def test_creator_can_link_and_unlink_event(app, store):
+    store.comp_events.add("2026test")
+    task_id = store.add_task(created_by="member-1")
+    client = _as(app, MEMBER)
+
+    resp = client.patch(f"/tasks/{task_id}", json={"event_key": "2026test"})
+    assert resp.status_code == 200
+    assert resp.json()["event_key"] == "2026test"
+
+    resp = client.patch(f"/tasks/{task_id}", json={"event_key": None})
+    assert resp.status_code == 200
+    assert resp.json()["event_key"] is None
+
+
+def test_non_creator_member_cannot_link_event(app, store):
+    store.comp_events.add("2026test")
+    task_id = store.add_task(created_by="someone-else")
+    resp = _as(app, MEMBER).patch(f"/tasks/{task_id}", json={"event_key": "2026test"})
+    assert resp.status_code == 403

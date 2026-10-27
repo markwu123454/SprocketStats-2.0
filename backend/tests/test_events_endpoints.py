@@ -60,8 +60,9 @@ class FakeStore:
         self.events[event_key] = row
         return event_key
 
-    def add_schedule(self, event_key: str, start_time: str, end_time: str | None = None) -> None:
-        self.schedules[event_key] = {"start_time": start_time, "end_time": end_time}
+    def add_schedule(self, event_key: str, start_time: str, end_time: str | None = None,
+                     checkin_opens: str | None = None) -> None:
+        self.schedules[event_key] = {"start_time": start_time, "end_time": end_time, "checkin_opens": checkin_opens}
 
     # -- db.comp_events-shaped async methods, monkeypatched onto `db` --
 
@@ -125,13 +126,36 @@ class FakeStore:
         schedule = self.schedules.get(event_key)
         return dict(schedule) if schedule else None
 
+    # -- db.events-shaped: `events` rows by id, in get_events()'s shape --
+
+    def add_schedule_row(self, event_id: int, **overrides) -> None:
+        row = {"id": event_id, "name": "Test Event", "start": "2026-03-19", "end": "2026-03-21",
+               "location": "Here", "type": "Competition", "hiddenTabs": []}
+        row.update(overrides)
+        self.schedule_rows[event_id] = row
+
+    async def get_event_by_id(self, event_id):
+        row = self.schedule_rows.get(event_id)
+        return dict(row) if row else None
+
+    async def update_event_schedule(self, event_id, fields):
+        row = self.schedule_rows.get(event_id)
+        if row is None:
+            return None
+        api_names = {"start": "start", "end": "end", "checkin_opens": "checkinOpens", "hidden_tabs": "hiddenTabs"}
+        for key, val in fields.items():
+            row[api_names[key]] = val
+        return dict(row)
+
 
 @pytest.fixture
 def store(monkeypatch):
     fake = FakeStore()
+    fake.schedule_rows = {}
     for name in (
         "get_comp_event", "upsert_comp_event", "add_roster_member", "is_on_roster",
         "update_comp_event_content", "update_roster_member", "get_event_schedule",
+        "get_event_by_id", "update_event_schedule",
     ):
         monkeypatch.setattr(db, name, getattr(fake, name))
     return fake
@@ -720,3 +744,119 @@ def test_patch_422_unparseable_dt(app, store):
         json={"itinerary": [{"dt": "not-a-date", "label": "A", "detail": None}]},
     )
     assert resp.status_code == 422
+
+
+# ── Check-in opening time ───────────────────────────────────────────────
+
+def test_check_in_blocked_before_checkin_opens(app, store):
+    store.add_event("2026test")
+    store.add_schedule("2099test", "2099-03-19")  # unrelated row, ignored
+    store.add_schedule("2026test", "2099-03-19", "2099-03-21", checkin_opens="2099-03-01")
+    resp = _as(app, MEMBER).post("/events/2026test/check-in")
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Check-in isn't open yet"
+
+
+def test_check_in_allowed_once_checkin_opens(app, store):
+    store.add_event("2026test")
+    store.add_schedule("2026test", "2099-03-19", "2099-03-21", checkin_opens="2020-01-01T09:00")
+    resp = _as(app, MEMBER).post("/events/2026test/check-in")
+    assert resp.status_code == 200
+
+
+def test_check_in_ungated_without_checkin_opens(app, store):
+    store.add_event("2026test")
+    store.add_schedule("2026test", "2099-03-19", "2099-03-21")
+    resp = _as(app, MEMBER).post("/events/2026test/check-in")
+    assert resp.status_code == 200
+
+
+# ── Schedule PATCH ──────────────────────────────────────────────────────
+
+def test_schedule_patch_updates_sent_fields_only(app, store):
+    store.add_schedule_row(1)
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={
+        "checkin_opens": "2026-03-01T18:00", "hidden_tabs": ["comp", "packing"],
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["checkinOpens"] == "2026-03-01T18:00"
+    # Normalized to canonical tab order.
+    assert body["hiddenTabs"] == ["packing", "comp"]
+    assert body["start"] == "2026-03-19"
+    assert body["end"] == "2026-03-21"
+
+
+def test_schedule_patch_moves_dates(app, store):
+    store.add_schedule_row(1)
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={"start": "2026-04-02T08:00", "end": "2026-04-04"})
+    assert resp.status_code == 200
+    assert resp.json()["start"] == "2026-04-02T08:00"
+    assert resp.json()["end"] == "2026-04-04"
+
+
+def test_schedule_patch_clears_end_and_checkin(app, store):
+    store.add_schedule_row(1, checkinOpens="2026-03-01")
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={"end": None, "checkin_opens": None})
+    assert resp.status_code == 200
+    assert resp.json()["end"] is None
+    assert resp.json()["checkinOpens"] is None
+
+
+def test_schedule_patch_rejects_end_before_start(app, store):
+    store.add_schedule_row(1)
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={"end": "2026-03-01"})
+    assert resp.status_code == 422
+
+
+def test_schedule_patch_rejects_checkin_after_event(app, store):
+    store.add_schedule_row(1)
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={"checkin_opens": "2026-03-22"})
+    assert resp.status_code == 422
+
+
+def test_schedule_patch_allows_checkin_on_last_day(app, store):
+    store.add_schedule_row(1)
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={"checkin_opens": "2026-03-21T15:00"})
+    assert resp.status_code == 200
+
+
+@pytest.mark.parametrize("payload", [
+    {"start": None},
+    {"start": "March 19"},
+    {"start": "2026-02-30"},
+    {"hidden_tabs": ["overview"]},
+    {"hidden_tabs": None},
+])
+def test_schedule_patch_rejects_bad_values(app, store, payload):
+    store.add_schedule_row(1)
+    resp = _as(app, LEAD).patch("/events/schedule/1", json=payload)
+    assert resp.status_code == 422
+
+
+def test_schedule_patch_empty_body_400(app, store):
+    store.add_schedule_row(1)
+    resp = _as(app, LEAD).patch("/events/schedule/1", json={})
+    assert resp.status_code == 400
+
+
+def test_schedule_patch_unknown_event_404(app, store):
+    resp = _as(app, LEAD).patch("/events/schedule/99", json={"hidden_tabs": []})
+    assert resp.status_code == 404
+
+
+def test_schedule_patch_forbidden_for_member(app, store, monkeypatch):
+    # Same approach as test_patch_403_for_role_without_events_edit: let the
+    # real require_event_edit run against a member's role.
+    store.add_schedule_row(1)
+
+    async def _noop_assert_active(sub):
+        return None
+
+    monkeypatch.setattr(account_state, "assert_active", _noop_assert_active)
+
+    fastapi_app = FastAPI()
+    fastapi_app.include_router(events_router, prefix="/events")
+    fastapi_app.dependency_overrides[get_current_user] = lambda: MEMBER
+    resp = TestClient(fastapi_app).patch("/events/schedule/1", json={"hidden_tabs": []})
+    assert resp.status_code == 403

@@ -44,6 +44,7 @@ class TaskCreate(BaseModel):
     priority: str = "med"
     due_date: date | None = None
     assignee_id: str | None = None
+    event_key: str | None = None
 
 
 class ContributorAdd(BaseModel):
@@ -67,6 +68,7 @@ class TaskUpdate(BaseModel):
     status: str | None = None
     assignee_id: str | None = None
     due_date: date | None = None
+    event_key: str | None = None
 
 
 def _authorize_edit(user: dict, task) -> None:
@@ -92,6 +94,12 @@ async def _validate_assignee(assignee_id: str | None) -> None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown assignee_id")
 
 
+async def _validate_event_key(event_key: str | None) -> None:
+    """Raise 400 if `event_key` is non-null and doesn't name an event hub."""
+    if event_key is not None and await db.get_comp_event(event_key) is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown event_key")
+
+
 async def _normalize_area(raw: str | None, task_id: str | None = None) -> str:
     """Strip `raw` (blank -> "General") and, if another task already uses the
     same area in different casing, adopt that spelling so areas never split
@@ -113,8 +121,9 @@ def _decode_contributors(value) -> list[dict]:
 
 
 @router.get("")
-async def list_tasks(_: dict = Depends(require_task_access)):
-    rows = await db.list_tasks()
+async def list_tasks(event_key: str | None = None, _: dict = Depends(require_task_access)):
+    """Every task, or with `?event_key=` only the ones linked to that event."""
+    rows = await db.list_tasks(event_key)
     return [_row_to_task(r) for r in rows]
 
 
@@ -156,8 +165,11 @@ async def create_task(body: TaskCreate, user: dict = Depends(require_task_access
             status_code=status.HTTP_403_FORBIDDEN, detail="Only the authority set may assign a task"
         )
     await _validate_assignee(body.assignee_id)
+    await _validate_event_key(body.event_key)
 
-    row = await db.create_task(title, area, body.bucket, priority, body.due_date, body.assignee_id, user["sub"])
+    row = await db.create_task(
+        title, area, body.bucket, priority, body.due_date, body.assignee_id, user["sub"], body.event_key
+    )
     if body.assignee_id is not None:
         push_notify.notify_task_assigned(row, body.assignee_id, user)
     return _row_to_task(row)
@@ -235,6 +247,10 @@ async def update_task(task_id: str, body: TaskUpdate, user: dict = Depends(requi
 
     if "due_date" in changes:
         fields["due_date"] = changes["due_date"]
+
+    if "event_key" in changes:
+        await _validate_event_key(changes["event_key"])
+        fields["event_key"] = changes["event_key"]
 
     releasing_assignee = False
     new_assignee_id = None
@@ -492,6 +508,7 @@ def _row_to_task(r) -> dict:
         ],
         "note_count": d.get("note_count") or 0,
         "due_date": d["due_date"].isoformat() if d["due_date"] else None,
+        "event_key": d.get("event_key"),
         "created_by": d["created_by"],
         "created_by_name": d.get("created_by_name"),
         "finished_by": d["finished_by"],

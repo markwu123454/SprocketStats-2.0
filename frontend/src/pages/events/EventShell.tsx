@@ -1,30 +1,47 @@
 import { useState, useEffect, useContext, useCallback } from "react"
-import { useParams, Outlet, NavLink, Link } from "react-router-dom"
-import { Home, Calendar, Users, Package, Trophy, ArrowLeft, CalendarClock } from "lucide-react"
+import { useParams, Outlet, NavLink, Link, Navigate, useLocation } from "react-router-dom"
+import { Home, Calendar, Users, Package, Trophy, ArrowLeft, CalendarClock, ListTodo } from "lucide-react"
 import { useBootstrapped, BootstrapContext } from "@/contexts/bootstrapContext"
 import { EventContext } from "@/contexts/eventContext"
-import { fetchEventInfo, fetchEventUpdate, type EventInfo } from "@/lib/eventApi"
-import { resolveEvents, type EventEntry } from "@/lib/events"
+import { fetchEventInfo, fetchEventUpdate, fetchEvents, type EventInfo } from "@/lib/eventApi"
+import { isTabHidden, resolveEvents, type EventEntry, type HubTab } from "@/lib/events"
 
-const TABS = [
+// `to` doubles as the HubTab id for every tab but Overview, which can't be hidden.
+const TABS: { label: string; icon: typeof Home; to: "" | HubTab; end: boolean }[] = [
     { label: "Overview",  icon: Home,     to: "",          end: true  },
     { label: "Itinerary", icon: Calendar, to: "itinerary", end: false },
     { label: "Packing",   icon: Package,  to: "packing",   end: false },
     { label: "Roster",    icon: Users,    to: "roster",    end: false },
+    { label: "Tasks",     icon: ListTodo, to: "tasks",     end: false },
     { label: "Comp",      icon: Trophy,   to: "comp",      end: false },
 ]
 
 export default function EventShell() {
     const { eventKey } = useParams<{ eventKey: string }>()
+    const location = useLocation()
     const [bootstrapEvent] = useBootstrapped<EventInfo | null>("current_event", null)
     const [eventKeys] = useBootstrapped<string[]>("event_keys", [])
-    const [scheduleEvents] = useBootstrapped<EventEntry[]>("events", [])
+    const [scheduleEvents, setScheduleEvents] = useBootstrapped<EventEntry[]>("events", [])
+
+    // The bootstrap copy is a snapshot from app load -- refetch so tab
+    // visibility edited on the Events page since then applies here.
+    useEffect(() => {
+        let cancelled = false
+        fetchEvents()
+            .then(data => { if (!cancelled) setScheduleEvents(data) })
+            .catch(() => {})
+        return () => { cancelled = true }
+    }, [setScheduleEvents])
+
+    const scheduleEntry = scheduleEvents.find(e => e.tbaKey === eventKey || e.url === `/events/${eventKey}`)
+    const visibleTabs = TABS.filter(t => t.to === "" || !isTabHidden(scheduleEntry, t.to))
+    // A hidden tab reached by a direct link or bookmark falls back to Overview.
+    const currentTab = location.pathname.split("/")[3] as HubTab | undefined
+    const onHiddenTab = !!currentTab && isTabHidden(scheduleEntry, currentTab)
 
     // An event with no schedule entry is never treated as archived -- better
     // to keep polling than to hide live data for an event we can't date.
-    const archived = resolveEvents(scheduleEvents).some(
-        e => e.status === "done" && (e.tbaKey === eventKey || e.url === `/events/${eventKey}`)
-    )
+    const archived = resolveEvents(scheduleEntry ? [scheduleEntry] : []).some(e => e.status === "done")
 
     // /bootstrap already ran on app load and carries every valid event_key, so
     // once it's resolved we can tell a real event from a 404 synchronously —
@@ -69,7 +86,7 @@ export default function EventShell() {
     }, [])
 
     return (
-        <EventContext.Provider value={{ eventKey: eventKey ?? "", info, loading: isLoading, archived, updateInfo }}>
+        <EventContext.Provider value={{ eventKey: eventKey ?? "", info, loading: isLoading, archived, hiddenTabs: scheduleEntry?.hiddenTabs ?? [], updateInfo }}>
             <div className="h-full flex flex-col">
                 <div
                     className="sticky top-0 z-10 border-b theme-border"
@@ -96,7 +113,7 @@ export default function EventShell() {
                     {/* Tab row: icon above text — stays mounted (and navigable) even on a 404,
                         so the header height never shifts; the body below decides what to show. */}
                     <div className="flex -mx-0 overflow-x-auto scrollbar-none">
-                        {TABS.map(({ label, icon: Icon, to, end }) => (
+                        {visibleTabs.map(({ label, icon: Icon, to, end }) => (
                             <NavLink
                                 key={label}
                                 to={to}
@@ -133,6 +150,8 @@ export default function EventShell() {
                                 Back to events
                             </Link>
                         </div>
+                    ) : onHiddenTab ? (
+                        <Navigate to={`/events/${eventKey}`} replace />
                     ) : (
                         <Outlet />
                     )}

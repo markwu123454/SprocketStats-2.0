@@ -28,7 +28,8 @@ function getTimelineSlice(items: ItineraryItem[]) {
 }
 
 export default function EventHubPage() {
-    const { info, archived } = useEventContext()
+    const { info, archived, hiddenTabs } = useEventContext()
+    const compHidden = hiddenTabs.includes("comp")
 
     const matches    = info?.matches ?? []
     const rankings   = info?.rankings ?? null
@@ -106,7 +107,7 @@ export default function EventHubPage() {
                         </span>
                     </div>
                 )}
-                {archived ? (
+                {archived ? (compHidden ? null : (
                     <Link
                         to="comp"
                         className="flex items-center justify-between gap-3 px-4 py-3 min-h-11 rounded-xl border transition-colors hover:border-(--theme-text-contrast)"
@@ -117,7 +118,7 @@ export default function EventHubPage() {
                         </span>
                         <ChevronRight size={16} className="theme-subtext-color" />
                     </Link>
-                ) : ourNext ? (
+                )) : ourNext ? (
                     <NextMatchCard match={ourNext} />
                 ) : (
                     <div className="flex items-center px-4 py-3 rounded-xl border" style={cardBase}>

@@ -30,6 +30,7 @@ export interface Task {
     assignee_id: string | null
     assignee_name: string | null
     due_date: string | null // "YYYY-MM-DD"
+    event_key: string | null // linked event hub, e.g. "2026cass"
     created_by: string
     created_by_name: string | null
     finished_by: string | null
@@ -63,6 +64,7 @@ export interface CreateTaskInput {
     priority?: TaskPriority
     due_date?: string | null
     assignee_id?: string | null
+    event_key?: string | null
 }
 
 /** PATCH body — a subset of the editable fields. `status` excludes "done":
@@ -75,6 +77,8 @@ export interface UpdateTaskInput {
     status?: Exclude<TaskStatus, "done">
     assignee_id?: string | null
     due_date?: string | null
+    /** Link to (or, with null, unlink from) an event hub. Creator or authority set. */
+    event_key?: string | null
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -91,8 +95,9 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     return res.json() as Promise<T>
 }
 
-export function fetchTasks(): Promise<Task[]> {
-    return apiFetch<Task[]>("/tasks")
+/** Every task, or only those linked to `eventKey`. */
+export function fetchTasks(eventKey?: string): Promise<Task[]> {
+    return apiFetch<Task[]>(eventKey ? `/tasks?event_key=${encodeURIComponent(eventKey)}` : "/tasks")
 }
 
 /** Names + ids only (never emails) — any authed user, unlike leads-only `/members`. */
