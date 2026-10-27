@@ -1,5 +1,5 @@
 import {useEffect, useState} from "react"
-import {ChevronRight, Pencil} from "lucide-react"
+import {ChevronRight, Pencil, Plus} from "lucide-react"
 import {Link} from "react-router-dom";
 import {
     type EventEntry, checkInOpensAt, formatCountdown, formatScheduleMoment, hasEventPage, hubKeyOf, isCheckInOpen, isHubOpen, resolveEvents, usesCheckIn,
@@ -9,6 +9,8 @@ import {useBootstrapped} from "@/contexts/bootstrapContext"
 import {useOnboardedUser} from "@/contexts/authContext"
 import {can} from "@/lib/permissions"
 import EventScheduleEditor from "@/components/events/EventScheduleEditor"
+import EventEditSheet from "@/components/events/EventEditSheet"
+import {useIsMobile} from "@/lib/useIsMobile"
 
 const API = import.meta.env.VITE_BACKEND_URL
 const cardStyle = {background: "var(--theme-bg)", borderColor: "var(--theme-border)"}
@@ -45,6 +47,15 @@ export default function EventsPage() {
     const user = useOnboardedUser()
     const isEditor = can(user.permissions, "events.edit")
     const [editingId, setEditingId] = useState<number | null>(null)
+    const [creating, setCreating] = useState(false)
+    const isMobile = useIsMobile()
+    // Phones edit in a bottom sheet; wider screens expand the card inline.
+    const editingEvent = isMobile && editingId !== null ? events.find(e => e.id === editingId) : undefined
+
+    function applyCreated(created: EventEntry) {
+        setRawEvents(prev => [...prev, created])
+        setCreating(false)
+    }
 
     function applySaved(updated: EventEntry) {
         setRawEvents(prev => prev.map(e => e.id === updated.id ? updated : e))
@@ -53,8 +64,23 @@ export default function EventsPage() {
 
 return (
     <div className="mx-auto px-4 py-8 flex flex-col gap-1">
-        <h1 className="text-2xl font-bold theme-h1-color">Events</h1>
-        <p className="text-sm theme-subtext-color mb-6">Season schedule</p>
+        <div className="flex items-start justify-between gap-3 mb-6">
+            <div>
+                <h1 className="text-2xl font-bold theme-h1-color">Events</h1>
+                <p className="text-sm theme-subtext-color">Season schedule</p>
+            </div>
+            {isEditor && (
+                <button
+                    type="button"
+                    onClick={() => { setEditingId(null); setCreating(true) }}
+                    className="shrink-0 h-11 px-4 inline-flex items-center gap-1.5 rounded-xl text-sm font-bold outline-none focus:ring-2"
+                    style={{background: VIEW_BG_ACTIVE, color: "var(--theme-bg)"}}
+                >
+                    <Plus size={16}/>
+                    New event
+                </button>
+            )}
+        </div>
 
         <div className="flex flex-col">
             {events.map((event, i) => {
@@ -168,7 +194,7 @@ return (
                                         </button>
                                     )}
                                 </div>
-                                {editing && (
+                                {editing && !isMobile && (
                                     <div className="rounded-xl border p-4" style={cardStyle}>
                                         <EventScheduleEditor
                                             event={{...event, id: event.id!}}
@@ -182,6 +208,21 @@ return (
                     )
                 })}
             </div>
+
+            {creating && (
+                <EventEditSheet title="New event" onClose={() => setCreating(false)}>
+                    <EventScheduleEditor onSaved={applyCreated} onCancel={() => setCreating(false)}/>
+                </EventEditSheet>
+            )}
+            {editingEvent && (
+                <EventEditSheet title="Edit event" onClose={() => setEditingId(null)}>
+                    <EventScheduleEditor
+                        event={{...editingEvent, id: editingEvent.id!}}
+                        onSaved={applySaved}
+                        onCancel={() => setEditingId(null)}
+                    />
+                </EventEditSheet>
+            )}
         </div>
     )
 }
