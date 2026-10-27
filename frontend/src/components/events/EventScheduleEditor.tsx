@@ -1,6 +1,7 @@
 import { useState } from "react"
 import Checkbox from "@/components/ui/Checkbox"
-import { HIDEABLE_TABS, hasEventPage, usesCheckIn, type EventEntry, type HubTab } from "@/lib/events"
+import { Plus, X } from "lucide-react"
+import { HIDEABLE_TABS, checkInRolesOf, hasEventPage, usesCheckIn, type EventEntry, type HubTab } from "@/lib/events"
 import { patchEventSchedule, type EventSchedulePatch } from "@/lib/eventApi"
 import { saveErrorMessage } from "@/lib/eventContent"
 import { DANGER_RED, tintColor } from "@/lib/taskFormat"
@@ -19,8 +20,22 @@ const inputClass =
     "rounded-lg border theme-border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-text " +
     "disabled:opacity-60 min-w-0"
 
-// Mirrors MAX_DESCRIPTION in backend/db/events.py.
+// Mirror MAX_DESCRIPTION / MAX_CHECKIN_ROLES / MAX_ROLE_LABEL in backend/db/events.py.
 const MAX_DESCRIPTION = 5000
+const MAX_ROLES = 20
+const MAX_ROLE_LABEL = 40
+
+interface RoleDraft { id: number; key?: string; label: string }
+
+// Same rules the backend enforces, so most mistakes never reach the server.
+function validateRoles(roles: RoleDraft[]): string | null {
+    if (roles.length === 0) return "Add at least one check-in role."
+    const names = roles.map(r => r.label.trim())
+    if (names.some(n => !n)) return "Check-in roles need a name."
+    if (names.some(n => n.length > MAX_ROLE_LABEL)) return `Role names must be ${MAX_ROLE_LABEL} characters or fewer.`
+    if (new Set(names.map(n => n.toLowerCase())).size !== names.length) return "Check-in role names must be different."
+    return null
+}
 
 const TAB_LABEL: Record<HubTab, string> = {
     itinerary: "Itinerary",
@@ -58,6 +73,25 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
     const [hidden, setHidden] = useState<HubTab[]>(event.hiddenTabs ?? [])
     const [description, setDescription] = useState(event.description ?? "")
     const [checkInOn, setCheckInOn] = useState(usesCheckIn(event))
+    // `id` is only a stable React key for the row; `key` is the stored role
+    // key (absent for a role added here, which the server assigns).
+    const [roles, setRoles] = useState<RoleDraft[]>(() =>
+        checkInRolesOf(event).map((r, i) => ({ id: i, key: r.key, label: r.label }))
+    )
+    const [nextRoleId, setNextRoleId] = useState(() => checkInRolesOf(event).length)
+
+    function updateRole(id: number, label: string) {
+        setRoles(prev => prev.map(r => r.id === id ? { ...r, label } : r))
+    }
+
+    function removeRole(id: number) {
+        setRoles(prev => prev.filter(r => r.id !== id))
+    }
+
+    function addRole() {
+        setRoles(prev => [...prev, { id: nextRoleId, label: "" }])
+        setNextRoleId(n => n + 1)
+    }
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
@@ -90,6 +124,14 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
         if (description.length > MAX_DESCRIPTION) { setError(`Overview text must be ${MAX_DESCRIPTION} characters or fewer.`); return }
         if (nextDescription !== (event.description?.trim() || null)) patch.description = nextDescription
         if (checkInOn !== usesCheckIn(event)) patch.checkin_enabled = checkInOn
+
+        const roleErr = validateRoles(roles)
+        if (roleErr) { setError(roleErr); return }
+        const nextRoles = roles.map(r => (r.key ? { key: r.key, label: r.label.trim() } : { label: r.label.trim() }))
+        const prevRoles = checkInRolesOf(event)
+        const rolesChanged = nextRoles.length !== prevRoles.length
+            || nextRoles.some((r, i) => r.key !== prevRoles[i].key || r.label !== prevRoles[i].label)
+        if (rolesChanged) patch.checkin_roles = nextRoles
 
         if (Object.keys(patch).length === 0) { onCancel(); return }
 
@@ -132,6 +174,41 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
                     disabled={saving}
                     clearable
                 />
+            )}
+            {checkInOn && (
+                <fieldset className="flex flex-col gap-2">
+                    <legend className="text-sm font-semibold theme-text mb-1">Check-in roles</legend>
+                    <p className="text-xs theme-subtext-color -mt-1">
+                        Members pick one when they check in. Renaming a role keeps everyone already checked in under it.
+                    </p>
+                    {roles.map((r, i) => (
+                        <div key={r.id} className="flex items-center gap-2">
+                            <input
+                                value={r.label}
+                                aria-label={`Role ${i + 1} name`}
+                                disabled={saving}
+                                maxLength={MAX_ROLE_LABEL}
+                                onChange={e => updateRole(r.id, e.target.value)}
+                                className={`${inputClass} flex-1`}
+                            />
+                            <button
+                                type="button"
+                                aria-label={`Remove ${r.label || "role"}`}
+                                disabled={saving || roles.length === 1}
+                                onClick={() => removeRole(r.id)}
+                                className="inline-flex items-center justify-center w-11 h-11 shrink-0 rounded-lg opacity-60 hover:opacity-100 transition-opacity outline-none focus:ring-2 disabled:opacity-30"
+                            >
+                                <X size={16} className="theme-subtext-color" />
+                            </button>
+                        </div>
+                    ))}
+                    {roles.length < MAX_ROLES && (
+                        <button type="button" onClick={addRole} disabled={saving} className={`${ghostButtonClass} self-start inline-flex items-center gap-1`}>
+                            <Plus size={14} />
+                            Add role
+                        </button>
+                    )}
+                </fieldset>
             )}
 
             {hasHub && (
