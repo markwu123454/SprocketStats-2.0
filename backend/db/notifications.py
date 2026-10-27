@@ -52,7 +52,7 @@ async def list_notifications() -> list[asyncpg.Record]:
             return await conn.fetch(
                 """
                 SELECT n.*,
-                       COUNT(r.id)      AS response_count,
+                       COUNT(r.user_id) AS response_count,
                        u.display_name   AS created_by_name,
                        (
                            SELECT COUNT(*) FROM users us

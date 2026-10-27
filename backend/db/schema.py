@@ -2,7 +2,7 @@ import json
 import logging
 from fastapi import HTTPException
 from .connection import DB_NAME, db_connection
-from .events import DEFAULT_CHECKIN_ROLES, HUB_KEY_SQL
+from .events import DEFAULT_CHECKIN_ROLES
 
 # SQL literal for events.checkin_roles' default: every event starts with the
 # standard role list. Built from DEFAULT_CHECKIN_ROLES so the two can't drift
@@ -229,12 +229,11 @@ async def init_db():
                 """)
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS notification_responses (
-                        id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
                         notification_id UUID        NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
                         user_id         TEXT        NOT NULL REFERENCES users(id),
                         response        TEXT[]      NOT NULL DEFAULT '{}',
                         responded_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-                        UNIQUE (notification_id, user_id)
+                        PRIMARY KEY (notification_id, user_id)
                     )
                 """)
                 await conn.execute(
@@ -345,25 +344,24 @@ async def init_db():
                         hidden_tabs   TEXT[] NOT NULL DEFAULT '{}',
                         description   TEXT,
                         checkin_enabled BOOLEAN NOT NULL DEFAULT true,
-                        checkin_roles JSONB NOT NULL DEFAULT {_DEFAULT_ROLES_SQL}
+                        checkin_roles JSONB NOT NULL DEFAULT {_DEFAULT_ROLES_SQL},
+                        -- Hub page content (see db.comp_events). The roster is
+                        -- event_roster, created by migration 5.
+                        links         JSONB,
+                        itinerary     JSONB,
+                        packing_list  JSONB,
+                        instructions  JSONB,
+                        -- The hub key (see db.events.hub_key_for): the TBA key, or
+                        -- "e<id>" for an event without one.
+                        hub_key       TEXT GENERATED ALWAYS AS (COALESCE(tba_key, 'e' || id::text)) STORED,
+                        CONSTRAINT events_hub_key_key UNIQUE (hub_key)
                     )
                 """.replace("{_DEFAULT_ROLES_SQL}", _DEFAULT_ROLES_SQL))
-                await conn.execute("""
-                    CREATE TABLE IF NOT EXISTS comp_events (
-                        event_key    TEXT PRIMARY KEY,
-                        event_name   TEXT NOT NULL,
-                        links        JSONB,
-                        itinerary    JSONB,
-                        packing_list JSONB,
-                        instructions JSONB,
-                        roster       JSONB
-                    )
-                """)
                 # Single-row settings table: `id` can only ever be true.
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS app_config (
                         id                BOOLEAN PRIMARY KEY DEFAULT true CHECK (id),
-                        prefetch_event_id TEXT    REFERENCES comp_events(event_key) ON DELETE SET NULL
+                        prefetch_event_id TEXT    REFERENCES events(hub_key) ON DELETE SET NULL ON UPDATE CASCADE
                     )
                 """)
                 await conn.execute(
@@ -385,15 +383,16 @@ async def init_db():
                         created_by  TEXT        NOT NULL REFERENCES users(id),
                         finished_by TEXT        REFERENCES users(id) ON DELETE SET NULL,
                         reviewed_by TEXT        REFERENCES users(id) ON DELETE SET NULL,
-                        event_key   TEXT        REFERENCES comp_events(event_key) ON DELETE SET NULL,
+                        event_key   TEXT        REFERENCES events(hub_key) ON DELETE SET NULL ON UPDATE CASCADE,
                         created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
                         updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
                     )
                 """)
-                # tasks_event_key_idx and events_hub_key_idx are created in
+                # tasks_event_key_idx and the event_roster table are created in
                 # run_migrations, not here: on an existing database `tasks`
-                # predates `event_key` (and `events` predates `tba_key`), and
-                # init_db runs before the migrations that add them.
+                # predates `event_key` (and `events` predates `hub_key`, which
+                # event_roster references), and init_db runs before the
+                # migrations that add them.
                 await conn.execute("CREATE INDEX IF NOT EXISTS tasks_assignee_id_idx ON tasks (assignee_id)")
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS task_contributors (
@@ -555,10 +554,10 @@ async def _migration_0002_index_cleanup(conn) -> None:
         "CREATE INDEX IF NOT EXISTS push_delivery_logs_subscription_idx "
         "ON push_delivery_logs (push_subscription_id)"
     )
-    # Must stay the exact expression db.events.HUB_KEY_SQL uses, or the
-    # planner won't match it and hub-key lookups fall back to a full scan.
+    # The hub-key rule as it stood at this migration (queries used the bare
+    # expression then); migration 4 replaces it with the events.hub_key column.
     await conn.execute(
-        f"CREATE INDEX IF NOT EXISTS events_hub_key_idx ON events (({HUB_KEY_SQL}))"
+        "CREATE INDEX IF NOT EXISTS events_hub_key_idx ON events ((COALESCE(tba_key, 'e' || id::text)))"
     )
 
 
@@ -602,6 +601,203 @@ async def _migration_0003_app_config_guard(conn) -> None:
             await conn.execute("ALTER TABLE app_config VALIDATE CONSTRAINT app_config_prefetch_event_id_fkey")
 
 
+async def _repoint_hub_fk(conn, table: str, column: str) -> None:
+    """Point `table.column`'s FK at events(hub_key), replacing one that still
+    targets the old comp_events table. Never rewrites a value: the new FK is
+    added NOT VALID and only validated when nothing dangles."""
+    current = await conn.fetchrow(
+        """
+        SELECT c.conname, c.confrelid = 'events'::regclass AS on_events
+        FROM pg_constraint c
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+        WHERE c.conrelid = $1::regclass AND c.contype = 'f' AND a.attname = $2
+        """,
+        table,
+        column,
+    )
+    if current and current["on_events"]:
+        return
+    if current:
+        await conn.execute(f'ALTER TABLE {table} DROP CONSTRAINT "{current["conname"]}"')
+    name = f"{table}_{column}_fkey"
+    await conn.execute(f"""
+        ALTER TABLE {table} ADD CONSTRAINT {name}
+            FOREIGN KEY ({column}) REFERENCES events(hub_key)
+            ON DELETE SET NULL ON UPDATE CASCADE NOT VALID
+    """)
+    dangling = await conn.fetchval(f"""
+        SELECT count(*) FROM {table} t
+        WHERE t.{column} IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM events e WHERE e.hub_key = t.{column})
+    """)
+    if dangling:
+        logger.warning("%d %s row(s) point at a hub with no event; %s left NOT VALID", dangling, table, name)
+    else:
+        await conn.execute(f"ALTER TABLE {table} VALIDATE CONSTRAINT {name}")
+
+
+async def _migration_0004_merge_hubs_into_events(conn) -> None:
+    """Fold comp_events (hub page content, 1:1 with events by hub key) into
+    events, and point tasks/app_config at events.hub_key.
+
+    Where the two names differ, the hub's event_name wins: it's the one the
+    event page showed. comp_events is renamed to comp_events_legacy, not
+    dropped. A hub with no events row (none on production when this was
+    written) stays only there, with a warning, rather than failing startup.
+    """
+    for column in ("links", "itinerary", "packing_list", "instructions", "roster"):
+        await conn.execute(f"ALTER TABLE events ADD COLUMN IF NOT EXISTS {column} JSONB")
+    await conn.execute(
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS hub_key TEXT "
+        "GENERATED ALWAYS AS (COALESCE(tba_key, 'e' || id::text)) STORED"
+    )
+    has_unique = await conn.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'events'::regclass AND conname = 'events_hub_key_key')"
+    )
+    if not has_unique:
+        await conn.execute("ALTER TABLE events ADD CONSTRAINT events_hub_key_key UNIQUE (hub_key)")
+    # The unique constraint's index serves hub-key lookups now.
+    await conn.execute("DROP INDEX IF EXISTS events_hub_key_idx")
+
+    has_comp_events = await conn.fetchval("SELECT to_regclass('public.comp_events') IS NOT NULL")
+    if has_comp_events:
+        await conn.execute("""
+            UPDATE events e SET
+                name         = ce.event_name,
+                links        = ce.links,
+                itinerary    = ce.itinerary,
+                packing_list = ce.packing_list,
+                instructions = ce.instructions,
+                roster       = ce.roster
+            FROM comp_events ce
+            WHERE ce.event_key = e.hub_key
+        """)
+        orphans = await conn.fetch("""
+            SELECT event_key FROM comp_events ce
+            WHERE NOT EXISTS (SELECT 1 FROM events e WHERE e.hub_key = ce.event_key)
+        """)
+        if orphans:
+            logger.warning(
+                "Hubs with no event, kept only in comp_events_legacy: %s",
+                ", ".join(r["event_key"] for r in orphans),
+            )
+
+    await _repoint_hub_fk(conn, "tasks", "event_key")
+    await _repoint_hub_fk(conn, "app_config", "prefetch_event_id")
+
+    if has_comp_events:
+        await conn.execute("ALTER TABLE comp_events RENAME TO comp_events_legacy")
+
+
+async def _migration_0005_event_roster_table(conn) -> None:
+    """Move each event's roster out of the events.roster JSONB array into
+    event_roster, one row per entry, keeping the array's order.
+
+    events.roster is renamed to roster_legacy, not dropped, so nothing is
+    lost: an entry that isn't an object, or a later entry for a user already
+    on the same roster (none on production when this was written), stays
+    only there, with a warning. The user_id FK is added NOT VALID and only
+    validated when every id is a known user.
+    """
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS event_roster (
+            id           UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+            event_key    TEXT    NOT NULL REFERENCES events(hub_key) ON DELETE CASCADE ON UPDATE CASCADE,
+            -- Null for a guest added by hand (e.g. a chaperone with no account).
+            user_id      TEXT,
+            -- The name at check-in. Responses show the user's live
+            -- display_name and fall back to this (always, for a guest).
+            display_name TEXT    NOT NULL,
+            -- Null only on a dismissal.
+            role         TEXT,
+            phone        TEXT,
+            days         TEXT[],
+            -- True marks a dismissed check-in prompt, not a check-in.
+            dismissed    BOOLEAN NOT NULL DEFAULT false,
+            -- Roster order: an event's entries are listed by this.
+            position     BIGINT  GENERATED BY DEFAULT AS IDENTITY
+        )
+    """)
+    # One entry per member of an event (guests aside).
+    await conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS event_roster_member_idx "
+        "ON event_roster (event_key, user_id) WHERE user_id IS NOT NULL"
+    )
+    await conn.execute(
+        "CREATE INDEX IF NOT EXISTS event_roster_event_idx ON event_roster (event_key, position)"
+    )
+
+    has_roster = await conn.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'events'::regclass "
+        "AND attname = 'roster' AND NOT attisdropped)"
+    )
+    if has_roster:
+        entries = """
+            FROM events e,
+                 jsonb_array_elements(CASE WHEN jsonb_typeof(e.roster) = 'array' THEN e.roster ELSE '[]' END)
+                     WITH ORDINALITY AS x(entry, ord)
+        """
+        await conn.execute(f"""
+            INSERT INTO event_roster (event_key, user_id, display_name, role, phone, days, dismissed)
+            SELECT e.hub_key,
+                   x.entry->>'user_id',
+                   COALESCE(x.entry->>'display_name', ''),
+                   x.entry->>'role',
+                   x.entry->>'phone',
+                   CASE WHEN jsonb_typeof(x.entry->'days') = 'array'
+                        THEN ARRAY(SELECT jsonb_array_elements_text(x.entry->'days')) END,
+                   COALESCE((x.entry->>'dismissed')::boolean, false)
+            {entries}
+            WHERE jsonb_typeof(x.entry) = 'object'
+            ORDER BY e.id, x.ord
+            ON CONFLICT (event_key, user_id) WHERE user_id IS NOT NULL DO NOTHING
+        """)
+        total = await conn.fetchval(f"SELECT count(*) {entries}")
+        moved = await conn.fetchval("SELECT count(*) FROM event_roster")
+        if moved < total:
+            logger.warning("%d roster entries kept only in events.roster_legacy", total - moved)
+        await conn.execute("ALTER TABLE events RENAME COLUMN roster TO roster_legacy")
+
+    has_user_fk = await conn.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'event_roster'::regclass "
+        "AND conname = 'event_roster_user_id_fkey')"
+    )
+    if not has_user_fk:
+        await conn.execute("""
+            ALTER TABLE event_roster ADD CONSTRAINT event_roster_user_id_fkey
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL NOT VALID
+        """)
+        unknown = await conn.fetchval("""
+            SELECT count(*) FROM event_roster r
+            WHERE r.user_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = r.user_id)
+        """)
+        if unknown:
+            logger.warning("%d roster entries name an unknown user; event_roster_user_id_fkey left NOT VALID", unknown)
+        else:
+            await conn.execute("ALTER TABLE event_roster VALIDATE CONSTRAINT event_roster_user_id_fkey")
+
+
+async def _migration_0006_notification_responses_pk(conn) -> None:
+    """Make (notification_id, user_id) notification_responses' primary key,
+    in place of the surrogate `id` nothing ever read. The pair was already
+    UNIQUE, so no row changes; the only data dropped is the id UUIDs."""
+    has_id = await conn.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'notification_responses'::regclass "
+        "AND attname = 'id' AND NOT attisdropped)"
+    )
+    if has_id:
+        # Drops the old primary key along with the column.
+        await conn.execute("ALTER TABLE notification_responses DROP COLUMN id")
+        await conn.execute(
+            "ALTER TABLE notification_responses DROP CONSTRAINT IF EXISTS "
+            "notification_responses_notification_id_user_id_key"
+        )
+        await conn.execute(
+            "ALTER TABLE notification_responses ADD CONSTRAINT notification_responses_pkey "
+            "PRIMARY KEY (notification_id, user_id)"
+        )
+
+
 # Append-only: never edit or renumber a migration that has shipped. Each must
 # be idempotent against init_db's current schema, because a fresh database
 # gets that schema first and then runs every migration.
@@ -609,6 +805,9 @@ _MIGRATIONS = [
     (1, _migration_0001_legacy),
     (2, _migration_0002_index_cleanup),
     (3, _migration_0003_app_config_guard),
+    (4, _migration_0004_merge_hubs_into_events),
+    (5, _migration_0005_event_roster_table),
+    (6, _migration_0006_notification_responses_pk),
 ]
 
 
