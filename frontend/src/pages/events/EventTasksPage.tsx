@@ -12,6 +12,7 @@ import {
 } from "@/lib/tasksApi"
 import { DANGER_RED, PRIORITY_COLOR, formatDue, priorityChoices, tintColor } from "@/lib/taskFormat"
 import { saveErrorMessage } from "@/lib/eventContent"
+import type { TasksPageState } from "@/lib/taskFormat"
 
 const cardStyle = { background: "var(--theme-bg)", borderColor: "var(--theme-border)" }
 const addButtonClass = "inline-flex items-center gap-1.5 rounded-lg border theme-border theme-bg theme-text-contrast text-sm font-semibold px-3 py-2 min-h-11 hover:opacity-90 transition-opacity outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)] disabled:opacity-40"
@@ -273,12 +274,18 @@ function TaskRow({ task, onUnlink, disabled }: { task: Task; onUnlink?: () => vo
                 title={PRIORITY_LABEL[task.priority]}
                 style={{ background: PRIORITY_COLOR[task.priority] }}
             />
-            <div className="flex-1 min-w-0">
+            {/* Opens the task on the board -- all subteams and people, so
+                filters can't hide it -- which scrolls to and highlights it. */}
+            <Link
+                to="/tasks"
+                state={{ bucket: "all", who: "everyone", taskId: task.id } satisfies TasksPageState}
+                className="flex-1 min-w-0 rounded-md -mx-1.5 px-1.5 py-1 hover:bg-(--ag-grid-hover-bg) outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
+            >
                 <p className="text-sm font-medium theme-text truncate" style={{ textDecoration: done ? "line-through" : "none" }}>
                     {task.title}
                 </p>
                 <p className="text-xs theme-subtext-color truncate">{meta}</p>
-            </div>
+            </Link>
             {onUnlink && (
                 <button
                     type="button"

@@ -7,8 +7,11 @@ import { useOnboardedUser } from "@/contexts/authContext"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { can } from "@/lib/permissions"
 import { updateRosterMember, type RosterMember } from "@/lib/eventApi"
-import { eventDayLabel, eventDays, findByHubKey, unionRosterDays, type EventEntry } from "@/lib/events"
-import { ASSIGNABLE_ROLES, ROSTER_ROLES, rosterRoleLabel, type AssignableRole, type RosterRole } from "@/lib/rosterRoles"
+import {
+    checkInRolesOf, defaultCheckInRole, eventDayLabel, eventDays, findByHubKey, unionRosterDays,
+    type CheckinRole, type EventEntry,
+} from "@/lib/events"
+import { ROSTER_ROLES, rosterRoleLabel, type RosterRole } from "@/lib/rosterRoles"
 import { DANGER_RED, tintColor } from "@/lib/taskFormat"
 import Dropdown from "@/components/ui/Dropdown"
 import DayChips from "@/components/events/DayChips"
@@ -16,6 +19,20 @@ import DayChips from "@/components/events/DayChips"
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
 const ROLE_ORDER = ROSTER_ROLES.map(r => r.value)
+
+// The event's own roles first, in the order an editor listed them; anything
+// else (older chaperone/captain/lead entries, a role since removed) after,
+// in the legacy order.
+function eventRoleSort(eventRoles: CheckinRole[]) {
+    return (a: string, b: string): number => {
+        const ai = eventRoles.findIndex(r => r.key === a)
+        const bi = eventRoles.findIndex(r => r.key === b)
+        if (ai !== -1 && bi !== -1) return ai - bi
+        if (ai !== -1) return -1
+        if (bi !== -1) return 1
+        return roleSort(a, b)
+    }
+}
 
 function roleSort(a: string, b: string): number {
     const ai = ROLE_ORDER.indexOf(a as RosterRole)
@@ -133,8 +150,8 @@ function sameDaySet(a: string[], b: string[]): boolean {
 interface EditingState {
     userId: string
     name: string
-    role: AssignableRole
-    initialRole: AssignableRole
+    role: string
+    initialRole: string
     days: string[]
     initialDays: string[]
 }
@@ -162,6 +179,7 @@ export default function RosterPage() {
         () => (scheduleEntry ? eventDays(scheduleEntry) : unionRosterDays(info?.roster ?? [])),
         [scheduleEntry, info?.roster]
     )
+    const eventRoles = useMemo(() => checkInRolesOf(scheduleEntry), [scheduleEntry])
 
     // Stable across renders (no deps) so the memoized columnDefs below never
     // has to recompute just because this component re-rendered.
@@ -171,8 +189,8 @@ export default function RosterPage() {
         // The role picker only offers the four assignable roles. An older
         // chaperone/captain/lead entry's current role isn't one of them --
         // preselect "attending" rather than an empty/invalid value.
-        const isAssignable = ASSIGNABLE_ROLES.some(r => r.value === member.role)
-        const role: AssignableRole = isAssignable ? (member.role as AssignableRole) : "attending"
+        const isAssignable = eventRoles.some(r => r.key === member.role)
+        const role = isAssignable ? member.role : defaultCheckInRole(scheduleEntry)
         // A null `days` (hand-added / older entry) starts with none
         // selected -- unlike the check-in form, this reflects what's
         // actually on file rather than assuming full attendance.
@@ -180,7 +198,7 @@ export default function RosterPage() {
         setEditing({ userId: member.user_id, name: member.display_name, role, initialRole: role, days: initialDays, initialDays })
         setError(null)
         setDaysError(null)
-    }, [canEdit, user.id])
+    }, [canEdit, user.id, eventRoles, scheduleEntry])
 
     function closeEditor() {
         setEditing(null)
@@ -200,7 +218,7 @@ export default function RosterPage() {
             return
         }
 
-        const patch: { role?: AssignableRole; days?: string[] } = {}
+        const patch: { role?: string; days?: string[] } = {}
         if (canEdit && editing.role !== editing.initialRole) patch.role = editing.role
         if (!sameDaySet(editing.days, editing.initialDays)) patch.days = [...editing.days].sort()
 
@@ -266,8 +284,8 @@ export default function RosterPage() {
                 sortable: true,
                 filter: true,
                 minWidth: 110,
-                valueFormatter: p => rosterRoleLabel(p.value ?? ""),
-                comparator: (a, b) => roleSort(a, b),
+                valueFormatter: p => eventRoles.find(r => r.key === p.value)?.label ?? rosterRoleLabel(p.value ?? ""),
+                comparator: eventRoleSort(eventRoles),
             },
             ...dayCols,
             {
@@ -295,7 +313,7 @@ export default function RosterPage() {
                 cellRendererParams: { onEdit: openEditor, canEdit, currentUserId: user.id },
             },
         ]
-    }, [eventDayList, canEdit, openEditor, user.id])
+    }, [eventDayList, canEdit, openEditor, user.id, eventRoles])
 
     const panelTitle = editing ? (canEdit ? `Edit ${editing.name}` : "Your days") : ""
 
@@ -327,8 +345,8 @@ export default function RosterPage() {
                             <label id="roster-role-label" className="text-sm font-semibold theme-text">Role</label>
                             <Dropdown
                                 value={editing.role}
-                                options={ASSIGNABLE_ROLES}
-                                onChange={v => setEditing(e => e ? { ...e, role: v as AssignableRole } : e)}
+                                options={eventRoles.map(r => ({ value: r.key, label: r.label }))}
+                                onChange={v => setEditing(e => e ? { ...e, role: v } : e)}
                                 disabled={saving}
                                 triggerClassName="rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-border theme-text"
                             />

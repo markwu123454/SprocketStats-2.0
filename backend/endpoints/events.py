@@ -14,7 +14,7 @@ from db.comp_events import (
     CompEventContentPatch,
     RosterUpdate,
 )
-from db.events import EventScheduleUpdate, check_schedule_order, is_tba_key
+from db.events import EventScheduleUpdate, check_schedule_order, is_tba_key, normalize_checkin_roles, role_keys
 
 router = APIRouter()
 
@@ -88,6 +88,11 @@ async def patch_schedule(
     fields = body.model_dump(exclude_unset=True)
     if not fields:
         raise HTTPException(status_code=400, detail="No fields to update")
+    if "checkin_roles" in fields:
+        try:
+            fields["checkin_roles"] = normalize_checkin_roles(body.checkin_roles)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
 
     existing = await db.get_event_by_id(event_id)
     if existing is None:
@@ -116,14 +121,47 @@ async def put_content(
     return await db.upsert_comp_event(event_key, body)
 
 
+async def _event_role_keys(event_key: str) -> list[str]:
+    """This event's check-in role keys (the defaults with no schedule row)."""
+    schedule = await db.get_event_schedule(event_key)
+    return role_keys((schedule or {}).get("checkin_roles"))
+
+
+def _require_event_role(role: str, keys: list[str]) -> None:
+    if role not in keys:
+        raise HTTPException(status_code=422, detail="Pick one of this event's check-in roles")
+
+
 @router.get("/{event_key}/check-in")
 async def get_check_in_status(event_key: str, user: dict = Depends(require_active)):
-    """Whether the calling user is on `event_key`'s roster."""
+    """Whether the calling user is on `event_key`'s roster, and whether
+    they've dismissed its check-in prompt."""
     await db.ensure_comp_event(event_key)
     on_roster = await db.is_on_roster(event_key, str(user["sub"]))
     if on_roster is None:
         raise HTTPException(status_code=404, detail="Event not found")
-    return {"checked_in": on_roster}
+    dismissed = await db.is_check_in_dismissed(event_key, str(user["sub"]))
+    return {"checked_in": on_roster, "dismissed": dismissed}
+
+
+async def _set_dismissed(event_key: str, user: dict, dismissed: bool) -> dict:
+    await db.ensure_comp_event(event_key)
+    if await db.get_comp_event(event_key) is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    await db.set_check_in_dismissed(event_key, str(user["sub"]), dismissed)
+    return {"dismissed": dismissed}
+
+
+@router.post("/{event_key}/check-in/dismiss")
+async def dismiss_check_in(event_key: str, user: dict = Depends(require_active)):
+    """Hide `event_key`'s check-in prompt for the caller. Idempotent."""
+    return await _set_dismissed(event_key, user, True)
+
+
+@router.delete("/{event_key}/check-in/dismiss")
+async def undismiss_check_in(event_key: str, user: dict = Depends(require_active)):
+    """Bring back a dismissed check-in prompt. Idempotent."""
+    return await _set_dismissed(event_key, user, False)
 
 
 @router.post("/{event_key}/check-in")
@@ -133,14 +171,20 @@ async def check_in(
     user: dict = Depends(require_active),
 ):
     """Self check-in: append the caller to `event_key`'s roster, with their
-    chosen role (one of CheckInRequest's self-selectable roles; defaults to
-    "attending" with no body or no `role`), an optional phone number, and the
-    days they expect to attend (omitted/null -> not given yet). Idempotent --
-    calling it again just confirms the existing entry (role, phone, and days
-    are NOT overwritten) rather than duplicating or changing it."""
+    chosen role (one of the event's own check-in roles; with no body or no
+    `role`, "attending" if the event has it, else its first role), an
+    optional phone number, and the days they expect to attend (omitted/null
+    -> not given yet). Idempotent -- calling it again just confirms the
+    existing entry (role, phone, and days are NOT overwritten) rather than
+    duplicating or changing it."""
     await _enforce_check_in_open(event_key)
     await db.ensure_comp_event(event_key)
     checkin = body or CheckInRequest()
+    keys = await _event_role_keys(event_key)
+    if "role" in checkin.model_fields_set:
+        _require_event_role(checkin.role, keys)
+    elif checkin.role not in keys:
+        checkin.role = keys[0]
     if checkin.days is not None:
         await _enforce_days_in_range(event_key, checkin.days)
     member = {
@@ -172,9 +216,9 @@ async def patch_roster_member(
     one required). Two independent authorizations, both enforced before
     anything is written:
 
-    - `role` (one of ASSIGNABLE_ROLES; can't move a member to/off a role
-      outside it, e.g. "chaperone"/"captain"/"lead") requires the caller's
-      role to carry `events.edit`.
+    - `role` (one of the event's own check-in roles; can't move a member to
+      a role outside them, e.g. "chaperone"/"captain"/"lead") requires the
+      caller's role to carry `events.edit`.
     - `days` may be changed by the member themselves (`user_id` is their own
       `sub`), or by anyone with `events.edit`.
 
@@ -191,6 +235,8 @@ async def patch_roster_member(
     if "days" in fields and user_id != str(user["sub"]) and not has_event_edit:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
+    if "role" in fields:
+        _require_event_role(fields["role"], await _event_role_keys(event_key))
     if "days" in fields:
         await _enforce_days_in_range(event_key, fields["days"])
 

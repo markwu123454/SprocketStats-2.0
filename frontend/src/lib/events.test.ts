@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { findByHubKey, formatCountdown, hasEventPage, hiddenTabsOf, isCheckInOpen, isHubOpen, pickActiveEvent, resolveEvent } from "./events"
+import { checkInRolesOf, defaultCheckInRole, findByHubKey, formatCountdown, hasEventPage, hiddenTabsOf, isCheckInOpen, isHubOpen, pickActiveEvent, resolveEvent } from "./events"
 
 const DAY = 24 * 60 * 60 * 1000
 const now = new Date("2026-10-21T12:00")
@@ -135,5 +135,20 @@ describe("check-in turned off", () => {
         const early = { name: "Soon", start: "2026-11-20", checkinOpens: "2026-10-01", checkinEnabled: false, location: "", type: "" }
         expect(pickActiveEvent([happening], now)?.name).toBe("Now")
         expect(pickActiveEvent([early], now)).toBeNull()
+    })
+})
+
+describe("check-in roles", () => {
+    it("falls back to the default roles, preselecting Attending", () => {
+        const base = { name: "A", start: "2026-11-01", location: "", type: "" }
+        expect(checkInRolesOf(base).map((r) => r.key)).toEqual(["attending", "drive_team", "pit_crew", "mentor"])
+        expect(defaultCheckInRole(base)).toBe("attending")
+    })
+
+    it("uses an event's own roles, preselecting the first when there's no Attending", () => {
+        const custom = { name: "A", start: "2026-11-01", location: "", type: "",
+            checkinRoles: [{ key: "volunteer", label: "Volunteer" }, { key: "booth", label: "Booth" }] }
+        expect(checkInRolesOf(custom).map((r) => r.label)).toEqual(["Volunteer", "Booth"])
+        expect(defaultCheckInRole(custom)).toBe("volunteer")
     })
 })

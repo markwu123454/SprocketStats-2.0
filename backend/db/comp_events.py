@@ -4,7 +4,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, field_validator, model_validator
 
 from .connection import DB_NAME, db_connection
-from .events import HUB_KEY_SQL
+from .events import HUB_KEY_SQL, ROLE_KEY_RE
 
 
 class Links(BaseModel):
@@ -46,15 +46,13 @@ class RosterMember(BaseModel):
 
 # ── Roster role set ─────────────────────────────────────────────────────────
 #
-# The only roles a user may pick for themselves at check-in, or a privileged
-# editor may assign via the roster-role PATCH -- both use the same four.
-# Defined once here so CheckInRequest/RosterUpdate can't drift from each
-# other. A roster entry can also hold a role outside this set (e.g.
-# "chaperone", "captain", "lead" -- see ROLE_ORDER in
-# frontend/src/pages/events/RosterPage.tsx), but only via hand-seeding
-# (temp_seed.py) or the PUT /content path; neither API route here can set or
-# change a role outside ASSIGNABLE_ROLES, and stored data is never validated
-# on read.
+# The roles a user may pick at check-in, or a privileged editor may assign
+# via the roster-role PATCH, are each event's own `events.checkin_roles`
+# (see db.events). These four are the keys every event starts with, and the
+# fallback for an event with no schedule row. A roster entry can also hold a
+# role outside its event's set (e.g. "chaperone", "captain", "lead", or a
+# role later removed from the event), but neither API route here can set
+# one, and stored data is never validated on read.
 ASSIGNABLE_ROLES = ["drive_team", "pit_crew", "attending", "mentor"]
 
 # Phone numbers are free-text (no fixed country format), so validation is
@@ -102,10 +100,20 @@ def _validate_days(v: list[str] | None, *, allow_none: bool) -> list[str] | None
     return sorted(set(cleaned))
 
 
+def _validate_role_key(v: str) -> str:
+    if not ROLE_KEY_RE.fullmatch(v):
+        raise ValueError("role must be a role key")
+    return v
+
+
 class CheckInRequest(BaseModel):
     """Optional body for `POST /{event_key}/check-in`. Omitting the body, or
-    omitting `role`, means `"attending"`; omitting/blanking `phone` means
-    `None`; omitting/nulling `days` means `None` (no days chosen yet)."""
+    omitting `role`, means `"attending"` (or the event's first role when it
+    has no "attending"); omitting/blanking `phone` means `None`;
+    omitting/nulling `days` means `None` (no days chosen yet).
+
+    `role` is only shape-checked here -- whether it's one of *this event's*
+    check-in roles needs a DB lookup, so the endpoint checks that."""
 
     role: str = "attending"
     phone: str | None = None
@@ -114,9 +122,7 @@ class CheckInRequest(BaseModel):
     @field_validator("role")
     @classmethod
     def _role_valid(cls, v: str) -> str:
-        if v not in ASSIGNABLE_ROLES:
-            raise ValueError(f"role must be one of {ASSIGNABLE_ROLES}")
-        return v
+        return _validate_role_key(v)
 
     @field_validator("phone")
     @classmethod
@@ -155,10 +161,11 @@ class RosterUpdate(BaseModel):
     def _role_valid(cls, v: str | None) -> str:
         # Only runs when `role` is actually sent (omitted -> default `None`
         # skips validation), so an explicit `null` is the one way to reach
-        # here with `v is None` -- correctly rejected by the membership test.
-        if v not in ASSIGNABLE_ROLES:
-            raise ValueError(f"role must be one of {ASSIGNABLE_ROLES}")
-        return v
+        # here with `v is None` -- rejected. Membership in the event's own
+        # role list is checked by the endpoint, as for CheckInRequest.
+        if v is None:
+            raise ValueError("role must not be null")
+        return _validate_role_key(v)
 
     @field_validator("days")
     @classmethod
@@ -490,7 +497,8 @@ async def update_roster_member(event_key: str, user_id: str, fields: dict) -> li
 
 
 async def get_event_schedule(event_key: str) -> dict | None:
-    """Return `{"start_time", "end_time", "checkin_opens", "checkin_enabled"}` for the `events`
+    """Return `{"start_time", "end_time", "checkin_opens", "checkin_enabled",
+    "checkin_roles"}` for the `events`
     row whose hub key is `event_key` (see `db.events.HUB_KEY_SQL`), or `None` if there's
     no such row.
 
@@ -504,7 +512,8 @@ async def get_event_schedule(event_key: str) -> dict | None:
     """
     async with db_connection(DB_NAME) as conn:
         row = await conn.fetchrow(
-            f"SELECT start_time, end_time, checkin_opens, checkin_enabled FROM events WHERE {HUB_KEY_SQL} = $1",
+            f"SELECT start_time, end_time, checkin_opens, checkin_enabled, checkin_roles "
+            f"FROM events WHERE {HUB_KEY_SQL} = $1",
             event_key,
         )
         return dict(row) if row else None
@@ -548,3 +557,29 @@ async def update_comp_event_content(event_key: str, fields: dict) -> dict | None
     if row is None:
         return None
     return await get_comp_event(event_key)
+
+
+# ── Check-in dismissals ─────────────────────────────────────────────────
+
+async def is_check_in_dismissed(event_key: str, user_id: str) -> bool:
+    async with db_connection(DB_NAME) as conn:
+        return await conn.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM checkin_dismissals WHERE event_key = $1 AND user_id = $2)",
+            event_key, user_id,
+        )
+
+
+async def set_check_in_dismissed(event_key: str, user_id: str, dismissed: bool) -> None:
+    """Record (or clear) that `user_id` dismissed `event_key`'s check-in
+    prompt. Idempotent either way. The event's hub row must already exist."""
+    async with db_connection(DB_NAME) as conn:
+        if dismissed:
+            await conn.execute(
+                "INSERT INTO checkin_dismissals (event_key, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                event_key, user_id,
+            )
+        else:
+            await conn.execute(
+                "DELETE FROM checkin_dismissals WHERE event_key = $1 AND user_id = $2",
+                event_key, user_id,
+            )
