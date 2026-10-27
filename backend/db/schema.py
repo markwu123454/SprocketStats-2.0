@@ -229,12 +229,11 @@ async def init_db():
                 """)
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS notification_responses (
-                        id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
                         notification_id UUID        NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
                         user_id         TEXT        NOT NULL REFERENCES users(id),
                         response        TEXT[]      NOT NULL DEFAULT '{}',
                         responded_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-                        UNIQUE (notification_id, user_id)
+                        PRIMARY KEY (notification_id, user_id)
                     )
                 """)
                 await conn.execute(
@@ -778,6 +777,27 @@ async def _migration_0005_event_roster_table(conn) -> None:
             await conn.execute("ALTER TABLE event_roster VALIDATE CONSTRAINT event_roster_user_id_fkey")
 
 
+async def _migration_0006_notification_responses_pk(conn) -> None:
+    """Make (notification_id, user_id) notification_responses' primary key,
+    in place of the surrogate `id` nothing ever read. The pair was already
+    UNIQUE, so no row changes; the only data dropped is the id UUIDs."""
+    has_id = await conn.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'notification_responses'::regclass "
+        "AND attname = 'id' AND NOT attisdropped)"
+    )
+    if has_id:
+        # Drops the old primary key along with the column.
+        await conn.execute("ALTER TABLE notification_responses DROP COLUMN id")
+        await conn.execute(
+            "ALTER TABLE notification_responses DROP CONSTRAINT IF EXISTS "
+            "notification_responses_notification_id_user_id_key"
+        )
+        await conn.execute(
+            "ALTER TABLE notification_responses ADD CONSTRAINT notification_responses_pkey "
+            "PRIMARY KEY (notification_id, user_id)"
+        )
+
+
 # Append-only: never edit or renumber a migration that has shipped. Each must
 # be idempotent against init_db's current schema, because a fresh database
 # gets that schema first and then runs every migration.
@@ -787,6 +807,7 @@ _MIGRATIONS = [
     (3, _migration_0003_app_config_guard),
     (4, _migration_0004_merge_hubs_into_events),
     (5, _migration_0005_event_roster_table),
+    (6, _migration_0006_notification_responses_pk),
 ]
 
 
