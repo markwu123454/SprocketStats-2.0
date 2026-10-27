@@ -123,16 +123,23 @@ async def main():
                 EVENT_KEY)
         print(f"✓ events list row upserted: {EVENT_KEY}")
 
-        # Hub content lives on the events row
+        # Hub content lives on the events row, its roster in event_roster
         await conn.execute("""
-            UPDATE events SET name=$2, links=$3, itinerary=$4, packing_list=$5, instructions=$6, roster=$7
+            UPDATE events SET name=$2, links=$3, itinerary=$4, packing_list=$5, instructions=$6
             WHERE tba_key=$1
         """,
             COMP_EVENT["event_key"], COMP_EVENT["event_name"],
             COMP_EVENT["links"], COMP_EVENT["itinerary"],
             COMP_EVENT["packing_list"], COMP_EVENT["instructions"],
-            COMP_EVENT["roster"],
         )
+        await conn.execute("DELETE FROM event_roster WHERE event_key = $1", EVENT_KEY)
+        await conn.executemany("""
+            INSERT INTO event_roster (event_key, user_id, display_name, role, phone)
+            VALUES ($1, $2, $3, $4, $5)
+        """, [
+            (EVENT_KEY, m["user_id"], m["display_name"], m["role"], m["phone"])
+            for m in json.loads(COMP_EVENT["roster"])
+        ])
         print(f"✓ hub content set: {EVENT_KEY}")
 
         # Set prefetch

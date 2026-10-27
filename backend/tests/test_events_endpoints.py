@@ -1179,3 +1179,42 @@ def test_check_in_reads_schedule_once(app, store, monkeypatch):
     resp = _as(app, MEMBER).post("/events/2026test/check-in", json={"role": "attending", "days": ["2099-03-20"]})
     assert resp.status_code == 200
     assert calls == ["2026test"]
+
+
+def test_put_content_422_when_roster_lists_a_user_twice(app, store, monkeypatch):
+    async def _noop_assert_active(sub):
+        return None
+
+    monkeypatch.setattr(account_state, "assert_active", _noop_assert_active)
+    store.add_event("2026test")
+    fastapi_app = FastAPI()
+    fastapi_app.include_router(events_router, prefix="/events")
+    fastapi_app.dependency_overrides[get_current_user] = lambda: CAPTAIN
+    entry = {"user_id": "u1", "display_name": "One", "role": "attending", "phone": None, "days": None}
+    guest = {"user_id": None, "display_name": "Chaperone", "role": "mentor", "phone": None, "days": None}
+    client = TestClient(fastapi_app)
+    resp = client.put("/events/2026test/content", json={"event_name": "Test Event", "roster": [entry, entry]})
+    assert resp.status_code == 422
+    # Guests have no user_id, so any number of them is fine.
+    resp = client.put("/events/2026test/content", json={"event_name": "Test Event", "roster": [entry, guest, guest]})
+    assert resp.status_code == 200
+
+
+def test_put_content_422_for_unknown_roster_user(app, store, monkeypatch):
+    async def _noop_assert_active(sub):
+        return None
+
+    async def _unknown_user(event_key, content):
+        raise db.UnknownRosterUser()
+
+    monkeypatch.setattr(account_state, "assert_active", _noop_assert_active)
+    monkeypatch.setattr(db, "replace_comp_event", _unknown_user)
+    store.add_event("2026test")
+    fastapi_app = FastAPI()
+    fastapi_app.include_router(events_router, prefix="/events")
+    fastapi_app.dependency_overrides[get_current_user] = lambda: CAPTAIN
+    resp = TestClient(fastapi_app).put("/events/2026test/content", json={
+        "event_name": "Test Event",
+        "roster": [{"user_id": "nobody", "display_name": "N", "role": "attending", "phone": None, "days": None}],
+    })
+    assert resp.status_code == 422
