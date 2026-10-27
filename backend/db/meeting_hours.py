@@ -78,21 +78,20 @@ async def create_meeting_hours(
 async def create_meeting_hours_batch(
     created_by: str, slots: list[tuple[datetime, datetime]], meeting_purpose: str | None
 ) -> list[asyncpg.Record]:
-    """Insert every occurrence of a recurring meeting atomically."""
+    """Insert every occurrence of a recurring meeting in one statement (so,
+    atomically), in `slots` order."""
     async with db_connection(DB_NAME) as conn:
         try:
-            async with conn.transaction():
-                return [
-                    await conn.fetchrow(
-                        """
-                        INSERT INTO meeting_hours (created_by, start_time, end_time, meeting_purpose)
-                        VALUES ($1, $2, $3, $4)
-                        RETURNING *
-                        """,
-                        created_by, start, end, meeting_purpose,
-                    )
-                    for start, end in slots
-                ]
+            return await conn.fetch(
+                """
+                INSERT INTO meeting_hours (created_by, start_time, end_time, meeting_purpose)
+                SELECT $1, s.start_time, s.end_time, $4
+                FROM unnest($2::timestamptz[], $3::timestamptz[]) WITH ORDINALITY AS s(start_time, end_time, ord)
+                ORDER BY s.ord
+                RETURNING *
+                """,
+                created_by, [start for start, _ in slots], [end for _, end in slots], meeting_purpose,
+            )
         except Exception as e:
             logger.error("create_meeting_hours_batch failed: %s", e)
             raise HTTPException(status_code=500, detail="Failed to create meetings")

@@ -224,6 +224,8 @@ def check_schedule_order(start: str | None, end: str | None, checkin_opens: str 
 # key for competitions, or "e<id>" for events without one (outreach etc.).
 # TBA keys always start with a 4-digit year, so the two never collide.
 # HUB_KEY_SQL is the same rule as a SQL expression over the `events` table.
+# events_hub_key_idx (db/schema.py) indexes this exact expression -- change
+# one without the other and hub-key lookups fall back to a full table scan.
 HUB_KEY_SQL = "COALESCE(tba_key, 'e' || id::text)"
 _TBA_KEY_RE = re.compile(r"^\d{4}[a-z0-9]+$")
 
@@ -249,11 +251,11 @@ _SCHEDULE_COLUMNS = {
     "checkin_roles": "checkin_roles",
 }
 
-_SELECT_EVENT = """
-    SELECT id, name, start_time, end_time, location, event_type, url, tba_key,
-           checkin_opens, hidden_tabs, description, checkin_enabled, checkin_roles
-    FROM events
+_EVENT_COLUMNS = """
+    id, name, start_time, end_time, location, event_type, url, tba_key,
+    checkin_opens, hidden_tabs, description, checkin_enabled, checkin_roles
 """
+_SELECT_EVENT = f"SELECT {_EVENT_COLUMNS} FROM events"
 
 
 async def get_events() -> list[dict]:
@@ -293,12 +295,10 @@ async def update_event_schedule(event_id: int, fields: dict) -> dict | None:
         set_clauses.append(f"{_SCHEDULE_COLUMNS[key]} = ${len(params)}")
     params.append(event_id)
 
-    query = f"UPDATE events SET {', '.join(set_clauses)} WHERE id = ${len(params)} RETURNING id"
+    query = f"UPDATE events SET {', '.join(set_clauses)} WHERE id = ${len(params)} RETURNING {_EVENT_COLUMNS}"
     async with db_connection(DB_NAME) as conn:
         row = await conn.fetchrow(query, *params)
-    if row is None:
-        return None
-    return await get_event_by_id(event_id)
+    return _row_to_event(row) if row else None
 
 
 def _row_to_event(r) -> dict:

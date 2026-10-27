@@ -189,25 +189,22 @@ async def update_users(updates: list[dict]) -> None:
     async with db_connection(DB_NAME) as conn:
         try:
             async with conn.transaction():
-                for u in updates:
-                    await conn.execute(
-                        """
-                        UPDATE users
-                        SET name         = $2,
-                            display_name = $3,
-                            role         = $4,
-                            grade        = $5,
-                            team_year    = $6,
-                            approved_by  = CASE WHEN role IS DISTINCT FROM $4 THEN NULL ELSE approved_by END
-                        WHERE id = $1
-                        """,
-                        u["id"],
-                        u.get("name"),
-                        u.get("display_name"),
-                        u.get("role"),
-                        u.get("grade"),
-                        u.get("team_year"),
-                    )
+                await conn.executemany(
+                    """
+                    UPDATE users
+                    SET name         = $2,
+                        display_name = $3,
+                        role         = $4,
+                        grade        = $5,
+                        team_year    = $6,
+                        approved_by  = CASE WHEN role IS DISTINCT FROM $4 THEN NULL ELSE approved_by END
+                    WHERE id = $1
+                    """,
+                    [
+                        (u["id"], u.get("name"), u.get("display_name"), u.get("role"), u.get("grade"), u.get("team_year"))
+                        for u in updates
+                    ],
+                )
         except Exception as e:
             logger.error("update_users failed: %s", e)
             raise HTTPException(status_code=500, detail="Failed to update users")
