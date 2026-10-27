@@ -38,7 +38,7 @@ class FakeStore:
         # mirroring `ORDER BY added_at` in the real query).
         self.contributors: dict[str, list[str]] = {}
         self.notes: dict[str, dict] = {}
-        # event_keys with a hub (comp_events row) a task may link to.
+        # Hub keys of the events a task may link to.
         self.comp_events: set[str] = set()
         # (user_ids, category, title, body) for every push the router fired.
         self.pushes: list[tuple] = []

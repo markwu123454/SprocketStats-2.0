@@ -1,10 +1,11 @@
 import re
 from datetime import date, datetime
 
+import asyncpg
 from pydantic import BaseModel, field_validator, model_validator
 
 from .connection import DB_NAME, db_connection
-from .events import HUB_KEY_SQL, ROLE_KEY_RE
+from .events import ROLE_KEY_RE
 
 
 class Links(BaseModel):
@@ -183,6 +184,11 @@ class RosterMemberNotFound(Exception):
     `user_id` is never addressable this way -- that's intended)."""
 
 
+class UnknownRosterUser(Exception):
+    """Raised by `replace_comp_event` when a roster entry's `user_id` isn't
+    a known user."""
+
+
 class CompEventContent(BaseModel):
     event_name: str
     links: Links | None = None
@@ -191,11 +197,18 @@ class CompEventContent(BaseModel):
     instructions: list[Instruction] | None = None
     roster: list[RosterMember] | None = None
 
+    @model_validator(mode="after")
+    def _one_entry_per_user(self) -> "CompEventContent":
+        user_ids = [m.user_id for m in self.roster or [] if m.user_id is not None]
+        if len(user_ids) != len(set(user_ids)):
+            raise ValueError("roster lists a user more than once")
+        return self
+
 
 # ── Stricter item models for the content-PATCH path ────────────────────────
 #
 # These subclass the item models above rather than tightening them in place,
-# so the existing PUT (`CompEventContent`, `upsert_comp_event`) and the rows it
+# so the existing PUT (`CompEventContent`, `replace_comp_event`) and the rows it
 # already wrote (read back as plain dicts via `get_comp_event`, never through
 # a model) can never be broken by validation added for the PATCH contract.
 
@@ -296,13 +309,40 @@ class CompEventContentPatch(BaseModel):
 _CONTENT_UPDATABLE_COLUMNS = {"itinerary", "packing_list", "instructions"}
 
 
+# An event's roster (event_roster rows) as the list of dicts the API returns,
+# in roster order. A dismissal carries `"dismissed": true`; a check-in has no
+# such key. A member's name is their current display_name, falling back to
+# the one stored at check-in (always, for a guest with no account).
+_ROSTER_JSON = """COALESCE((
+    SELECT jsonb_agg(
+        jsonb_build_object(
+            'user_id', r.user_id,
+            'display_name', COALESCE(u.display_name, r.display_name),
+            'role', r.role,
+            'phone', r.phone,
+            'days', r.days
+        ) || CASE WHEN r.dismissed THEN '{"dismissed": true}'::jsonb ELSE '{}'::jsonb END
+        ORDER BY r.position
+    )
+    FROM event_roster r
+    LEFT JOIN users u ON u.id = r.user_id
+    WHERE r.event_key = e.hub_key
+), '[]'::jsonb)"""
+
+# Every `events` row is a hub. Its content is read in the shape the old
+# comp_events table had, which is what the API returns.
+_HUB_COLUMNS = (
+    "e.hub_key AS event_key, e.name AS event_name, "
+    f"e.links, e.itinerary, e.packing_list, e.instructions, {_ROSTER_JSON} AS roster"
+)
+
+
 async def get_prefetch_event() -> dict | None:
     async with db_connection(DB_NAME) as conn:
-        row = await conn.fetchrow("""
-            SELECT ce.*
+        row = await conn.fetchrow(f"""
+            SELECT {_HUB_COLUMNS}
             FROM app_config ac
-            JOIN comp_events ce ON ce.event_key = ac.prefetch_event_id
-            WHERE ac.prefetch_event_id IS NOT NULL
+            JOIN events e ON e.hub_key = ac.prefetch_event_id
             LIMIT 1
         """)
         return dict(row) if row else None
@@ -314,88 +354,81 @@ async def set_prefetch_event(event_key: str | None) -> None:
 
 
 async def get_comp_event(event_key: str) -> dict | None:
+    """The hub content of the event whose hub key is `event_key`, or `None`
+    if there's no such event."""
     async with db_connection(DB_NAME) as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM comp_events WHERE event_key = $1",
+            f"SELECT {_HUB_COLUMNS} FROM events e WHERE e.hub_key = $1",
             event_key,
         )
         return dict(row) if row else None
 
 
 async def get_comp_event_keys() -> list[str]:
-    """All event_keys with a hub page -- an existing comp_events row, or any
-    scheduled event's hub key (see `db.events.HUB_KEY_SQL`; its row
-    `ensure_comp_event` creates on first use). Bootstrapped so the frontend
-    can tell a real event from a 404 without waiting on a per-event fetch."""
+    """Every event's hub key. Bootstrapped so the frontend can tell a real
+    event from a 404 without waiting on a per-event fetch."""
     async with db_connection(DB_NAME) as conn:
-        rows = await conn.fetch(
-            f"""
-            SELECT event_key FROM comp_events
-            UNION
-            SELECT {HUB_KEY_SQL} FROM events
-            """
-        )
-        return [r["event_key"] for r in rows]
+        rows = await conn.fetch("SELECT hub_key FROM events")
+        return [r["hub_key"] for r in rows]
 
 
-async def ensure_comp_event(event_key: str) -> None:
-    """Create an empty hub row for `event_key` if a scheduled event has that
-    hub key and no hub exists yet, so every scheduled event's page and
-    check-in work without first setting it up in the control panel. A no-op
-    otherwise (including when the hub already exists)."""
-    async with db_connection(DB_NAME) as conn:
-        await conn.execute(
-            f"""
-            INSERT INTO comp_events (event_key, event_name)
-            SELECT {HUB_KEY_SQL}, name FROM events WHERE {HUB_KEY_SQL} = $1
-            ORDER BY id LIMIT 1
-            ON CONFLICT (event_key) DO NOTHING
-            """,
-            event_key,
-        )
+async def replace_comp_event(event_key: str, content: CompEventContent) -> dict | None:
+    """Overwrite an event's hub content (and its name) wholesale, roster
+    included: its entries are replaced by `content.roster`, in that order.
 
-
-async def upsert_comp_event(event_key: str, content: CompEventContent) -> dict:
+    :returns: The updated hub, or `None` if no event has this hub key -- a
+        hub can't exist without its event.
+    :raises UnknownRosterUser: If a roster entry names a user that doesn't
+        exist; nothing is changed.
+    """
     data = content.model_dump()
-    # Only dismissal entries carry the flag; a check-in stays in its usual shape.
-    for entry in data.get("roster") or []:
-        if not entry.get("dismissed"):
-            entry.pop("dismissed", None)
     async with db_connection(DB_NAME) as conn:
-        row = await conn.fetchrow(
-            """
-            INSERT INTO comp_events (event_key, event_name, links, itinerary, packing_list, instructions, roster)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            ON CONFLICT (event_key) DO UPDATE SET
-                event_name   = EXCLUDED.event_name,
-                links        = EXCLUDED.links,
-                itinerary    = EXCLUDED.itinerary,
-                packing_list = EXCLUDED.packing_list,
-                instructions = EXCLUDED.instructions,
-                roster       = EXCLUDED.roster
-            RETURNING *
-            """,
-            event_key,
-            data["event_name"],
-            data.get("links"),
-            data.get("itinerary"),
-            data.get("packing_list"),
-            data.get("instructions"),
-            data.get("roster"),
-        )
+        async with conn.transaction():
+            updated = await conn.fetchval(
+                """
+                UPDATE events SET
+                    name         = $2,
+                    links        = $3,
+                    itinerary    = $4,
+                    packing_list = $5,
+                    instructions = $6
+                WHERE hub_key = $1
+                RETURNING hub_key
+                """,
+                event_key,
+                data["event_name"],
+                data.get("links"),
+                data.get("itinerary"),
+                data.get("packing_list"),
+                data.get("instructions"),
+            )
+            if updated is None:
+                return None
+            await conn.execute("DELETE FROM event_roster WHERE event_key = $1", event_key)
+            try:
+                await conn.executemany(
+                    """
+                    INSERT INTO event_roster (event_key, user_id, display_name, role, phone, days, dismissed)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    """,
+                    [
+                        (event_key, m["user_id"], m["display_name"], m["role"], m["phone"], m["days"], m["dismissed"])
+                        for m in data.get("roster") or []
+                    ],
+                )
+            except asyncpg.ForeignKeyViolationError as e:
+                raise UnknownRosterUser() from e
+            row = await conn.fetchrow(f"SELECT {_HUB_COLUMNS} FROM events e WHERE e.hub_key = $1", event_key)
         return dict(row)
 
 
 # ── Check-in (roster) ───────────────────────────────────────────────────────
 #
-# The roster holds two kinds of entry per member: a check-in, or a dismissal
-# (`"dismissed": true`, no role) recording that they hid the event's
-# check-in prompt. A member has at most one entry. Dismissals are bookkeeping,
-# not attendance: every API response shows the roster through
+# An event's roster is its event_roster rows, of two kinds per member: a
+# check-in, or a dismissal (`dismissed`, no role) recording that they hid the
+# event's check-in prompt. A member has at most one row. Dismissals are
+# bookkeeping, not attendance: every API response shows the roster through
 # `visible_roster`, and "checked in" / role and day edits ignore them.
-
-# SQL predicate over a jsonb roster element `e`: is it a dismissal entry?
-_IS_DISMISSAL = "COALESCE((e->>'dismissed')::boolean, false)"
 
 
 def is_dismissal(entry: dict) -> bool:
@@ -409,59 +442,67 @@ def visible_roster(roster: list | None) -> list | None:
     return [e for e in roster if not is_dismissal(e)]
 
 
+async def _get_roster(conn, event_key: str) -> list | None:
+    """The full roster (dismissals included), or `None` if no event has
+    this hub key."""
+    return await conn.fetchval(f"SELECT {_ROSTER_JSON} FROM events e WHERE e.hub_key = $1", event_key)
+
+
 async def add_roster_member(event_key: str, member: dict) -> list | None:
-    """Idempotently check `member` in to an event's roster, atomically.
+    """Idempotently check `member` in to an event's roster.
 
-    One UPDATE does both the append and the duplicate check -- the NOT
-    EXISTS guard skips the update when this user already has a check-in --
-    so there is no read-modify-write race between two simultaneous check-ins.
-    A dismissal entry of theirs doesn't block it: it's dropped and replaced
-    by the check-in. If the row wasn't touched (already checked in, or the
-    event doesn't exist), falls back to `get_comp_event` to disambiguate.
+    The unique (event_key, user_id) index makes the insert a no-op when this
+    user already has a check-in, so two simultaneous check-ins can't
+    duplicate them. A dismissal of theirs doesn't block it: it's deleted
+    first, in the same transaction, and replaced by the check-in.
 
-    :param member: The full roster entry to append, e.g.
+    :param member: The roster entry to add, e.g.
         ``{"user_id": ..., "display_name": ..., "role": "attending", "phone": None}``.
-    :returns: The full roster (dismissals included) after the append (or
+    :returns: The full roster (dismissals included) after the check-in (or
         after confirming the caller was already on it), or `None` if
         `event_key` doesn't exist.
     """
     async with db_connection(DB_NAME) as conn:
-        row = await conn.fetchrow(
-            f"""
-            UPDATE comp_events
-            SET roster = COALESCE((
-                    SELECT jsonb_agg(e ORDER BY ord)
-                    FROM jsonb_array_elements(COALESCE(roster, '[]'::jsonb)) WITH ORDINALITY AS t(e, ord)
-                    WHERE e->>'user_id' IS DISTINCT FROM $3
-                ), '[]'::jsonb) || $2::jsonb
-            WHERE event_key = $1
-              AND NOT EXISTS (
-                  SELECT 1 FROM jsonb_array_elements(COALESCE(roster, '[]'::jsonb)) AS x(e)
-                  WHERE e->>'user_id' = $3 AND NOT {_IS_DISMISSAL}
-              )
-            RETURNING roster
-            """,
-            event_key,
-            [member],
-            member["user_id"],
-        )
-    if row is not None:
-        return row["roster"]
-    existing = await get_comp_event(event_key)
-    return existing["roster"] if existing else None
+        async with conn.transaction():
+            await conn.execute(
+                "DELETE FROM event_roster WHERE event_key = $1 AND user_id = $2 AND dismissed",
+                event_key,
+                member["user_id"],
+            )
+            await conn.execute(
+                """
+                INSERT INTO event_roster (event_key, user_id, display_name, role, phone, days)
+                SELECT hub_key, $2, $3, $4, $5, $6 FROM events WHERE hub_key = $1
+                ON CONFLICT (event_key, user_id) WHERE user_id IS NOT NULL DO NOTHING
+                """,
+                event_key,
+                member["user_id"],
+                member["display_name"],
+                member["role"],
+                member.get("phone"),
+                member.get("days"),
+            )
+            return await _get_roster(conn, event_key)
 
 
 async def is_on_roster(event_key: str, user_id: str) -> bool | None:
     """Return whether `user_id` is checked in to `event_key` (a dismissal
-    entry doesn't count).
+    doesn't count).
 
     :returns: `True`/`False`, or `None` if the event does not exist.
     """
-    row = await get_comp_event(event_key)
-    if row is None:
-        return None
-    roster = row.get("roster") or []
-    return any(entry.get("user_id") == user_id and not is_dismissal(entry) for entry in roster)
+    async with db_connection(DB_NAME) as conn:
+        return await conn.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM event_roster r
+                WHERE r.event_key = e.hub_key AND r.user_id = $2 AND NOT r.dismissed
+            )
+            FROM events e WHERE e.hub_key = $1
+            """,
+            event_key,
+            user_id,
+        )
 
 
 # Columns `update_roster_member` may set on one roster entry.
@@ -469,18 +510,9 @@ _ROSTER_UPDATABLE_COLUMNS = {"role", "days"}
 
 
 async def update_roster_member(event_key: str, user_id: str, fields: dict) -> list | None:
-    """Atomically set one or more fields on one roster member, in place --
-    no read-modify-write.
-
-    Mirrors `update_comp_event_content`'s dynamic-SET-from-whitelist
-    pattern, but at the single-roster-entry level: builds a
-    `jsonb_set(jsonb_set(e, '{col1}', ...), '{col2}', ...)` chain over only
-    the columns present in `fields`, applied (via the `CASE WHEN` below) to
-    the one check-in whose `user_id` matches; every other field of that
-    entry (e.g. `days` when only `role` was sent, or vice versa), and every
-    other entry, passes straight through unchanged. Dismissal entries are
-    never edited. The EXISTS guard both targets the UPDATE and doubles as an
-    existence check, the same way `add_roster_member`'s guard does.
+    """Set one or more fields on one member's check-in, leaving every other
+    field (e.g. `days` when only `role` was sent) and every other entry
+    unchanged. Dismissals are never edited.
 
     :param fields: Column -> new value, restricted to
         `_ROSTER_UPDATABLE_COLUMNS`. `role` is a plain string; `days` is a
@@ -489,8 +521,8 @@ async def update_roster_member(event_key: str, user_id: str, fields: dict) -> li
     :raises ValueError: If `fields` is empty or names a column outside the
         whitelist -- callers should treat an empty `fields` dict as a no-op
         *before* calling this, not rely on it here.
-    :raises RosterMemberNotFound: If the event exists but no roster entry has
-        this `user_id`.
+    :raises RosterMemberNotFound: If the event exists but this user isn't
+        checked in to it.
     """
     if not fields:
         raise ValueError("update_roster_member requires at least one field to set")
@@ -499,51 +531,31 @@ async def update_roster_member(event_key: str, user_id: str, fields: dict) -> li
         raise ValueError(f"update_roster_member got unknown column(s): {sorted(unknown)}")
 
     params: list = [event_key, user_id]
-    expr = "e"
+    set_clauses = []
     for col, val in fields.items():
         params.append(val)
-        n = len(params)
-        # `role` is plain text and needs wrapping into a jsonb scalar;
-        # `days` is already a list, which the jsonb codec hands to Postgres
-        # as a jsonb value directly.
-        value_expr = f"to_jsonb(${n}::text)" if col == "role" else f"${n}::jsonb"
-        expr = f"jsonb_set({expr}, '{{{col}}}', {value_expr})"
-
+        set_clauses.append(f"{col} = ${len(params)}")
     query = f"""
-        UPDATE comp_events
-        SET roster = (
-            SELECT jsonb_agg(
-                CASE WHEN e->>'user_id' = $2 AND NOT {_IS_DISMISSAL} THEN {expr} ELSE e END
-                ORDER BY ord
-            )
-            FROM jsonb_array_elements(COALESCE(roster, '[]'::jsonb)) WITH ORDINALITY AS t(e, ord)
-        )
-        WHERE event_key = $1
-          AND EXISTS (
-              SELECT 1 FROM jsonb_array_elements(COALESCE(roster, '[]'::jsonb)) AS x(e)
-              WHERE e->>'user_id' = $2 AND NOT {_IS_DISMISSAL}
-          )
-        RETURNING roster
+        UPDATE event_roster SET {', '.join(set_clauses)}
+        WHERE event_key = $1 AND user_id = $2 AND NOT dismissed
+        RETURNING id
     """
     async with db_connection(DB_NAME) as conn:
-        row = await conn.fetchrow(query, *params)
-    if row is not None:
-        return row["roster"]
-    existing = await get_comp_event(event_key)
-    if existing is None:
-        return None
-    raise RosterMemberNotFound(user_id)
+        updated = await conn.fetchval(query, *params)
+        roster = await _get_roster(conn, event_key)
+    if updated is None and roster is not None:
+        raise RosterMemberNotFound(user_id)
+    return roster
 
 
 async def get_event_schedule(event_key: str) -> dict | None:
     """Return `{"start_time", "end_time", "checkin_opens", "checkin_enabled",
-    "checkin_roles"}` for the `events`
-    row whose hub key is `event_key` (see `db.events.HUB_KEY_SQL`), or `None` if there's
-    no such row.
+    "checkin_roles"}` for the `events` row whose hub key is `event_key`, or
+    `None` if there's no such row.
 
-    Used by check-in's opening-time gate and by check-in's and the
-    roster-role PATCH's lenient day-range check (see
-    `endpoints.events._enforce_days_in_range`). All three are TEXT and may be
+    Used by check-in's opening-time gate and role list, and by check-in's and
+    the roster-role PATCH's lenient day-range check (see
+    `endpoints.events._enforce_days_in_range`). The dates are TEXT and may be
     a bare date or a full datetime string, or `end_time`/`checkin_opens` may
     be null -- parsing them, and deciding what an unparseable or missing
     value means, is entirely the caller's job; this is a plain, single-query
@@ -551,8 +563,8 @@ async def get_event_schedule(event_key: str) -> dict | None:
     """
     async with db_connection(DB_NAME) as conn:
         row = await conn.fetchrow(
-            f"SELECT start_time, end_time, checkin_opens, checkin_enabled, checkin_roles "
-            f"FROM events WHERE {HUB_KEY_SQL} = $1",
+            "SELECT start_time, end_time, checkin_opens, checkin_enabled, checkin_roles "
+            "FROM events WHERE hub_key = $1",
             event_key,
         )
         return dict(row) if row else None
@@ -571,8 +583,8 @@ async def update_comp_event_content(event_key: str, fields: dict) -> dict | None
     :param fields: Column -> new value, restricted to
         `_CONTENT_UPDATABLE_COLUMNS`, built by the endpoint from the PATCH
         body's actually-sent fields.
-    :returns: The full updated comp_events row (same shape `get_comp_event`
-        returns), or `None` if `event_key` doesn't exist.
+    :returns: The full updated hub (same shape `get_comp_event` returns), or
+        `None` if `event_key` doesn't exist.
     :raises ValueError: If `fields` is empty or names a column outside the
         whitelist -- callers should treat an empty `fields` dict as a no-op
         *before* calling this, not rely on it here.
@@ -590,51 +602,43 @@ async def update_comp_event_content(event_key: str, fields: dict) -> dict | None
         set_clauses.append(f"{col} = ${len(params)}")
     params.append(event_key)
 
-    query = f"UPDATE comp_events SET {', '.join(set_clauses)} WHERE event_key = ${len(params)} RETURNING *"
+    query = f"UPDATE events e SET {', '.join(set_clauses)} WHERE e.hub_key = ${len(params)} RETURNING {_HUB_COLUMNS}"
     async with db_connection(DB_NAME) as conn:
         row = await conn.fetchrow(query, *params)
     return dict(row) if row else None
 
 
-# ── Check-in dismissals (roster entries with "dismissed": true) ─────────
+# ── Check-in dismissals (event_roster rows with dismissed = true) ──────────
 
 async def is_check_in_dismissed(event_key: str, user_id: str) -> bool:
-    row = await get_comp_event(event_key)
-    roster = (row or {}).get("roster") or []
-    return any(e.get("user_id") == user_id and is_dismissal(e) for e in roster)
+    async with db_connection(DB_NAME) as conn:
+        return await conn.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM event_roster WHERE event_key = $1 AND user_id = $2 AND dismissed)",
+            event_key,
+            user_id,
+        )
 
 
 async def set_check_in_dismissed(event_key: str, user_id: str, display_name: str, dismissed: bool) -> None:
-    """Add (or remove) `user_id`'s dismissal entry on `event_key`'s roster.
-    Idempotent either way, and atomic like `add_roster_member`. Dismissing
-    is a no-op for someone already checked in -- a check-in isn't undone by
-    dismissing the prompt. The event's hub row must already exist."""
+    """Add (or remove) `user_id`'s dismissal on `event_key`'s roster.
+    Idempotent either way. Dismissing is a no-op for someone already checked
+    in -- a check-in isn't undone by dismissing the prompt -- and for an
+    event that doesn't exist."""
     async with db_connection(DB_NAME) as conn:
         if dismissed:
-            entry = {"user_id": user_id, "display_name": display_name, "role": None,
-                     "phone": None, "days": None, "dismissed": True}
             await conn.execute(
                 """
-                UPDATE comp_events
-                SET roster = COALESCE(roster, '[]'::jsonb) || $2::jsonb
-                WHERE event_key = $1
-                  AND NOT EXISTS (
-                      SELECT 1 FROM jsonb_array_elements(COALESCE(roster, '[]'::jsonb)) AS x(e)
-                      WHERE e->>'user_id' = $3
-                  )
+                INSERT INTO event_roster (event_key, user_id, display_name, dismissed)
+                SELECT hub_key, $2, $3, true FROM events WHERE hub_key = $1
+                ON CONFLICT (event_key, user_id) WHERE user_id IS NOT NULL DO NOTHING
                 """,
-                event_key, [entry], user_id,
+                event_key,
+                user_id,
+                display_name,
             )
         else:
             await conn.execute(
-                f"""
-                UPDATE comp_events
-                SET roster = COALESCE((
-                        SELECT jsonb_agg(e ORDER BY ord)
-                        FROM jsonb_array_elements(roster) WITH ORDINALITY AS t(e, ord)
-                        WHERE NOT (e->>'user_id' = $2 AND {_IS_DISMISSAL})
-                    ), '[]'::jsonb)
-                WHERE event_key = $1 AND roster IS NOT NULL
-                """,
-                event_key, user_id,
+                "DELETE FROM event_roster WHERE event_key = $1 AND user_id = $2 AND dismissed",
+                event_key,
+                user_id,
             )
