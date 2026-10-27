@@ -1,5 +1,5 @@
 """
-Dev seed: inject a fake comp_events row + events list entry + set prefetch.
+Dev seed: inject a fake events row with hub content + set prefetch.
 Run: uv run --project backend --env-file backend/.env python backend/temp_seed.py
 """
 import asyncio, json, os
@@ -104,25 +104,6 @@ EVENTS_ROW = {
 async def main():
     conn = await asyncpg.connect(DATABASE_URL)
     try:
-        # Upsert comp_event
-        await conn.execute("""
-            INSERT INTO comp_events (event_key, event_name, links, itinerary, packing_list, instructions, roster)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            ON CONFLICT (event_key) DO UPDATE SET
-                event_name   = EXCLUDED.event_name,
-                links        = EXCLUDED.links,
-                itinerary    = EXCLUDED.itinerary,
-                packing_list = EXCLUDED.packing_list,
-                instructions = EXCLUDED.instructions,
-                roster       = EXCLUDED.roster
-        """,
-            COMP_EVENT["event_key"], COMP_EVENT["event_name"],
-            COMP_EVENT["links"], COMP_EVENT["itinerary"],
-            COMP_EVENT["packing_list"], COMP_EVENT["instructions"],
-            COMP_EVENT["roster"],
-        )
-        print(f"✓ comp_events upserted: {EVENT_KEY}")
-
         # Upsert events list row
         existing = await conn.fetchrow("SELECT id FROM events WHERE tba_key = $1", EVENT_KEY)
         if existing:
@@ -141,6 +122,18 @@ async def main():
                 EVENTS_ROW["location"], EVENTS_ROW["event_type"], EVENTS_ROW["url"],
                 EVENT_KEY)
         print(f"✓ events list row upserted: {EVENT_KEY}")
+
+        # Hub content lives on the events row
+        await conn.execute("""
+            UPDATE events SET name=$2, links=$3, itinerary=$4, packing_list=$5, instructions=$6, roster=$7
+            WHERE tba_key=$1
+        """,
+            COMP_EVENT["event_key"], COMP_EVENT["event_name"],
+            COMP_EVENT["links"], COMP_EVENT["itinerary"],
+            COMP_EVENT["packing_list"], COMP_EVENT["instructions"],
+            COMP_EVENT["roster"],
+        )
+        print(f"✓ hub content set: {EVENT_KEY}")
 
         # Set prefetch
         await conn.execute("UPDATE app_config SET prefetch_event_id = $1", EVENT_KEY)

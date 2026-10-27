@@ -38,16 +38,15 @@ def _parse_schedule_date(value: str | None) -> date | None:
         return None
 
 
-async def _enforce_days_in_range(event_key: str, days: list[str]) -> None:
-    """422 if any of `days` falls outside `event_key`'s scheduled dates.
+def _enforce_days_in_range(schedule: dict | None, days: list[str]) -> None:
+    """422 if any of `days` falls outside the event's scheduled dates.
 
     Shared by check-in and the roster-role PATCH so the same lenient rule
-    applies either way: looks up the `events` row for this event_key; if
-    there isn't one, or its start (and end, defaulting to start when
+    applies either way: `schedule` is the event's `get_event_schedule` row;
+    if there isn't one, or its start (and end, defaulting to start when
     end_time is null) don't both parse to dates, the check is skipped
     entirely rather than blocking the request.
     """
-    schedule = await db.get_event_schedule(event_key)
     if schedule is None:
         return
     start = _parse_schedule_date(schedule.get("start_time"))
@@ -59,12 +58,11 @@ async def _enforce_days_in_range(event_key: str, days: list[str]) -> None:
         raise HTTPException(status_code=422, detail="Days must be within the event's dates")
 
 
-async def _enforce_check_in_open(event_key: str) -> None:
-    """403 if `event_key`'s schedule row turns check-in off, or sets a
+def _enforce_check_in_open(schedule: dict | None) -> None:
+    """403 if the event's schedule row turns check-in off, or sets a
     `checkin_opens` time that hasn't arrived yet (read as team-local wall
     time, like reminder pushes). No schedule row, or no `checkin_opens`,
     means check-in isn't time-gated."""
-    schedule = await db.get_event_schedule(event_key)
     if schedule is not None and schedule.get("checkin_enabled") is False:
         raise HTTPException(status_code=403, detail="This event doesn't use check-in")
     opens = push_notify.parse_event_start((schedule or {}).get("checkin_opens"))
@@ -119,23 +117,27 @@ async def put_content(
     body: CompEventContent,
     _: dict = Depends(require_access(permissions="control_panel.upcoming_event")),
 ):
+    existing = await db.get_comp_event(event_key)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Event not found")
     # Clients never see dismissal entries, so a full roster sent back here
     # won't contain them -- carry over the stored ones (for anyone the new
     # roster doesn't list) instead of silently un-dismissing everyone.
-    existing = await db.get_comp_event(event_key)
-    if existing and body.roster is not None:
+    if body.roster is not None:
         listed = {m.user_id for m in body.roster}
         kept = [
             RosterMember(**e) for e in existing.get("roster") or []
             if db.is_dismissal(e) and e.get("user_id") not in listed
         ]
         body = body.model_copy(update={"roster": body.roster + kept})
-    return _with_visible_roster(await db.upsert_comp_event(event_key, body))
+    row = await db.replace_comp_event(event_key, body)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return _with_visible_roster(row)
 
 
-async def _event_role_keys(event_key: str) -> list[str]:
-    """This event's check-in role keys (the defaults with no schedule row)."""
-    schedule = await db.get_event_schedule(event_key)
+def _event_role_keys(schedule: dict | None) -> list[str]:
+    """The event's check-in role keys (the defaults with no schedule row)."""
     return role_keys((schedule or {}).get("checkin_roles"))
 
 
@@ -148,7 +150,6 @@ def _require_event_role(role: str, keys: list[str]) -> None:
 async def get_check_in_status(event_key: str, user: dict = Depends(require_active)):
     """Whether the calling user is on `event_key`'s roster, and whether
     they've dismissed its check-in prompt."""
-    await db.ensure_comp_event(event_key)
     on_roster = await db.is_on_roster(event_key, str(user["sub"]))
     if on_roster is None:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -157,7 +158,6 @@ async def get_check_in_status(event_key: str, user: dict = Depends(require_activ
 
 
 async def _set_dismissed(event_key: str, user: dict, dismissed: bool) -> dict:
-    await db.ensure_comp_event(event_key)
     if await db.get_comp_event(event_key) is None:
         raise HTTPException(status_code=404, detail="Event not found")
     await db.set_check_in_dismissed(event_key, str(user["sub"]), _display_name(user), dismissed)
@@ -176,7 +176,7 @@ def _display_name(user: dict) -> str:
 
 
 def _with_visible_roster(row: dict) -> dict:
-    """A comp_events row as clients see it: dismissal entries left out."""
+    """A hub as clients see it: dismissal entries left out."""
     return {**row, "roster": db.visible_roster(row.get("roster"))}
 
 
@@ -205,16 +205,16 @@ async def check_in(
     -> not given yet). Idempotent -- calling it again just confirms the
     existing entry (role, phone, and days are NOT overwritten) rather than
     duplicating or changing it."""
-    await _enforce_check_in_open(event_key)
-    await db.ensure_comp_event(event_key)
+    schedule = await db.get_event_schedule(event_key)
+    _enforce_check_in_open(schedule)
     checkin = body or CheckInRequest()
-    keys = await _event_role_keys(event_key)
+    keys = _event_role_keys(schedule)
     if "role" in checkin.model_fields_set:
         _require_event_role(checkin.role, keys)
     elif checkin.role not in keys:
         checkin.role = keys[0]
     if checkin.days is not None:
-        await _enforce_days_in_range(event_key, checkin.days)
+        _enforce_days_in_range(schedule, checkin.days)
     member = {
         "user_id": str(user["sub"]),
         "display_name": _display_name(user),
@@ -258,10 +258,11 @@ async def patch_roster_member(
     if "days" in fields and user_id != str(user["sub"]) and not has_event_edit:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
+    schedule = await db.get_event_schedule(event_key)
     if "role" in fields:
-        _require_event_role(fields["role"], await _event_role_keys(event_key))
+        _require_event_role(fields["role"], _event_role_keys(schedule))
     if "days" in fields:
-        await _enforce_days_in_range(event_key, fields["days"])
+        _enforce_days_in_range(schedule, fields["days"])
 
     try:
         roster = await db.update_roster_member(event_key, user_id, fields)
@@ -330,10 +331,6 @@ def _live_payload(matches, rankings, nexus_data) -> dict:
 @router.get("/{event_key}/info")
 async def get_event_info(event_key: str, _: dict = Depends(get_current_user)):
     row = await db.get_comp_event(event_key)
-    if not row:
-        # A scheduled event's hub opens even if nobody set it up first.
-        await db.ensure_comp_event(event_key)
-        row = await db.get_comp_event(event_key)
     if not row:
         raise HTTPException(status_code=404, detail="Event not found")
     matches, rankings, nexus_data = await _fetch_live(event_key)
