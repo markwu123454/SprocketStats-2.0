@@ -1,4 +1,3 @@
-import type { AssignableRole } from "@/lib/rosterRoles"
 import type { EventEntry, HubTab } from "@/lib/events"
 
 const API = import.meta.env.VITE_BACKEND_URL
@@ -87,6 +86,8 @@ export interface EventUpdate {
 
 export interface CheckInStatus {
     checked_in: boolean
+    /** The caller hid this event's check-in prompt. */
+    dismissed: boolean
 }
 
 export interface CheckInResult {
@@ -95,13 +96,13 @@ export interface CheckInResult {
 }
 
 export interface CheckInBody {
-    role: AssignableRole
+    role: string // a key from the event's checkinRoles
     phone: string | null
     days: string[]
 }
 
 export interface RosterMemberPatch {
-    role?: AssignableRole
+    role?: string // a key from the event's checkinRoles
     days?: string[]
 }
 
@@ -119,6 +120,8 @@ export interface EventSchedulePatch {
     /** Overview intro text; null or blank clears it. */
     description?: string | null
     checkin_enabled?: boolean
+    /** Replaces the whole list. Keep a role's `key` to rename it; omit it for a new role. */
+    checkin_roles?: { key?: string; label: string }[]
 }
 
 export type EventContentPatch =Partial<Pick<EventInfo, "itinerary" | "packing_list" | "instructions">>
@@ -163,6 +166,11 @@ export function fetchEventUpdate(eventKey: string) {
 
 export function fetchCheckInStatus(eventKey: string): Promise<CheckInStatus> {
     return apiFetch<CheckInStatus>(`/events/${eventKey}/check-in`)
+}
+
+/** Hide (or, with `false`, bring back) this event's check-in prompt for the caller. */
+export function setCheckInDismissed(eventKey: string, dismissed: boolean): Promise<{ dismissed: boolean }> {
+    return apiFetch(`/events/${eventKey}/check-in/dismiss`, { method: dismissed ? "POST" : "DELETE" })
 }
 
 export function checkInToEvent(eventKey: string, body: CheckInBody): Promise<CheckInResult> {

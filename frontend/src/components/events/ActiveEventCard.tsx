@@ -3,13 +3,16 @@ import { Link } from "react-router-dom"
 import { Check } from "lucide-react"
 import Dropdown from "@/components/ui/Dropdown"
 import DayChips from "@/components/events/DayChips"
-import { eventDays, hasEventPage, isTabHidden, STATUS_META, usesCheckIn, type ResolvedEvent } from "@/lib/events"
 import {
-    checkInToEvent, fetchCheckInStatus, fetchEventUpdate,
+    checkInRolesOf, defaultCheckInRole, eventDays, hasEventPage, isTabHidden, STATUS_META, usesCheckIn,
+    type ResolvedEvent,
+} from "@/lib/events"
+import {
+    checkInToEvent, fetchCheckInStatus, fetchEventUpdate, setCheckInDismissed,
     type EventInfo, type TBAMatch,
 } from "@/lib/eventApi"
 import { formatUnix, getAlliance, matchLabel, nextMatchFor, TEAM_KEY } from "@/lib/eventMatches"
-import { ASSIGNABLE_ROLES, validatePhone, type AssignableRole } from "@/lib/rosterRoles"
+import { validatePhone } from "@/lib/rosterRoles"
 import { DANGER_RED, tintColor } from "@/lib/taskFormat"
 
 const cardStyle = { background: "var(--theme-bg)", borderColor: "var(--theme-border)" }
@@ -42,7 +45,9 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
         seed ? (seed.roster?.some(r => r.user_id === userId) ?? null) : null
     )
     const [showForm, setShowForm] = useState(false)
-    const [role, setRole] = useState<AssignableRole>("attending")
+    const [role, setRole] = useState<string>(() => defaultCheckInRole(active))
+    // null until the status fetch says -- treated as not dismissed meanwhile.
+    const [dismissed, setDismissed] = useState<boolean | null>(null)
     // All days selected by default. Deliberately not reset on cancel -- if
     // the user has already picked specific days and backs out, reopening
     // the form keeps that selection rather than silently reverting it.
@@ -64,6 +69,10 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
     // An event that doesn't use check-in still gets the card while it's
     // happening, just without the check-in prompt.
     const checkInOn = usesCheckIn(active)
+    // The prompt itself (Check in button, form) -- off when the event doesn't
+    // use check-in, or this member dismissed it.
+    const promptOn = checkInOn && !dismissed
+    const roleOptions = checkInRolesOf(active).map(r => ({ value: r.key, label: r.label }))
 
     // Match data for the next-match row -- seeded from bootstrap, then kept
     // fresh with a 60s poll (only runs once `hasHub` is true).
@@ -89,7 +98,7 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
         if (!hasHub || !eventKey || !checkInOn) return
         let cancelled = false
         fetchCheckInStatus(eventKey)
-            .then(res => { if (!cancelled) setCheckedIn(res.checked_in) })
+            .then(res => { if (!cancelled) { setCheckedIn(res.checked_in); setDismissed(res.dismissed) } })
             .catch(() => { if (!cancelled) setCheckedIn(prev => prev ?? false) })
         return () => { cancelled = true }
     }, [hasHub, eventKey, checkInOn])
@@ -119,6 +128,19 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
             })
     }
 
+    // Optimistic either way; a failed request puts it back and says so.
+    function changeDismissed(next: boolean) {
+        if (!eventKey) return
+        setDismissed(next)
+        setCheckInError(null)
+        if (!next) setShowForm(true)
+        setCheckInDismissed(eventKey, next).catch(() => {
+            setDismissed(!next)
+            if (!next) setShowForm(false)
+            setCheckInError(next ? "Couldn't dismiss check-in. Try again." : "Couldn't bring back check-in. Try again.")
+        })
+    }
+
     function handleCancel() {
         setShowForm(false)
         setCheckInError(null)
@@ -130,6 +152,11 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
     const nextMatchText = nextMatch
         ? `${matchLabel(nextMatch)} · ${formatUnix(nextMatch.predicted_time ?? nextMatch.scheduled_time)} · ${getAlliance(nextMatch, TEAM_KEY) === "red" ? "Red" : "Blue"} alliance`
         : "No upcoming match scheduled"
+
+    // Ahead of the event the card is only a check-in prompt, so dismissing
+    // it hides the whole card. Once the event is happening the card comes
+    // back (minus the prompt) with a link to check in after all.
+    if (dismissed && !happening && !checkedIn) return null
 
     return (
         <div className="rounded-xl border p-5 flex flex-col gap-3 backdrop-blur-sm" style={cardStyle}>
@@ -147,9 +174,9 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
 
                 {hasHub && !showForm && (
                     <div className="flex items-center gap-3 shrink-0">
-                        {checkedIn || !checkInOn ? (
+                        {checkedIn || !promptOn ? (
                             <>
-                                {checkInOn && (
+                                {checkInOn && checkedIn && (
                                     <span className="inline-flex items-center gap-1.5 text-sm theme-subtext-color">
                                         <Check size={15} className="theme-text-contrast" />
                                         You're checked in
@@ -166,20 +193,30 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                                 ) : null}
                             </>
                         ) : (
-                            <button
-                                type="button"
-                                onClick={() => setShowForm(true)}
-                                disabled={checkedIn === null}
-                                className={primaryButtonClass}
-                            >
-                                Check in
-                            </button>
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={() => changeDismissed(true)}
+                                    disabled={checkedIn === null}
+                                    className={ghostButtonClass}
+                                >
+                                    Dismiss
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowForm(true)}
+                                    disabled={checkedIn === null}
+                                    className={primaryButtonClass}
+                                >
+                                    Check in
+                                </button>
+                            </>
                         )}
                     </div>
                 )}
             </div>
 
-            {hasHub && checkInOn && showForm && !checkedIn && (
+            {hasHub && promptOn && showForm && !checkedIn && (
                 <div className="flex flex-col gap-3">
                     {/* Dropdown's trigger doesn't take an id/aria-label of its own
                         (see Dropdown.d.ts) -- role="group" + aria-labelledby is
@@ -188,8 +225,8 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                         <label id="checkin-role-label" className="text-sm font-semibold theme-text">Role</label>
                         <Dropdown
                             value={role}
-                            options={ASSIGNABLE_ROLES}
-                            onChange={v => setRole(v as AssignableRole)}
+                            options={roleOptions}
+                            onChange={setRole}
                             disabled={checkingIn}
                             triggerClassName="rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-border theme-text"
                         />
@@ -261,7 +298,17 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                 </p>
             )}
 
-            {hasHub && hasPage && checkInOn && checkedIn === false && (
+            {hasHub && checkInOn && dismissed && !checkedIn && (
+                <button
+                    type="button"
+                    onClick={() => changeDismissed(false)}
+                    className="inline-flex items-center min-h-11 self-start rounded-lg text-sm theme-text-contrast hover:underline outline-none focus:ring-2"
+                >
+                    Check in after all
+                </button>
+            )}
+
+            {hasHub && hasPage && promptOn && checkedIn === false && (
                 <Link
                     to={`/events/${eventKey}`}
                     className="inline-flex items-center min-h-11 self-start rounded-lg text-sm theme-text-contrast hover:underline outline-none focus:ring-2"

@@ -21,6 +21,35 @@ export interface EventEntry {
     hiddenTabs?: HubTab[]
     description?: string // intro text at the top of the hub's Overview
     checkinEnabled?: boolean // false: this event doesn't use self check-in
+    checkinRoles?: CheckinRole[] // roles members pick from at check-in
+}
+
+// A role on an event's check-in list. Roster entries store the `key`, so a
+// renamed role (same key) keeps everyone already checked in under it.
+export interface CheckinRole {
+    key: string
+    label: string
+}
+
+// Every event starts with these (mirrors DEFAULT_CHECKIN_ROLES in
+// backend/db/events.py); also the fallback for a schedule entry that
+// predates per-event roles.
+export const DEFAULT_CHECKIN_ROLES: CheckinRole[] = [
+    { key: "attending", label: "Attending" },
+    { key: "drive_team", label: "Drive Team" },
+    { key: "pit_crew", label: "Pit Crew" },
+    { key: "mentor", label: "Mentor" },
+]
+
+export function checkInRolesOf(entry: EventEntry | undefined): CheckinRole[] {
+    return entry?.checkinRoles?.length ? entry.checkinRoles : DEFAULT_CHECKIN_ROLES
+}
+
+// The role preselected in the check-in form: "attending" when the event has
+// it, else its first role -- same rule the backend applies with no role sent.
+export function defaultCheckInRole(entry: EventEntry | undefined): string {
+    const roles = checkInRolesOf(entry)
+    return roles.some((r) => r.key === "attending") ? "attending" : roles[0].key
 }
 
 export interface ResolvedEvent extends EventEntry {

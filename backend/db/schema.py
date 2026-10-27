@@ -1,6 +1,13 @@
+import json
 import logging
 from fastapi import HTTPException
 from .connection import DB_NAME, db_connection
+from .events import DEFAULT_CHECKIN_ROLES
+
+# SQL literal for events.checkin_roles' default: every event starts with the
+# standard role list. Built from DEFAULT_CHECKIN_ROLES so the two can't drift
+# (its labels contain no single quotes, so it embeds as-is).
+_DEFAULT_ROLES_SQL = f"'{json.dumps(DEFAULT_CHECKIN_ROLES)}'::jsonb"
 
 logger = logging.getLogger(__name__)
 
@@ -330,9 +337,10 @@ async def init_db():
                         checkin_opens TEXT,
                         hidden_tabs   TEXT[] NOT NULL DEFAULT '{}',
                         description   TEXT,
-                        checkin_enabled BOOLEAN NOT NULL DEFAULT true
+                        checkin_enabled BOOLEAN NOT NULL DEFAULT true,
+                        checkin_roles JSONB NOT NULL DEFAULT {_DEFAULT_ROLES_SQL}
                     )
-                """)
+                """.replace("{_DEFAULT_ROLES_SQL}", _DEFAULT_ROLES_SQL))
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS comp_events (
                         event_key    TEXT PRIMARY KEY,
@@ -519,6 +527,11 @@ async def run_migrations():
             await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS description TEXT")
             # Per-event switch for self check-in (outreach etc. may not use it).
             await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS checkin_enabled BOOLEAN NOT NULL DEFAULT true")
+            # Per-event check-in roles. The NOT NULL default backfills every
+            # existing event with the standard list, same as new events get.
+            await conn.execute(
+                f"ALTER TABLE events ADD COLUMN IF NOT EXISTS checkin_roles JSONB NOT NULL DEFAULT {_DEFAULT_ROLES_SQL}"
+            )
             # Events are listed by date now; the manual ordering column is gone.
             await conn.execute("ALTER TABLE events DROP COLUMN IF EXISTS display_order")
             await conn.execute("""
@@ -586,6 +599,16 @@ async def run_migrations():
                 "REFERENCES comp_events(event_key) ON DELETE SET NULL"
             )
             await conn.execute("CREATE INDEX IF NOT EXISTS tasks_event_key_idx ON tasks (event_key)")
+            # One row per (event, member) who dismissed that event's check-in
+            # prompt -- absence means they haven't.
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS checkin_dismissals (
+                    event_key    TEXT        NOT NULL REFERENCES comp_events(event_key) ON DELETE CASCADE,
+                    user_id      TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    dismissed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    PRIMARY KEY (event_key, user_id)
+                )
+            """)
             # Widen the priority CHECK for 'critical' ("Perish if not done") on
             # databases created before it existed. Only swaps the constraint
             # when its current definition doesn't already allow it.
