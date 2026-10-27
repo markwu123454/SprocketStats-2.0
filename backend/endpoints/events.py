@@ -130,7 +130,10 @@ async def put_content(
             if db.is_dismissal(e) and e.get("user_id") not in listed
         ]
         body = body.model_copy(update={"roster": body.roster + kept})
-    row = await db.replace_comp_event(event_key, body)
+    try:
+        row = await db.replace_comp_event(event_key, body)
+    except db.UnknownRosterUser:
+        raise HTTPException(status_code=422, detail="Roster names an unknown user")
     if row is None:
         raise HTTPException(status_code=404, detail="Event not found")
     return _with_visible_roster(row)
