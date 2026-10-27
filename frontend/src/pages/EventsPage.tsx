@@ -2,7 +2,7 @@ import {useEffect, useState} from "react"
 import {ChevronRight, Pencil} from "lucide-react"
 import {Link} from "react-router-dom";
 import {
-    type EventEntry, checkInOpensAt, formatCountdown, formatScheduleMoment, isCheckInOpen, isHubOpen, resolveEvents,
+    type EventEntry, checkInOpensAt, formatCountdown, formatScheduleMoment, hubKeyOf, isCheckInOpen, isHubOpen, resolveEvents,
     STATUS_META,
 } from "@/lib/events.ts"
 import {useBootstrapped} from "@/contexts/bootstrapContext"
@@ -61,9 +61,10 @@ return (
                 const meta = STATUS_META[event.status]
                 const isLast = i === events.length - 1
                 const archived = event.status === "done"
-                // Any TBA-keyed event has a hub (the backend creates it on first
-                // visit), even when its schedule row has no explicit url.
-                const hubUrl = event.url ?? (event.tbaKey ? `/events/${event.tbaKey}` : undefined)
+                // Every scheduled event has a hub (the backend creates it on
+                // first visit), even when its row has no explicit url.
+                const key = hubKeyOf(event)
+                const hubUrl = event.url ?? (key ? `/events/${key}` : undefined)
                 const link = hubUrl && isHubOpen(event, now) ? hubUrl : null
                 const editable = isEditor && event.id !== undefined
                 const editing = editable && editingId === event.id

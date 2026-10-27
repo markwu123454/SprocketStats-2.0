@@ -5,7 +5,7 @@ import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
 import ActiveEventCard from "@/components/events/ActiveEventCard"
-import { pickActiveEvent, type EventEntry } from "@/lib/events"
+import { hubKeyOf, pickActiveEvent, type EventEntry } from "@/lib/events"
 import { fetchEvents, type EventInfo } from "@/lib/eventApi"
 import { can } from "@/lib/permissions"
 import type { TasksPageState } from "@/pages/TasksPageRouter"
@@ -90,7 +90,7 @@ export default function DashboardPage() {
     // for this event's matches/check-in state -- which event to show is
     // decided purely by schedule.
     const active  = pickActiveEvent(rawEvents, new Date(nowMs))
-    const key     = active?.tbaKey
+    const key     = active ? hubKeyOf(active) : undefined
     const hasHub  = !!key && eventKeys.includes(key)
     const seeded  = currentEvent?.event_key === key ? currentEvent : null
 

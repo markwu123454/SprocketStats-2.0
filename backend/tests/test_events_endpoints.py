@@ -884,3 +884,25 @@ def test_check_in_creates_hub_for_scheduled_event(app, store):
 def test_check_in_still_404_for_unscheduled_event(app, store):
     resp = _as(app, MEMBER).post("/events/nowhere/check-in")
     assert resp.status_code == 404
+
+
+def test_check_in_works_for_event_without_tba_key(app, store):
+    # Outreach-style event: its hub key is "e<id>", not a TBA key.
+    store.add_schedule("e12", "2026-03-19")
+    resp = _as(app, MEMBER).post("/events/e12/check-in")
+    assert resp.status_code == 200
+
+
+def test_info_for_non_tba_hub_skips_tba(app, store, monkeypatch):
+    import endpoints.events as events_mod
+
+    async def _boom(*_a, **_k):
+        raise AssertionError("TBA/Nexus should not be called for an e<id> hub")
+
+    monkeypatch.setattr(events_mod.tba, "get", _boom)
+    monkeypatch.setattr(events_mod.nexus, "get", _boom)
+    store.add_schedule("e12", "2026-03-19")
+    app.dependency_overrides[get_current_user] = lambda: MEMBER
+    resp = TestClient(app).get("/events/e12/info")
+    assert resp.status_code == 200
+    assert resp.json()["matches"] == []

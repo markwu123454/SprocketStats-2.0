@@ -56,7 +56,9 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
-    const hasHub = !!(event.tbaKey || event.url)
+    const hasHub = !!(event.hubKey || event.tbaKey || event.url)
+    // Comp only exists for TBA events -- not offered as a toggle otherwise.
+    const tabChoices = HIDEABLE_TABS.filter(t => t !== "comp" || event.tbaKey)
 
     function toggleTab(tab: HubTab) {
         setHidden(prev => prev.includes(tab) ? prev.filter(t => t !== tab) : [...prev, tab])
@@ -120,7 +122,7 @@ export default function EventScheduleEditor({ event, onSaved, onCancel }: EventS
                     <legend className="text-sm font-semibold theme-text mb-1">Event pages</legend>
                     <p className="text-xs theme-subtext-color -mt-1">Unchecked pages are hidden from this event. Overview always shows.</p>
                     <div className="flex flex-wrap gap-x-5 gap-y-2">
-                        {HIDEABLE_TABS.map(tab => (
+                        {tabChoices.map(tab => (
                             <label key={tab} className="inline-flex items-center gap-2 min-h-11 text-sm theme-text cursor-pointer">
                                 <Checkbox checked={!hidden.includes(tab)} onChange={() => toggleTab(tab)} />
                                 {TAB_LABEL[tab]}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { formatCountdown, isCheckInOpen, isHubOpen, pickActiveEvent, resolveEvent } from "./events"
+import { findByHubKey, formatCountdown, hiddenTabsOf, isCheckInOpen, isHubOpen, pickActiveEvent, resolveEvent } from "./events"
 
 const DAY = 24 * 60 * 60 * 1000
 const now = new Date("2026-10-21T12:00")
@@ -80,5 +80,22 @@ describe("pickActiveEvent", () => {
 
     it("returns null when nothing is happening or open", () => {
         expect(pickActiveEvent([{ name: "Later", start: "2026-12-01", location: "", type: "" }], now)).toBeNull()
+    })
+})
+
+describe("hub keys for non-TBA events", () => {
+    const outreach = { name: "Outreach", start: "2026-11-01", location: "", type: "", hubKey: "e12" }
+    const comp = { name: "Regional", start: "2026-03-19", location: "", type: "", tbaKey: "2026cass", hubKey: "2026cass" }
+
+    it("finds an event by its e<id> hub key", () => {
+        expect(findByHubKey([comp, outreach], "e12")?.name).toBe("Outreach")
+        expect(findByHubKey([comp, outreach], "2026cass")?.name).toBe("Regional")
+        expect(findByHubKey([comp, outreach], "e99")).toBeUndefined()
+    })
+
+    it("always hides Comp for an event without a TBA key", () => {
+        expect(hiddenTabsOf(outreach)).toEqual(["comp"])
+        expect(hiddenTabsOf({ ...outreach, hiddenTabs: ["packing"] })).toEqual(["packing", "comp"])
+        expect(hiddenTabsOf(comp)).toEqual([])
     })
 })

@@ -98,6 +98,24 @@ def check_schedule_order(start: str | None, end: str | None, checkin_opens: str 
         raise ValueError("check-in must open before the event ends")
 
 
+# Every scheduled event has a hub, addressed by its "hub key": the TBA event
+# key for competitions, or "e<id>" for events without one (outreach etc.).
+# TBA keys always start with a 4-digit year, so the two never collide.
+# HUB_KEY_SQL is the same rule as a SQL expression over the `events` table.
+HUB_KEY_SQL = "COALESCE(tba_key, 'e' || id::text)"
+_TBA_KEY_RE = re.compile(r"^\d{4}[a-z0-9]+$")
+
+
+def hub_key_for(event_id: int, tba_key: str | None) -> str:
+    return tba_key or f"e{event_id}"
+
+
+def is_tba_key(event_key: str) -> bool:
+    """Whether `event_key` is a real TBA event key (worth asking TBA/Nexus
+    about), as opposed to an "e<id>" key for a non-competition event."""
+    return bool(_TBA_KEY_RE.fullmatch(event_key))
+
+
 # Columns update_event_schedule() may set, keyed by the API field name.
 _SCHEDULE_COLUMNS = {
     "start": "start_time",
@@ -173,6 +191,7 @@ def _row_to_event(r) -> dict:
         d["url"] = r["url"]
     if r["tba_key"]:
         d["tbaKey"] = r["tba_key"]
+    d["hubKey"] = hub_key_for(r["id"], r["tba_key"])
     if r["checkin_opens"]:
         d["checkinOpens"] = r["checkin_opens"]
     return d

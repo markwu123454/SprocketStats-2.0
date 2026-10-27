@@ -4,7 +4,7 @@ import { Home, Calendar, Users, Package, Trophy, ArrowLeft, CalendarClock, ListT
 import { useBootstrapped, BootstrapContext } from "@/contexts/bootstrapContext"
 import { EventContext } from "@/contexts/eventContext"
 import { fetchEventInfo, fetchEventUpdate, fetchEvents, type EventInfo } from "@/lib/eventApi"
-import { isTabHidden, resolveEvents, type EventEntry, type HubTab } from "@/lib/events"
+import { findByHubKey, hiddenTabsOf, isTabHidden, resolveEvents, type EventEntry, type HubTab } from "@/lib/events"
 
 // `to` doubles as the HubTab id for every tab but Overview, which can't be hidden.
 const TABS: { label: string; icon: typeof Home; to: "" | HubTab; end: boolean }[] = [
@@ -33,7 +33,7 @@ export default function EventShell() {
         return () => { cancelled = true }
     }, [setScheduleEvents])
 
-    const scheduleEntry = scheduleEvents.find(e => e.tbaKey === eventKey || e.url === `/events/${eventKey}`)
+    const scheduleEntry = findByHubKey(scheduleEvents, eventKey)
     const visibleTabs = TABS.filter(t => t.to === "" || !isTabHidden(scheduleEntry, t.to))
     // A hidden tab reached by a direct link or bookmark falls back to Overview.
     const currentTab = location.pathname.split("/")[3] as HubTab | undefined
@@ -86,7 +86,7 @@ export default function EventShell() {
     }, [])
 
     return (
-        <EventContext.Provider value={{ eventKey: eventKey ?? "", info, loading: isLoading, archived, hiddenTabs: scheduleEntry?.hiddenTabs ?? [], updateInfo }}>
+        <EventContext.Provider value={{ eventKey: eventKey ?? "", info, loading: isLoading, archived, hiddenTabs: hiddenTabsOf(scheduleEntry), updateInfo }}>
             <div className="h-full flex flex-col">
                 <div
                     className="sticky top-0 z-10 border-b theme-border"

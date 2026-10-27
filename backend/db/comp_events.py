@@ -4,6 +4,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, field_validator, model_validator
 
 from .connection import DB_NAME, db_connection
+from .events import HUB_KEY_SQL
 
 
 class Links(BaseModel):
@@ -311,31 +312,31 @@ async def get_comp_event(event_key: str) -> dict | None:
 
 
 async def get_comp_event_keys() -> list[str]:
-    """All event_keys with a hub page -- an existing comp_events row, or a
-    scheduled event with a tba_key (whose row `ensure_comp_event` creates on
-    first use). Bootstrapped so the frontend can tell a real event from a 404
-    without waiting on a per-event fetch."""
+    """All event_keys with a hub page -- an existing comp_events row, or any
+    scheduled event's hub key (see `db.events.HUB_KEY_SQL`; its row
+    `ensure_comp_event` creates on first use). Bootstrapped so the frontend
+    can tell a real event from a 404 without waiting on a per-event fetch."""
     async with db_connection(DB_NAME) as conn:
         rows = await conn.fetch(
-            """
+            f"""
             SELECT event_key FROM comp_events
             UNION
-            SELECT tba_key FROM events WHERE tba_key IS NOT NULL
+            SELECT {HUB_KEY_SQL} FROM events
             """
         )
         return [r["event_key"] for r in rows]
 
 
 async def ensure_comp_event(event_key: str) -> None:
-    """Create an empty hub row for `event_key` if the schedule has an event
-    with that tba_key and no hub exists yet, so a scheduled event's page and
+    """Create an empty hub row for `event_key` if a scheduled event has that
+    hub key and no hub exists yet, so every scheduled event's page and
     check-in work without first setting it up in the control panel. A no-op
     otherwise (including when the hub already exists)."""
     async with db_connection(DB_NAME) as conn:
         await conn.execute(
-            """
+            f"""
             INSERT INTO comp_events (event_key, event_name)
-            SELECT tba_key, name FROM events WHERE tba_key = $1
+            SELECT {HUB_KEY_SQL}, name FROM events WHERE {HUB_KEY_SQL} = $1
             ORDER BY id LIMIT 1
             ON CONFLICT (event_key) DO NOTHING
             """,
@@ -490,7 +491,7 @@ async def update_roster_member(event_key: str, user_id: str, fields: dict) -> li
 
 async def get_event_schedule(event_key: str) -> dict | None:
     """Return `{"start_time", "end_time", "checkin_opens"}` for the `events`
-    row matching `event_key` (looked up by `tba_key`), or `None` if there's
+    row whose hub key is `event_key` (see `db.events.HUB_KEY_SQL`), or `None` if there's
     no such row.
 
     Used by check-in's opening-time gate and by check-in's and the
@@ -503,7 +504,7 @@ async def get_event_schedule(event_key: str) -> dict | None:
     """
     async with db_connection(DB_NAME) as conn:
         row = await conn.fetchrow(
-            "SELECT start_time, end_time, checkin_opens FROM events WHERE tba_key = $1",
+            f"SELECT start_time, end_time, checkin_opens FROM events WHERE {HUB_KEY_SQL} = $1",
             event_key,
         )
         return dict(row) if row else None

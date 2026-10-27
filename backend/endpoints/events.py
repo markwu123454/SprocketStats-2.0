@@ -14,7 +14,7 @@ from db.comp_events import (
     CompEventContentPatch,
     RosterUpdate,
 )
-from db.events import EventScheduleUpdate, check_schedule_order
+from db.events import EventScheduleUpdate, check_schedule_order, is_tba_key
 
 router = APIRouter()
 
@@ -232,7 +232,11 @@ async def _fetch_nexus(event_key: str) -> dict:
 
 
 async def _fetch_live(event_key: str) -> tuple:
-    """Fetch matches, rankings, and nexus in parallel. Each item may be an Exception."""
+    """Fetch matches, rankings, and nexus in parallel. Each item may be an
+    Exception. A non-competition hub ("e<id>" key) has nothing on TBA/Nexus,
+    so it skips the calls and gets the empty payload."""
+    if not is_tba_key(event_key):
+        return [], None, None
     return await asyncio.gather(
         tba.get(f"/team/{TEAM_KEY}/event/{event_key}/matches"),
         tba.get(f"/event/{event_key}/rankings"),
