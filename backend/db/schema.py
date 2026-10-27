@@ -327,7 +327,9 @@ async def init_db():
                         event_type    TEXT   NOT NULL,
                         url           TEXT,
                         tba_key       TEXT,
-                        display_order INT    NOT NULL DEFAULT 0
+                        display_order INT    NOT NULL DEFAULT 0,
+                        checkin_opens TEXT,
+                        hidden_tabs   TEXT[] NOT NULL DEFAULT '{}'
                     )
                 """)
                 await conn.execute("""
@@ -365,11 +367,13 @@ async def init_db():
                         created_by  TEXT        NOT NULL REFERENCES users(id),
                         finished_by TEXT        REFERENCES users(id) ON DELETE SET NULL,
                         reviewed_by TEXT        REFERENCES users(id) ON DELETE SET NULL,
+                        event_key   TEXT        REFERENCES comp_events(event_key) ON DELETE SET NULL,
                         created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
                         updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
                     )
                 """)
                 await conn.execute("CREATE INDEX IF NOT EXISTS tasks_bucket_idx ON tasks (bucket)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS tasks_event_key_idx ON tasks (event_key)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS tasks_assignee_id_idx ON tasks (assignee_id)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS tasks_status_idx ON tasks (status)")
                 await conn.execute("""
@@ -505,6 +509,10 @@ async def run_migrations():
             await conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS events_tba_key_idx ON events (tba_key) WHERE tba_key IS NOT NULL"
             )
+            # When self check-in opens (null -> no gate), and which hub tabs
+            # this event hides -- both edited from the Events page.
+            await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS checkin_opens TEXT")
+            await conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS hidden_tabs TEXT[] NOT NULL DEFAULT '{}'")
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS comp_events (
                     event_key    TEXT PRIMARY KEY,
@@ -564,6 +572,12 @@ async def run_migrations():
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS task_notes_task_id_idx ON task_notes (task_id, created_at)"
             )
+            # Optional link from a task to the event hub it belongs to.
+            await conn.execute(
+                "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS event_key TEXT "
+                "REFERENCES comp_events(event_key) ON DELETE SET NULL"
+            )
+            await conn.execute("CREATE INDEX IF NOT EXISTS tasks_event_key_idx ON tasks (event_key)")
             # Widen the priority CHECK for 'critical' ("Perish if not done") on
             # databases created before it existed. Only swaps the constraint
             # when its current definition doesn't already allow it.

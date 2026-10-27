@@ -3,7 +3,7 @@ import { Link } from "react-router-dom"
 import { Check } from "lucide-react"
 import Dropdown from "@/components/ui/Dropdown"
 import DayChips from "@/components/events/DayChips"
-import { eventDays, STATUS_META, type ResolvedEvent } from "@/lib/events"
+import { eventDays, isTabHidden, STATUS_META, type ResolvedEvent } from "@/lib/events"
 import {
     checkInToEvent, fetchCheckInStatus, fetchEventUpdate,
     type EventInfo, type TBAMatch,
@@ -54,6 +54,12 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
     const [checkInError, setCheckInError] = useState<string | null>(null)
 
     const eventDayList = eventDays(active)
+
+    // The card also shows ahead of an event once its check-in opens -- then
+    // it's a check-in prompt, with no match info to show yet.
+    const happening = active.status === "current"
+    const headerLabel = happening ? STATUS_META.current.label : "Check-in open"
+    const showMatches = happening && !isTabHidden(active, "comp")
 
     // Match data for the next-match row -- seeded from bootstrap, then kept
     // fresh with a 60s poll (only runs once `hasHub` is true).
@@ -129,7 +135,7 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                         className="text-[10px] font-bold tracking-wider uppercase block mb-0.5"
                         style={{ color: STATUS_META.current.color }}
                     >
-                        {STATUS_META.current.label}
+                        {headerLabel}
                     </span>
                     <p className="text-base font-bold theme-text truncate">{active.name}</p>
                     <p className="text-sm theme-subtext-color mt-0.5">{active.dateLabel} · {active.location}</p>
@@ -143,9 +149,15 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                                     <Check size={15} className="theme-text-contrast" />
                                     You're checked in
                                 </span>
-                                <Link to={`/events/${eventKey}/comp`} className={primaryButtonClass}>
-                                    Go to matches
-                                </Link>
+                                {showMatches ? (
+                                    <Link to={`/events/${eventKey}/comp`} className={primaryButtonClass}>
+                                        Go to matches
+                                    </Link>
+                                ) : (
+                                    <Link to={`/events/${eventKey}`} className={primaryButtonClass}>
+                                        View event
+                                    </Link>
+                                )}
                             </>
                         ) : (
                             <button
@@ -219,7 +231,7 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                 </div>
             )}
 
-            {hasHub && matches !== null && (
+            {hasHub && showMatches && matches !== null && (
                 nextMatch ? (
                     <p className="text-sm theme-text">
                         <span className="theme-subtext-color">Next match</span> {nextMatchText}

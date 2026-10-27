@@ -54,13 +54,17 @@ _UPDATABLE_COLUMNS = {
     "due_date",
     "finished_by",
     "reviewed_by",
+    "event_key",
 }
 
 
-async def list_tasks() -> list[asyncpg.Record]:
-    """Return every task, newest first, with assignee/creator/finisher/reviewer names joined in."""
+async def list_tasks(event_key: str | None = None) -> list[asyncpg.Record]:
+    """Return every task (or only those linked to `event_key`), newest first,
+    with assignee/creator/finisher/reviewer names joined in."""
     async with db_connection(DB_NAME) as conn:
         try:
+            if event_key is not None:
+                return await conn.fetch(_SELECT_TASK + " WHERE t.event_key = $1 ORDER BY t.created_at DESC", event_key)
             return await conn.fetch(_SELECT_TASK + " ORDER BY t.created_at DESC")
         except Exception as e:
             logger.error("list_tasks failed: %s", e)
@@ -135,6 +139,7 @@ async def create_task(
     due_date,
     assignee_id: str | None,
     created_by: str,
+    event_key: str | None = None,
 ) -> asyncpg.Record:
     """Insert a new task and return it in the joined shape callers expect.
 
@@ -145,8 +150,8 @@ async def create_task(
         try:
             row = await conn.fetchrow(
                 """
-                INSERT INTO tasks (title, area, bucket, priority, due_date, assignee_id, created_by)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO tasks (title, area, bucket, priority, due_date, assignee_id, created_by, event_key)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 RETURNING id
                 """,
                 title,
@@ -156,6 +161,7 @@ async def create_task(
                 due_date,
                 assignee_id,
                 created_by,
+                event_key,
             )
         except Exception as e:
             logger.error("create_task failed: %s", e)

@@ -6,7 +6,7 @@ import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks } from "lucid
 import Avatar from "@/components/Avatar.tsx"
 import ActiveEventCard from "@/components/events/ActiveEventCard"
 import { pickActiveEvent, type EventEntry } from "@/lib/events"
-import type { EventInfo } from "@/lib/eventApi"
+import { fetchEvents, type EventInfo } from "@/lib/eventApi"
 import { can } from "@/lib/permissions"
 import type { TasksPageState } from "@/pages/TasksPageRouter"
 import { fetchTasks, PRIORITY_LABEL, STATUS_LABEL, type Task, type TaskPriority } from "@/lib/tasksApi"
@@ -59,7 +59,7 @@ const cardStyle = { background: "var(--theme-bg)", borderColor: "var(--theme-bor
 export default function DashboardPage() {
     const user = useOnboardedUser()
     const [meetings, setMeetings]   = useBootstrapped<MeetingHours[] | null>("meetings", null)
-    const [rawEvents]               = useBootstrapped<EventEntry[]>("events", [])
+    const [rawEvents, setRawEvents] = useBootstrapped<EventEntry[]>("events", [])
     const [currentEvent]            = useBootstrapped<EventInfo | null>("current_event", null)
     const [eventKeys]               = useBootstrapped<string[]>("event_keys", [])
     const [codeVisible, setCodeVisible] = useState(false)
@@ -67,11 +67,29 @@ export default function DashboardPage() {
 
     const canViewTasks = can(user.permissions, "tasks.view")
 
+    // The bootstrap schedule is a snapshot from app load -- refetch so a
+    // check-in time an editor set since then is picked up.
+    useEffect(() => {
+        let cancelled = false
+        fetchEvents()
+            .then(data => { if (!cancelled) setRawEvents(data) })
+            .catch(() => {})
+        return () => { cancelled = true }
+    }, [setRawEvents])
+
+    // Re-picks the active event each minute, so the card appears on its own
+    // when an event starts or its check-in opens while the page is open.
+    const [nowMs, setNowMs] = useState(() => Date.now())
+    useEffect(() => {
+        const id = setInterval(() => setNowMs(Date.now()), 60_000)
+        return () => clearInterval(id)
+    }, [])
+
     // The one event the active-event card can show. `current_event` from
     // bootstrap is only ever used as a seed (passed down to ActiveEventCard)
     // for this event's matches/check-in state -- which event to show is
     // decided purely by schedule.
-    const active  = pickActiveEvent(rawEvents)
+    const active  = pickActiveEvent(rawEvents, new Date(nowMs))
     const key     = active?.tbaKey
     const hasHub  = !!key && eventKeys.includes(key)
     const seeded  = currentEvent?.event_key === key ? currentEvent : null
@@ -128,8 +146,9 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            {/* Active event card -- only rendered when an event is currently happening.
-                There is no separate "upcoming event" card by design. */}
+            {/* Active event card -- only rendered when an event is currently happening,
+                or its check-in has opened ahead of it. There is no separate
+                "upcoming event" card by design. */}
             {active && (
                 <ActiveEventCard active={active} hasHub={hasHub} eventKey={key} seed={seeded} userId={user.id} />
             )}

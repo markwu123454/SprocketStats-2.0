@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react"
 import type { EventInfo } from "@/lib/eventApi"
+import type { HubTab } from "@/lib/events"
 
 export interface EventContextValue {
     eventKey: string
@@ -7,6 +8,8 @@ export interface EventContextValue {
     loading: boolean
     /** The event is over -- pages show final results instead of live/upcoming state. */
     archived: boolean
+    /** Hub tabs this event hides -- pages shouldn't link into them. */
+    hiddenTabs: HubTab[]
     updateInfo: (patch: Partial<EventInfo>) => void
 }
 

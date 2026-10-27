@@ -2,7 +2,13 @@ import type { RosterMember } from "@/lib/eventApi"
 
 export type EventStatus = "done" | "current" | "upcoming"
 
+// Hub tabs an event may hide (Overview never can). Mirrors HIDEABLE_TABS in
+// backend/db/events.py.
+export const HIDEABLE_TABS = ["itinerary", "packing", "roster", "comp", "tasks"] as const
+export type HubTab = (typeof HIDEABLE_TABS)[number]
+
 export interface EventEntry {
+    id?: number   // `events` row id -- what the schedule PATCH addresses
     name: string
     start: string // ISO datetime
     end?: string  // ISO datetime; defaults to `start` for single-day events
@@ -10,6 +16,8 @@ export interface EventEntry {
     type: string
     url?: string    // omit for no link
     tbaKey?: string // TBA event key, e.g. "2026cass"
+    checkinOpens?: string // omit to open check-in when the event starts
+    hiddenTabs?: HubTab[]
 }
 
 export interface ResolvedEvent extends EventEntry {
@@ -90,7 +98,30 @@ export function resolveEventByUrl(events: EventEntry[], url: string, now: Date =
 }
 
 export function isHubOpen(event: ResolvedEvent, now: number = Date.now()): boolean {
-    return event.status !== "upcoming" || event.startsAt - now <= HUB_LEAD_DAYS * DAY_MS
+    return event.status !== "upcoming" || event.startsAt - now <= HUB_LEAD_DAYS * DAY_MS || isCheckInOpen(event, now)
+}
+
+// Epoch ms when self check-in opens: the event's `checkinOpens` if set,
+// otherwise its start (date-only values mean local midnight either way).
+export function checkInOpensAt(entry: EventEntry): number {
+    return parseEventDate(entry.checkinOpens ?? entry.start).getTime()
+}
+
+// Check-in is open from `checkInOpensAt` until the event is over.
+export function isCheckInOpen(event: ResolvedEvent, now: number = Date.now()): boolean {
+    return event.status !== "done" && now >= checkInOpensAt(event)
+}
+
+export function isTabHidden(entry: EventEntry | undefined, tab: HubTab): boolean {
+    return entry?.hiddenTabs?.includes(tab) ?? false
+}
+
+// "Mar 1" or "Mar 1, 6:00 PM" for a date-only / datetime schedule value.
+export function formatScheduleMoment(value: string): string {
+    const d = parseEventDate(value)
+    const day = `${MONTHS[d.getMonth()]} ${d.getDate()}`
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return day
+    return `${day}, ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
 }
 
 // Time left until `ms` elapses, e.g. "12d 04h 31m" -- or, inside the last
@@ -105,14 +136,21 @@ export function formatCountdown(ms: number): string {
     return `${h}h ${m}m ${pad(total % 60)}s`
 }
 
-// Picks the one event to show on the dashboard's active-event card: among
-// everything currently happening, a TBA-linked event (it has a hub page with
-// check-in/matches) wins over one that's merely on the schedule, since that's
-// the only kind of "current" event the card can actually act on.
+// Picks the one event to show on the dashboard's active-event card: anything
+// currently happening, or upcoming with its check-in already open. Happening
+// now beats check-in-only, and within each a TBA-linked event (it has a hub
+// page with check-in/matches) wins over one that's merely on the schedule,
+// since that's the only kind the card can actually act on.
 export function pickActiveEvent(events: EventEntry[], now: Date = new Date()): ResolvedEvent | null {
-    const current = resolveEvents(events, now).filter((e) => e.status === "current")
-    if (current.length === 0) return null
-    return current.find((e) => e.tbaKey) ?? current[0]
+    const resolved = resolveEvents(events, now)
+    const current = resolved.filter((e) => e.status === "current")
+    const checkInOnly = resolved
+        .filter((e) => e.status === "upcoming" && isCheckInOpen(e, now.getTime()))
+        .sort((a, b) => a.startsAt - b.startsAt)
+    for (const group of [current, checkInOnly]) {
+        if (group.length > 0) return group.find((e) => e.tbaKey) ?? group[0]
+    }
+    return null
 }
 
 function toLocalDateString(d: Date): string {

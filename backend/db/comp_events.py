@@ -464,19 +464,21 @@ async def update_roster_member(event_key: str, user_id: str, fields: dict) -> li
 
 
 async def get_event_schedule(event_key: str) -> dict | None:
-    """Return `{"start_time", "end_time"}` for the `events` row matching
-    `event_key` (looked up by `tba_key`), or `None` if there's no such row.
+    """Return `{"start_time", "end_time", "checkin_opens"}` for the `events`
+    row matching `event_key` (looked up by `tba_key`), or `None` if there's
+    no such row.
 
-    Used by check-in's and the roster-role PATCH's lenient day-range check
-    (see `endpoints.events._enforce_days_in_range`). `start_time`/`end_time`
-    are TEXT and may be a bare date or a full datetime string, or `end_time`
-    may be null (single-day event) -- parsing them into dates, and deciding
-    what an unparseable or missing value means, is entirely the caller's
-    job; this is a plain, single-query lookup with no date logic of its own.
+    Used by check-in's opening-time gate and by check-in's and the
+    roster-role PATCH's lenient day-range check (see
+    `endpoints.events._enforce_days_in_range`). All three are TEXT and may be
+    a bare date or a full datetime string, or `end_time`/`checkin_opens` may
+    be null -- parsing them, and deciding what an unparseable or missing
+    value means, is entirely the caller's job; this is a plain, single-query
+    lookup with no date logic of its own.
     """
     async with db_connection(DB_NAME) as conn:
         row = await conn.fetchrow(
-            "SELECT start_time, end_time FROM events WHERE tba_key = $1",
+            "SELECT start_time, end_time, checkin_opens FROM events WHERE tba_key = $1",
             event_key,
         )
         return dict(row) if row else None

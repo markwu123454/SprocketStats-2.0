@@ -1,9 +1,10 @@
 import asyncio
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
 import db
+from core import push_notify
 from core.external import nexus, tba
 from core.permissions import can, get_permissions_for_role
 from core.security import get_current_user, require_access, require_active
@@ -13,6 +14,7 @@ from db.comp_events import (
     CompEventContentPatch,
     RosterUpdate,
 )
+from db.events import EventScheduleUpdate, check_schedule_order
 
 router = APIRouter()
 
@@ -56,9 +58,48 @@ async def _enforce_days_in_range(event_key: str, days: list[str]) -> None:
         raise HTTPException(status_code=422, detail="Days must be within the event's dates")
 
 
+async def _enforce_check_in_open(event_key: str) -> None:
+    """403 if `event_key`'s schedule row sets a `checkin_opens` time that
+    hasn't arrived yet (read as team-local wall time, like reminder pushes).
+    No schedule row, or no `checkin_opens`, means check-in isn't gated."""
+    schedule = await db.get_event_schedule(event_key)
+    opens = push_notify.parse_event_start((schedule or {}).get("checkin_opens"))
+    if opens is not None and datetime.now(push_notify.TEAM_TZ) < opens:
+        raise HTTPException(status_code=403, detail="Check-in isn't open yet")
+
+
 @router.get("")
 async def list_events(_: dict = Depends(get_current_user)):
     return await db.get_events()
+
+
+@router.patch("/schedule/{event_id}")
+async def patch_schedule(
+    event_id: int,
+    body: EventScheduleUpdate,
+    _: dict = Depends(require_event_edit),
+):
+    """Edit one schedule entry's start/end, when check-in opens, and which hub
+    tabs it hides. Only the sent fields change; ordering rules are checked
+    against the stored row merged with the update."""
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    existing = await db.get_event_by_id(event_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    merged = {"start": existing.get("start"), "end": existing.get("end"), "checkin_opens": existing.get("checkinOpens")}
+    merged.update({k: v for k, v in fields.items() if k in merged})
+    try:
+        check_schedule_order(merged["start"], merged["end"], merged["checkin_opens"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    row = await db.update_event_schedule(event_id, fields)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return row
 
 
 # ── Control panel write path ───────────────────────────────────────────────────
@@ -93,6 +134,7 @@ async def check_in(
     days they expect to attend (omitted/null -> not given yet). Idempotent --
     calling it again just confirms the existing entry (role, phone, and days
     are NOT overwritten) rather than duplicating or changing it."""
+    await _enforce_check_in_open(event_key)
     checkin = body or CheckInRequest()
     if checkin.days is not None:
         await _enforce_days_in_range(event_key, checkin.days)
