@@ -373,7 +373,9 @@ async def init_db():
                     )
                 """)
                 await conn.execute("CREATE INDEX IF NOT EXISTS tasks_bucket_idx ON tasks (bucket)")
-                await conn.execute("CREATE INDEX IF NOT EXISTS tasks_event_key_idx ON tasks (event_key)")
+                # tasks_event_key_idx is created in run_migrations, not here: on
+                # an existing database `tasks` predates `event_key`, and init_db
+                # runs before the migration that adds it.
                 await conn.execute("CREATE INDEX IF NOT EXISTS tasks_assignee_id_idx ON tasks (assignee_id)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS tasks_status_idx ON tasks (status)")
                 await conn.execute("""
