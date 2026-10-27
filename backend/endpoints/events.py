@@ -37,16 +37,15 @@ def _parse_schedule_date(value: str | None) -> date | None:
         return None
 
 
-async def _enforce_days_in_range(event_key: str, days: list[str]) -> None:
-    """422 if any of `days` falls outside `event_key`'s scheduled dates.
+def _enforce_days_in_range(schedule: dict | None, days: list[str]) -> None:
+    """422 if any of `days` falls outside the event's scheduled dates.
 
     Shared by check-in and the roster-role PATCH so the same lenient rule
-    applies either way: looks up the `events` row for this event_key; if
-    there isn't one, or its start (and end, defaulting to start when
+    applies either way: `schedule` is the event's `db.get_event_schedule`
+    row; if there isn't one, or its start (and end, defaulting to start when
     end_time is null) don't both parse to dates, the check is skipped
     entirely rather than blocking the request.
     """
-    schedule = await db.get_event_schedule(event_key)
     if schedule is None:
         return
     start = _parse_schedule_date(schedule.get("start_time"))
@@ -58,12 +57,11 @@ async def _enforce_days_in_range(event_key: str, days: list[str]) -> None:
         raise HTTPException(status_code=422, detail="Days must be within the event's dates")
 
 
-async def _enforce_check_in_open(event_key: str) -> None:
-    """403 if `event_key`'s schedule row turns check-in off, or sets a
-    `checkin_opens` time that hasn't arrived yet (read as team-local wall
-    time, like reminder pushes). No schedule row, or no `checkin_opens`,
-    means check-in isn't time-gated."""
-    schedule = await db.get_event_schedule(event_key)
+def _enforce_check_in_open(schedule: dict | None) -> None:
+    """403 if the event's schedule row (`db.get_event_schedule`) turns
+    check-in off, or sets a `checkin_opens` time that hasn't arrived yet (read
+    as team-local wall time, like reminder pushes). No schedule row, or no
+    `checkin_opens`, means check-in isn't time-gated."""
     if schedule is not None and schedule.get("checkin_enabled") is False:
         raise HTTPException(status_code=403, detail="This event doesn't use check-in")
     opens = push_notify.parse_event_start((schedule or {}).get("checkin_opens"))
@@ -138,11 +136,12 @@ async def check_in(
     days they expect to attend (omitted/null -> not given yet). Idempotent --
     calling it again just confirms the existing entry (role, phone, and days
     are NOT overwritten) rather than duplicating or changing it."""
-    await _enforce_check_in_open(event_key)
+    schedule = await db.get_event_schedule(event_key)
+    _enforce_check_in_open(schedule)
     await db.ensure_comp_event(event_key)
     checkin = body or CheckInRequest()
     if checkin.days is not None:
-        await _enforce_days_in_range(event_key, checkin.days)
+        _enforce_days_in_range(schedule, checkin.days)
     member = {
         "user_id": str(user["sub"]),
         # display_name is null for an account that hasn't finished onboarding
@@ -192,7 +191,7 @@ async def patch_roster_member(
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     if "days" in fields:
-        await _enforce_days_in_range(event_key, fields["days"])
+        _enforce_days_in_range(await db.get_event_schedule(event_key), fields["days"])
 
     try:
         roster = await db.update_roster_member(event_key, user_id, fields)

@@ -412,11 +412,17 @@ async def is_on_roster(event_key: str, user_id: str) -> bool | None:
 
     :returns: `True`/`False`, or `None` if the event does not exist.
     """
-    row = await get_comp_event(event_key)
-    if row is None:
-        return None
-    roster = row.get("roster") or []
-    return any(entry.get("user_id") == user_id for entry in roster)
+    async with db_connection(DB_NAME) as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT COALESCE(roster, '[]'::jsonb) @> $2::jsonb AS on_roster
+            FROM comp_events
+            WHERE event_key = $1
+            """,
+            event_key,
+            [{"user_id": user_id}],
+        )
+    return row["on_roster"] if row else None
 
 
 # Columns `update_roster_member` may set on one roster entry.
@@ -542,9 +548,7 @@ async def update_comp_event_content(event_key: str, fields: dict) -> dict | None
         set_clauses.append(f"{col} = ${len(params)}")
     params.append(event_key)
 
-    query = f"UPDATE comp_events SET {', '.join(set_clauses)} WHERE event_key = ${len(params)} RETURNING event_key"
+    query = f"UPDATE comp_events SET {', '.join(set_clauses)} WHERE event_key = ${len(params)} RETURNING *"
     async with db_connection(DB_NAME) as conn:
         row = await conn.fetchrow(query, *params)
-    if row is None:
-        return None
-    return await get_comp_event(event_key)
+    return dict(row) if row else None

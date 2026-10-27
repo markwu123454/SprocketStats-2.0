@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -146,11 +147,14 @@ async def me(user: dict = Depends(get_current_user)):
     """
     await account_state.assert_active(user["sub"])
 
-    pending = await db.get_pending_notifications_for_user(user["sub"], user.get("role"))
-    # Not on the JWT (kept out of the signed, decodable-by-anyone-with-the-cookie
-    # token since it's a standalone credential -- see endpoints.kiosk), so it's
-    # fetched fresh here instead.
-    row = await db.get_user(user["sub"])
+    # offline_code isn't on the JWT (kept out of the signed,
+    # decodable-by-anyone-with-the-cookie token since it's a standalone
+    # credential -- see endpoints.kiosk), so the user row is fetched fresh here,
+    # alongside the pending notices.
+    pending, row = await asyncio.gather(
+        db.get_pending_notifications_for_user(user["sub"], user.get("role")),
+        db.get_user(user["sub"]),
+    )
 
     return {
         "id": user["sub"],
