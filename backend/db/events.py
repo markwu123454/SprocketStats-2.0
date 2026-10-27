@@ -10,6 +10,93 @@ from .connection import DB_NAME, db_connection
 HIDEABLE_TABS = ["itinerary", "packing", "roster", "comp", "tasks"]
 MAX_DESCRIPTION = 5000
 
+# ── Check-in roles ──────────────────────────────────────────────────────
+#
+# Each event has its own list of roles members pick from at check-in, stored
+# as [{"key", "label"}]. Roster entries store the `key`, so renaming a role
+# (same key, new label) never orphans people already checked in under it.
+# Every event starts with DEFAULT_CHECKIN_ROLES -- the column default fills
+# it in for new rows and for rows that predate the column. The keys match
+# db.comp_events.ASSIGNABLE_ROLES, so existing roster data keeps resolving.
+DEFAULT_CHECKIN_ROLES = [
+    {"key": "attending",  "label": "Attending"},
+    {"key": "drive_team", "label": "Drive Team"},
+    {"key": "pit_crew",   "label": "Pit Crew"},
+    {"key": "mentor",     "label": "Mentor"},
+]
+MAX_CHECKIN_ROLES = 20
+MAX_ROLE_LABEL = 40
+ROLE_KEY_RE = re.compile(r"^[a-z0-9_]{1,40}$")
+
+
+def _slugify_role(label: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")[:40]
+    return slug or "role"
+
+
+class CheckinRoleIn(BaseModel):
+    """One role in a `checkin_roles` update. Omit `key` for a new role (one
+    is derived from the label); send an existing role's key to rename it."""
+
+    key: str | None = None
+    label: str
+
+    @field_validator("label")
+    @classmethod
+    def _label_valid(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("role names must not be blank")
+        if len(v) > MAX_ROLE_LABEL:
+            raise ValueError(f"role names must be {MAX_ROLE_LABEL} characters or fewer")
+        return v
+
+    @field_validator("key")
+    @classmethod
+    def _key_valid(cls, v: str | None) -> str | None:
+        if v is not None and not ROLE_KEY_RE.fullmatch(v):
+            raise ValueError("invalid role key")
+        return v
+
+
+def normalize_checkin_roles(roles: list[CheckinRoleIn]) -> list[dict]:
+    """Validate a full role list and give every role a unique key.
+
+    1..MAX_CHECKIN_ROLES roles, no two with the same name (ignoring case),
+    no two sending the same key. New roles get a key slugged from their
+    label, suffixed (_2, _3, ...) if it collides with a key already taken.
+    """
+    if not roles:
+        raise ValueError("an event needs at least one check-in role")
+    if len(roles) > MAX_CHECKIN_ROLES:
+        raise ValueError(f"an event can have at most {MAX_CHECKIN_ROLES} check-in roles")
+    labels = [r.label.lower() for r in roles]
+    if len(set(labels)) != len(labels):
+        raise ValueError("check-in role names must be unique")
+    sent_keys = [r.key for r in roles if r.key]
+    if len(set(sent_keys)) != len(sent_keys):
+        raise ValueError("check-in role keys must be unique")
+
+    taken = set(sent_keys)
+    out = []
+    for r in roles:
+        key = r.key
+        if not key:
+            base = _slugify_role(r.label)
+            key, n = base, 2
+            while key in taken:
+                key, n = f"{base[:37]}_{n}", n + 1
+            taken.add(key)
+        out.append({"key": key, "label": r.label})
+    return out
+
+
+def role_keys(roles: list[dict] | None) -> list[str]:
+    """Allowed role keys for an event -- its own list, or the defaults when
+    there's no schedule row (or an unreadable value) to take them from."""
+    source = roles if isinstance(roles, list) and roles else DEFAULT_CHECKIN_ROLES
+    return [r["key"] for r in source if isinstance(r, dict) and r.get("key")]
+
 # `events.start_time`/`end_time`/`checkin_opens` are TEXT holding either a
 # bare "YYYY-MM-DD" or a local "YYYY-MM-DDTHH:MM" wall time -- the two forms
 # the frontend's parseEventDate understands.
@@ -60,6 +147,18 @@ class EventScheduleUpdate(BaseModel):
     # False turns self check-in off for this event entirely. `checkin_opens`
     # is kept as-is, so turning it back on restores the old opening time.
     checkin_enabled: bool | None = None
+    # The full role list members pick from at check-in (replaces the old one).
+    # Each item is shape-checked here; the list as a whole (count, unique
+    # names, key assignment) is normalized by the endpoint via
+    # `normalize_checkin_roles`.
+    checkin_roles: list[CheckinRoleIn] | None = None
+
+    @field_validator("checkin_roles")
+    @classmethod
+    def _checkin_roles_valid(cls, v: list[CheckinRoleIn] | None) -> list[CheckinRoleIn]:
+        if v is None:
+            raise ValueError("checkin_roles must be a list")
+        return v
 
     @field_validator("checkin_enabled")
     @classmethod
@@ -149,11 +248,12 @@ _SCHEDULE_COLUMNS = {
     "hidden_tabs": "hidden_tabs",
     "description": "description",
     "checkin_enabled": "checkin_enabled",
+    "checkin_roles": "checkin_roles",
 }
 
 _EVENT_COLUMNS = """
     id, name, start_time, end_time, location, event_type, url, tba_key,
-    checkin_opens, hidden_tabs, description, checkin_enabled
+    checkin_opens, hidden_tabs, description, checkin_enabled, checkin_roles
 """
 _SELECT_EVENT = f"SELECT {_EVENT_COLUMNS} FROM events"
 
@@ -210,6 +310,7 @@ def _row_to_event(r) -> dict:
         "type":       r["event_type"],
         "hiddenTabs": list(r["hidden_tabs"] or []),
         "checkinEnabled": r["checkin_enabled"] is not False,
+        "checkinRoles": r["checkin_roles"] or DEFAULT_CHECKIN_ROLES,
     }
     if r["end_time"]:
         d["end"] = r["end_time"]
