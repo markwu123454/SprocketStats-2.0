@@ -1,6 +1,7 @@
 import {useEffect, useState} from "react"
 import {ChevronRight, Pencil, Plus} from "lucide-react"
-import {Link} from "react-router-dom";
+import {Link, useNavigate} from "react-router-dom";
+import {fetchCheckInStatus, setCheckInDismissed} from "@/lib/eventApi.ts"
 import {
     type EventEntry, checkInOpensAt, formatCountdown, formatScheduleMoment, hasEventPage, hubKeyOf, isCheckInOpen, isHubOpen, resolveEvents, usesCheckIn,
     STATUS_META,
@@ -11,6 +12,7 @@ import {can} from "@/lib/permissions"
 import EventScheduleEditor from "@/components/events/EventScheduleEditor"
 import EventEditSheet from "@/components/events/EventEditSheet"
 import {useIsMobile} from "@/lib/useIsMobile"
+import {DANGER_RED} from "@/lib/taskFormat"
 
 const API = import.meta.env.VITE_BACKEND_URL
 const cardStyle = {background: "var(--theme-bg)", borderColor: "var(--theme-border)"}
@@ -52,6 +54,35 @@ export default function EventsPage() {
     // Phones edit in a bottom sheet; wider screens expand the card inline.
     const editingEvent = isMobile && editingId !== null ? events.find(e => e.id === editingId) : undefined
 
+    // Events whose check-in prompt this member dismissed (and never checked
+    // in to). The dashboard hides a dismissed prompt ahead of the event, so
+    // this is where it can be brought back. Only open-check-in events are
+    // looked up, which is normally zero to two requests.
+    const navigate = useNavigate()
+    const [dismissedKeys, setDismissedKeys] = useState<Record<string, boolean>>({})
+    const [restoreError, setRestoreError] = useState<string | null>(null)
+    const openCheckInKeys = events
+        .filter(e => hubKeyOf(e) && isCheckInOpen(e, now))
+        .map(e => hubKeyOf(e)!)
+        .join(",")
+    useEffect(() => {
+        if (!openCheckInKeys) return
+        let cancelled = false
+        for (const key of openCheckInKeys.split(",")) {
+            fetchCheckInStatus(key)
+                .then(res => { if (!cancelled) setDismissedKeys(prev => ({...prev, [key]: res.dismissed && !res.checked_in})) })
+                .catch(() => {})
+        }
+        return () => { cancelled = true }
+    }, [openCheckInKeys])
+
+    function restoreCheckIn(key: string) {
+        setRestoreError(null)
+        setCheckInDismissed(key, false)
+            .then(() => { setDismissedKeys(prev => ({...prev, [key]: false})); navigate("/dashboard") })
+            .catch(() => setRestoreError("Couldn't bring back check-in. Try again."))
+    }
+
     function applyCreated(created: EventEntry) {
         setRawEvents(prev => [...prev, created])
         setCreating(false)
@@ -81,6 +112,10 @@ return (
                 </button>
             )}
         </div>
+
+        {restoreError && (
+            <p role="alert" className="text-xs mb-3" style={{color: DANGER_RED}}>{restoreError}</p>
+        )}
 
         <div className="flex flex-col">
             {events.map((event, i) => {
@@ -194,6 +229,18 @@ return (
                                         </button>
                                     )}
                                 </div>
+                                {key && dismissedKeys[key] && (
+                                    <div className="flex items-center gap-3 px-1">
+                                        <span className="text-xs theme-subtext-color">You dismissed check-in for this event.</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => restoreCheckIn(key)}
+                                            className="inline-flex items-center min-h-11 rounded-lg text-sm theme-text-contrast hover:underline outline-none focus:ring-2"
+                                        >
+                                            Check in
+                                        </button>
+                                    </div>
+                                )}
                                 {editing && !isMobile && (
                                     <div className="rounded-xl border p-4" style={cardStyle}>
                                         <EventScheduleEditor
