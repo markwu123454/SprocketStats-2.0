@@ -1,8 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from "react"
+import { confirmAnyDiscard, useDiscardGuard, useIsDirty } from "@/lib/useDiscardGuard"
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react"
 import { useLocation } from "react-router-dom"
-import { ChevronDown, ChevronRight, Pencil, X } from "lucide-react"
+import { ChevronDown, ChevronRight, X } from "lucide-react"
 import { useOnboardedUser, type OnboardedUser } from "@/contexts/authContext"
 import Dropdown from "@/components/ui/Dropdown"
+import Button from "@/components/ui/Button"
+import EmptyState from "@/components/ui/EmptyState"
+import FormFooter from "@/components/ui/FormFooter"
+import Notice from "@/components/ui/Notice"
+import Sheet from "@/components/ui/Sheet"
+import Skeleton from "@/components/ui/Skeleton"
 import AreaInput from "@/components/tasks/AreaInput"
 import HelpTip from "@/components/tasks/HelpTip"
 import { BUCKET_OPTIONS, TASK_BUCKETS, bucketLabel } from "@/lib/taskBuckets"
@@ -12,12 +19,13 @@ import {
     type CreateTaskInput, type Person, type Task, type TaskNote, type TaskPriority, type UpdateTaskInput,
 } from "@/lib/tasksApi"
 import {
-    DANGER_RED, PRIORITY_COLOR, AVATAR_INK, CRITICAL_BADGE_STYLE, priorityChoices,
+    DANGER_RED, PRIORITY_COLOR, AVATAR_INK, failMessage, CRITICAL_BADGE_STYLE, priorityChoices,
     tint, tintColor, avatarBg, initialOf, formatRelativeTime, formatPosted, isOverdue, rowDue, assigneeOptions,
     compareTasks, compareDone, matchesFilter, areaSuggestions, TASK_SORT_OPTIONS, TASK_FIELD_HELP,
     type SettableStatus, type WhoFilter, type Quick, type TaskSort, type TasksPageState,
 } from "@/lib/taskFormat"
 import { useTaskBoard } from "@/lib/useTaskBoard"
+import { cardClass, fieldLabelClass, focusRing, helperClass, inputClass, typeH1, typeH2 } from "@/lib/uiClasses"
 
 interface SubteamGroup {
     bucket: string
@@ -220,7 +228,7 @@ export default function TasksPageDesktop() {
         ...people.map(p => ({ value: p.id, label: p.display_name })),
     ]
 
-    const dropdownTriggerClassName = "rounded-lg border px-3 py-2 text-sm transition theme-bg theme-border theme-text"
+    const dropdownTriggerClassName = "rounded-lg border theme-outline theme-bg theme-text px-3 min-h-11 md:min-h-10 text-sm"
     const defaultBucket = bucketFilter !== "all" ? bucketFilter : (mySubteam ?? "general")
 
     function renderRow(task: Task, isFirst: boolean) {
@@ -265,56 +273,54 @@ export default function TasksPageDesktop() {
 
     if (loading) {
         return (
-            <div className="px-4 py-6">
-                <p className="text-sm theme-subtext-color">Loading tasks…</p>
+            <div className="px-4 md:px-6 py-6">
+                <div role="status" aria-label="Loading tasks" className="mx-auto w-full max-w-[1180px] flex flex-col gap-3">
+                    <Skeleton className="h-8 w-40" />
+                    <Skeleton className="h-5 w-72 max-w-full" />
+                    <div className="flex flex-col gap-3 pt-4">
+                        {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}
+                    </div>
+                </div>
             </div>
         )
     }
 
     return (
-        <div className="px-4 py-6">
+        <div className="px-4 md:px-6 py-6">
             {/* One solid, blurred panel holds the whole board so it reads
                 against the page's map background ("Task board visibility"
                 design, option 1a). */}
-            <div className="flex flex-col gap-5" style={{
-                maxWidth: 1180, margin: "0 auto", padding: 24, borderRadius: 14,
-                background: "color-mix(in oklch, var(--theme-bg) 94%, transparent)",
-                backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
-                border: "1px solid var(--theme-border)", boxShadow: "0 20px 50px rgba(0,0,0,.45)",
-            }}>
+            <div
+                className="mx-auto w-full max-w-[1180px] flex flex-col gap-5 rounded-2xl border theme-border p-6"
+                style={{
+                    background: "color-mix(in oklch, var(--theme-bg) 94%, transparent)",
+                    backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+                }}
+            >
 
-                <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
+                <div className="flex flex-wrap items-end justify-between gap-5">
                     <div>
-                        <h1 style={{ margin: 0, fontSize: 28, lineHeight: 1.1, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--theme-h1-color)" }}>Task board</h1>
-                        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", fontSize: 12.5, color: "var(--theme-subtext-color)" }}>
-                            <span style={{ whiteSpace: "nowrap", marginRight: 2 }}>{totalLabel}</span>
+                        <h1 className={`${typeH1} theme-h1-color`}>Task board</h1>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs theme-subtext-color">
+                            <span className="whitespace-nowrap mr-0.5">{totalLabel}</span>
+                            {/* Dots are data-identity colours for the status buckets (no matching theme role); Overdue uses the danger role. */}
                             <QuickChip label="Unclaimed" dot="#f5d547" count={unclaimedCount} active={quick === "unclaimed"} onClick={() => toggleQuick("unclaimed")} />
-                            <QuickChip label="Overdue" dot="#f87171" count={overdueCount} active={quick === "overdue"} onClick={() => toggleQuick("overdue")} />
+                            <QuickChip label="Overdue" dot={DANGER_RED} count={overdueCount} active={quick === "overdue"} onClick={() => toggleQuick("overdue")} />
                             <QuickChip label={STATUS_LABEL.todo} dot="#93c5fd" count={todoCount} active={quick === "todo"} onClick={() => toggleQuick("todo")} />
                             <QuickChip label={STATUS_LABEL.doing} dot="#c4b5fd" count={doingCount} active={quick === "doing"} onClick={() => toggleQuick("doing")} />
                             <QuickChip label="Needs review" dot="#9ad4c4" count={reviewCount} active={quick === "review"} onClick={() => toggleQuick("review")} />
                         </div>
                     </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
-                        <div style={{ width: 150 }}>
-                            <Dropdown value={whoFilter} onChange={v => setWhoFilter(v as WhoFilter)} options={whoOptions} triggerClassName={dropdownTriggerClassName} searchable />
+                    <div className="flex flex-wrap items-center gap-3">
+                        <div className="w-40">
+                            <Dropdown value={whoFilter} onChange={v => setWhoFilter(v as WhoFilter)} options={whoOptions} triggerClassName={dropdownTriggerClassName} searchable label="Filter by person" />
                         </div>
-                        <div style={{ width: 150 }}>
-                            <Dropdown value={sort} onChange={v => setSort(v as TaskSort)} options={TASK_SORT_OPTIONS} triggerClassName={dropdownTriggerClassName} menuAlign="right" />
+                        <div className="w-40">
+                            <Dropdown value={sort} onChange={v => setSort(v as TaskSort)} options={TASK_SORT_OPTIONS} triggerClassName={dropdownTriggerClassName} menuAlign="right" label="Sort tasks" />
                         </div>
-                        <button
-                            onClick={() => setComposing(v => !v)}
-                            className="hover:brightness-110"
-                            style={{
-                                whiteSpace: "nowrap", flex: "none", height: 38, padding: "0 16px", borderRadius: 8,
-                                border: `1px solid ${composing ? "var(--theme-border)" : "transparent"}`,
-                                fontSize: 13.5, fontWeight: 700, cursor: "pointer",
-                                background: composing ? "var(--theme-button-bg)" : "var(--theme-text-contrast)",
-                                color: composing ? "var(--theme-text-contrast)" : "var(--theme-bg)",
-                            }}
-                        >
+                        <Button variant={composing ? "outlined" : "filled"} className="shrink-0" onClick={() => void confirmAnyDiscard().then(ok => { if (ok) setComposing(v => !v) })}>
                             {composing ? "Close" : "New task"}
-                        </button>
+                        </Button>
                     </div>
                 </div>
 
@@ -327,23 +333,18 @@ export default function TasksPageDesktop() {
                         canAssign={canAssign}
                         people={people}
                         defaultBucket={defaultBucket}
-                        dropdownTriggerClassName={dropdownTriggerClassName}
                         onCreated={task => { board.applyTask(task); setComposing(false) }}
                         onClose={() => setComposing(false)}
                         onError={setActionError}
                     />
                 )}
 
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 24, alignItems: "flex-start" }}>
+                <div className="flex flex-wrap items-start gap-6">
 
                     {/* The panel already separates the board from the map, so the
                         rail drops its own card for a plain divider. */}
-                    <aside style={{
-                        flex: "1 1 190px", maxWidth: 240, minWidth: 180, boxSizing: "border-box",
-                        paddingRight: 20, borderRight: "1px solid var(--theme-border)",
-                        display: "flex", flexDirection: "column", gap: 2,
-                    }}>
-                        <div style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--theme-subtext-color)", padding: "4px 8px 8px" }}>Subteam</div>
+                    <aside className="box-border flex flex-col gap-0.5 border-r theme-border pr-5" style={{ flex: "1 1 190px", maxWidth: 240, minWidth: 180 }}>
+                        <div className={`${typeH2} theme-subtext-color px-2 pt-1 pb-2`}>Subteam</div>
                         <RailRow active={bucketFilter === "all"} label="All tasks" count={allCount} onClick={() => setBucketFilter("all")} />
                         {BUCKET_OPTIONS.filter(b => showEmpties || (bucketCounts[b.value] ?? 0) > 0).map(b => (
                             <RailRow key={b.value} active={bucketFilter === b.value} label={b.label} count={bucketCounts[b.value] ?? 0} onClick={() => setBucketFilter(b.value)} />
@@ -351,24 +352,21 @@ export default function TasksPageDesktop() {
                         <button
                             type="button"
                             onClick={() => setShowEmpties(v => !v)}
-                            style={{
-                                font: "inherit", border: "none", background: "transparent", width: "100%", textAlign: "left",
-                                marginTop: 6, padding: "9px 9px 2px", borderTop: "1px solid var(--theme-border)", fontSize: 12, cursor: "pointer", color: "var(--theme-text-contrast)",
-                            }}
+                            className={`w-full mt-2 pt-3 px-2 border-t theme-border text-left text-xs theme-text-contrast cursor-pointer ${focusRing}`}
                         >
                             {showEmpties ? "Hide empty subteams" : `Show ${hiddenCount} empty subteams`}
                         </button>
                     </aside>
 
-                    <div style={{ flex: "999 1 440px", minWidth: 0, display: "flex", flexDirection: "column", gap: 18 }}>
+                    <div className="flex flex-col gap-5 min-w-0" style={{ flex: "999 1 440px" }}>
                         {groups.map(group => (
                             <section key={group.bucket}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 2px 8px" }}>
-                                    <span style={{ fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 700, color: "var(--theme-h1-color)" }}>{group.label}</span>
-                                    <span style={{ fontSize: 11.5, color: "var(--theme-subtext-color)" }}>{group.countLabel}</span>
-                                    <span style={{ flex: 1, height: 1, background: "var(--theme-border)" }} />
+                                <div className="flex items-center gap-3 px-0.5 pb-2">
+                                    <span className={`${typeH2} theme-h1-color`}>{group.label}</span>
+                                    <span className="text-xs theme-subtext-color">{group.countLabel}</span>
+                                    <span className="flex-1 h-px bg-[var(--theme-border)]" />
                                 </div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                                <div className="flex flex-col gap-3">
                                     {group.areas.map(areaGroup => {
                                         const collapsed = collapsedAreas.has(areaGroup.key)
                                         return (
@@ -380,7 +378,7 @@ export default function TasksPageDesktop() {
                                                     onClick={() => toggleArea(areaGroup.key)}
                                                 />
                                                 {!collapsed && (
-                                                    <div style={{ border: "1px solid var(--theme-border)", borderRadius: 12, background: "var(--theme-button-bg)" }}>
+                                                    <div className="rounded-xl border theme-border" style={{ background: "var(--theme-button-bg)" }}>
                                                         {areaGroup.tasks.map((task, i) => renderRow(task, i === 0))}
                                                     </div>
                                                 )}
@@ -392,10 +390,10 @@ export default function TasksPageDesktop() {
                         ))}
 
                         {doneTasks.length > 0 && (
-                            <section style={{ marginTop: 6 }}>
+                            <section className="mt-2">
                                 <SectionToggle label="Done" count={doneTasks.length} open={doneOpen} onClick={() => setDoneOpen(v => !v)} strong />
                                 {doneOpen && (
-                                    <div style={{ border: "1px solid var(--theme-border)", borderRadius: 12, background: "var(--theme-button-bg)" }}>
+                                    <div className="rounded-xl border theme-border" style={{ background: "var(--theme-button-bg)" }}>
                                         {doneTasks.map((task, i) => renderRow(task, i === 0))}
                                     </div>
                                 )}
@@ -403,9 +401,10 @@ export default function TasksPageDesktop() {
                         )}
 
                         {isEmpty && (
-                            <div style={{ border: "1px dashed var(--theme-border)", borderRadius: 12, padding: "40px 24px", textAlign: "center" }}>
-                                <div style={{ fontSize: 15, fontWeight: 600, color: "var(--theme-h1-color)" }}>Nothing matches these filters</div>
-                                <div style={{ marginTop: 6, fontSize: 13, color: "var(--theme-subtext-color)" }}>Try switching Who back to Everyone, or clear the quick filter.</div>
+                            <div className="rounded-xl border border-dashed theme-border">
+                                <EmptyState variant="screen" title="Nothing matches these filters">
+                                    Try switching Who back to Everyone, or clear the quick filter.
+                                </EmptyState>
                             </div>
                         )}
                     </div>
@@ -429,17 +428,16 @@ export default function TasksPageDesktop() {
 
 function ErrorBanner({ message, onDismiss }: { message: string; onDismiss?: () => void }) {
     return (
-        <p
-            className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border flex items-center justify-between gap-2 m-0"
-            style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}
-        >
-            <span>{message}</span>
-            {onDismiss && (
-                <button onClick={onDismiss} className="shrink-0 theme-subtext-color hover:opacity-70 transition-opacity">
-                    <X size={14} />
-                </button>
-            )}
-        </p>
+        <Notice>
+            <div className="flex items-center justify-between gap-2">
+                <span>{message}</span>
+                {onDismiss && (
+                    <Button variant="icon" aria-label="Dismiss" className="shrink-0 -my-3 -mr-3" onClick={onDismiss}>
+                        <X size={14} />
+                    </Button>
+                )}
+            </div>
+        </Notice>
     )
 }
 
@@ -448,17 +446,14 @@ function RailRow({ active, label, count, onClick }: { active: boolean; label: st
         <button
             type="button"
             onClick={onClick}
+            className={`flex items-center justify-between gap-2 w-full h-9 px-2 rounded-lg text-sm text-left cursor-pointer ${active ? "font-bold" : "font-medium"} ${focusRing}`}
             style={{
-                font: "inherit", border: "none", width: "100%", textAlign: "left",
-                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-                height: 34, padding: "0 9px", borderRadius: 7, cursor: "pointer", fontSize: 13.5,
                 background: active ? "var(--ag-grid-selected-bg)" : "transparent",
                 color: active ? "var(--theme-text-contrast)" : "var(--theme-text)",
-                fontWeight: active ? 700 : 500,
             }}
         >
             <span>{label}</span>
-            <span style={{ fontSize: 12, color: active ? "var(--theme-text-contrast)" : tint("--theme-subtext-color", 70) }}>{count}</span>
+            <span className="text-xs" style={{ color: active ? "var(--theme-text-contrast)" : tint("--theme-subtext-color", 70) }}>{count}</span>
         </button>
     )
 }
@@ -472,20 +467,12 @@ function SectionToggle({ label, count, open, onClick, strong }: { label: string;
             type="button"
             onClick={onClick}
             aria-expanded={open}
-            className="hover:text-(--theme-h1-color)"
-            style={{
-                font: "inherit", border: "none", background: "transparent", cursor: "pointer",
-                display: "flex", alignItems: "center", gap: 6, padding: strong ? "0 2px 8px" : "0 2px 6px",
-                width: strong ? "100%" : undefined,
-                fontSize: strong ? 10.5 : 11, letterSpacing: "0.1em", textTransform: "uppercase",
-                fontWeight: strong ? 700 : 500,
-                color: strong ? "var(--theme-h1-color)" : "var(--theme-subtext-color)",
-            }}
+            className={`flex items-center gap-1.5 px-0.5 text-xs uppercase tracking-widest cursor-pointer hover:text-(--theme-h1-color) ${focusRing} ${strong ? "w-full pb-2 font-bold theme-h1-color" : "pb-1.5 font-medium theme-subtext-color"}`}
         >
-            <Chevron size={13} />
+            <Chevron size={14} />
             <span>{label}</span>
-            <span style={{ letterSpacing: 0, fontWeight: 500, color: "var(--theme-subtext-color)", opacity: strong ? 1 : 0.75 }}>{count}</span>
-            {strong && <span style={{ flex: 1, height: 1, background: "var(--theme-border)" }} />}
+            <span className={`tracking-normal font-medium theme-subtext-color ${strong ? "" : "opacity-75"}`}>{count}</span>
+            {strong && <span className="flex-1 h-px bg-[var(--theme-border)]" />}
         </button>
     )
 }
@@ -498,46 +485,31 @@ function QuickChip({ label, dot, count, active, onClick }: { label: string; dot:
             type="button"
             onClick={onClick}
             disabled={empty}
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold whitespace-nowrap cursor-pointer disabled:cursor-not-allowed ${empty && !active ? "opacity-40" : ""} ${focusRing}`}
             style={{
-                font: "inherit",
-                display: "flex", alignItems: "center", gap: 6, cursor: empty ? "default" : "pointer",
-                whiteSpace: "nowrap", borderRadius: 999, padding: "4px 11px", fontWeight: 600,
-                border: `1px solid ${active ? dot : "var(--theme-border)"}`,
+                borderColor: active ? dot : "var(--theme-border)",
                 background: active ? tintColor(dot, 16) : "transparent",
                 color: active ? "var(--theme-h1-color)" : "var(--theme-subtext-color)",
-                opacity: empty && !active ? 0.55 : 1,
             }}
         >
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor }} />
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: dotColor }} />
             <span>{label}</span>
-            <span style={{ fontVariantNumeric: "tabular-nums" }}>{count}</span>
+            <span className="tabular-nums">{count}</span>
         </button>
     )
 }
-
-const composeLabelStyle: CSSProperties = { fontSize: 12.5, fontWeight: 700, color: "var(--theme-h1-color)", display: "flex", alignItems: "center", gap: 6 }
-const composeInputStyle: CSSProperties = {
-    height: 38, boxSizing: "border-box", width: "100%", padding: "0 12px", borderRadius: 8,
-    border: "1px solid var(--theme-border)", background: "var(--theme-bg)", color: "var(--theme-text)",
-    font: "inherit", fontSize: 14, outline: "none",
-}
-// Tailwind arbitrary-value focus utility referencing a CSS var, per the
-// established idiom in this file (see the DANGER_RED note above for why
-// these have to be literal strings rather than built from a JS constant).
-const composeInputFocusClass = "focus:border-(--theme-h1-color)"
 
 interface ComposeFormProps {
     tasks: Task[]
     canAssign: boolean
     people: Person[]
     defaultBucket: string
-    dropdownTriggerClassName: string
     onCreated: (task: Task) => void
     onClose: () => void
     onError: (message: string) => void
 }
 
-function ComposeForm({ tasks, canAssign, people, defaultBucket, dropdownTriggerClassName, onCreated, onClose, onError }: ComposeFormProps) {
+function ComposeForm({ tasks, canAssign, people, defaultBucket, onCreated, onClose, onError }: ComposeFormProps) {
     const [title, setTitle] = useState("")
     const [area, setArea] = useState("")
     const [bucket, setBucket] = useState(defaultBucket)
@@ -545,6 +517,8 @@ function ComposeForm({ tasks, canAssign, people, defaultBucket, dropdownTriggerC
     const [dueDate, setDueDate] = useState("")
     const [assigneeId, setAssigneeId] = useState("")
     const [submitting, setSubmitting] = useState(false)
+    // Dirty = any field differs from the blank form it opened as.
+    const confirmDiscard = useDiscardGuard(useIsDirty({ title, area, bucket, priority, dueDate, assigneeId }))
 
     async function handleSubmit(e: FormEvent) {
         e.preventDefault()
@@ -561,87 +535,75 @@ function ComposeForm({ tasks, canAssign, people, defaultBucket, dropdownTriggerC
             if (canAssign && assigneeId) input.assignee_id = assigneeId
             onCreated(await createTask(input))
         } catch (err) {
-            onError(err instanceof Error ? err.message : "Failed to create task")
+            onError(failMessage(err, "Couldn't create the task."))
         } finally {
             setSubmitting(false)
         }
     }
 
     function onFormKeyDown(e: KeyboardEvent<HTMLFormElement>) {
-        if (e.key === "Escape") onClose()
+        if (e.key === "Escape") void confirmDiscard().then(ok => { if (ok) onClose() })
     }
 
     const canSubmit = title.trim().length > 0 && !submitting
+    const labelClass = `${fieldLabelClass} flex items-center gap-1.5`
 
     return (
-        <div style={{ border: "1px solid var(--theme-border)", borderRadius: 12, background: "var(--theme-button-bg)", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
-            <form onSubmit={e => void handleSubmit(e)} onKeyDown={onFormKeyDown} style={{ display: "contents" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6, gridColumn: "span 2", minWidth: 0 }}>
-                        <span style={composeLabelStyle}>Task <HelpTip text={TASK_FIELD_HELP.title} /></span>
+        <div className={cardClass} style={{ background: "var(--theme-button-bg)" }}>
+            <form onSubmit={e => void handleSubmit(e)} onKeyDown={onFormKeyDown} className="contents">
+                <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
+                    <div className="flex flex-col gap-1.5 col-span-2 min-w-0">
+                        <span className={labelClass}>Task <HelpTip text={TASK_FIELD_HELP.title} /></span>
                         <input
                             value={title}
                             onChange={e => setTitle(e.target.value)}
                             autoFocus
                             placeholder="e.g. Re-tension the intake belts"
-                            className={composeInputFocusClass}
-                            style={composeInputStyle}
+                            className={`${inputClass} w-full`}
                         />
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                        <span style={composeLabelStyle}>Area <HelpTip text={TASK_FIELD_HELP.area} /></span>
+                    <div className="flex flex-col gap-1.5 min-w-0">
+                        <span className={labelClass}>Area <HelpTip text={TASK_FIELD_HELP.area} /></span>
                         <AreaInput
                             value={area}
                             onChange={setArea}
                             suggestions={areaSuggestions(tasks, bucket)}
                             placeholder="General"
-                            className={composeInputFocusClass}
-                            style={composeInputStyle}
+                            className={`${inputClass} w-full`}
                         />
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                        <span style={composeLabelStyle}>Subteam <HelpTip text={TASK_FIELD_HELP.bucket} /></span>
-                        <Dropdown value={bucket} onChange={setBucket} options={BUCKET_OPTIONS} triggerClassName={dropdownTriggerClassName} />
+                    <div className="flex flex-col gap-1.5 min-w-0">
+                        <span className={labelClass}>Subteam <HelpTip text={TASK_FIELD_HELP.bucket} /></span>
+                        <Dropdown value={bucket} onChange={setBucket} options={BUCKET_OPTIONS} triggerClassName={inputClass} label="Subteam" />
                     </div>
                     {canAssign && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                            <span style={composeLabelStyle}>Assign to <HelpTip text={TASK_FIELD_HELP.assignee} /></span>
-                            <Dropdown value={assigneeId} onChange={setAssigneeId} options={assigneeOptions(people)} triggerClassName={dropdownTriggerClassName} searchable />
+                        <div className="flex flex-col gap-1.5 min-w-0">
+                            <span className={labelClass}>Assign to <HelpTip text={TASK_FIELD_HELP.assignee} /></span>
+                            <Dropdown value={assigneeId} onChange={setAssigneeId} options={assigneeOptions(people)} triggerClassName={inputClass} searchable label="Assign to" />
                         </div>
                     )}
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                        <span style={composeLabelStyle}>Priority <HelpTip text={TASK_FIELD_HELP.priority} /></span>
-                        <Dropdown value={priority} onChange={v => setPriority(v as TaskPriority)} options={priorityChoices(canAssign).map(p => ({ value: p, label: PRIORITY_LABEL[p] }))} triggerClassName={dropdownTriggerClassName} />
+                    <div className="flex flex-col gap-1.5 min-w-0">
+                        <span className={labelClass}>Priority <HelpTip text={TASK_FIELD_HELP.priority} /></span>
+                        <Dropdown value={priority} onChange={v => setPriority(v as TaskPriority)} options={priorityChoices(canAssign).map(p => ({ value: p, label: PRIORITY_LABEL[p] }))} triggerClassName={inputClass} label="Priority" />
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                        <span style={composeLabelStyle}>Due <HelpTip text={TASK_FIELD_HELP.due} /></span>
+                    <div className="flex flex-col gap-1.5 min-w-0">
+                        <span className={labelClass}>Due <HelpTip text={TASK_FIELD_HELP.due} /></span>
                         <input
                             type="date"
                             value={dueDate}
                             onChange={e => setDueDate(e.target.value)}
-                            className={composeInputFocusClass}
-                            style={{ ...composeInputStyle, padding: "0 10px" }}
+                            className={`${inputClass} w-full`}
                         />
                     </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                    <button
-                        type="submit"
-                        disabled={!canSubmit}
-                        style={{
-                            whiteSpace: "nowrap", flex: "none", height: 36, padding: "0 16px", borderRadius: 8,
-                            border: "1px solid var(--theme-border)", fontSize: 13.5, fontWeight: 700,
-                            cursor: canSubmit ? "pointer" : "default",
-                            background: canSubmit ? "var(--theme-text-contrast)" : "transparent",
-                            color: canSubmit ? "var(--theme-bg)" : tint("--theme-text-contrast", 45),
-                        }}
-                    >
-                        {submitting ? "Adding…" : "Add task"}
-                    </button>
-                    <span style={{ fontSize: 12, color: "var(--theme-subtext-color)" }}>
+                <FormFooter className="-mx-5 -mb-5 rounded-b-xl">
+                    <span className={`${helperClass} mr-auto`}>
                         {canAssign ? "↵ to add · Esc to close" : "New tasks start unclaimed — claim it after adding. ↵ to add"}
                     </span>
-                </div>
+                    <Button type="submit" size="footer" disabled={!canSubmit}>
+                        {submitting ? "Adding…" : "Add task"}
+                    </Button>
+                </FormFooter>
             </form>
         </div>
     )
@@ -653,7 +615,7 @@ interface MenuAction {
     danger?: boolean
 }
 
-const detailLabelStyle: CSSProperties = { fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--theme-subtext-color)" }
+const detailLabelClass = `${typeH2} theme-subtext-color`
 
 interface TaskRowProps {
     task: Task
@@ -741,19 +703,19 @@ function TaskRow({
                     background: expanded ? "var(--ag-grid-hover-bg)" : (critical ? tintColor(DANGER_RED, 10) : "transparent"),
                 }}
             >
-                <span style={{ width: critical ? 5 : 3, alignSelf: "stretch", flex: "none", borderRadius: "0 3px 3px 0", background: priorityColor }} />
+                <span className="rounded-r-full" style={{ width: critical ? 5 : 3, alignSelf: "stretch", flex: "none", background: priorityColor }} />
 
                 <button
                     type="button"
                     onClick={e => { e.stopPropagation(); if (done || !canToggleCheck) return; onSetStatus(review ? "doing" : "review") }}
                     disabled={done || !canToggleCheck}
                     title={canToggleCheck ? undefined : disabledTitle}
-                    className="disabled:cursor-not-allowed"
+                    className={`disabled:cursor-not-allowed text-xs font-bold ${focusRing}`}
                     style={{
                         width: 17, height: 17, flex: "none", borderRadius: 5, display: "grid", placeItems: "center",
-                        fontSize: 10, fontWeight: 800, padding: 0,
+                        padding: 0,
                         color: done ? "var(--theme-bg)" : "var(--theme-text-contrast)",
-                        border: `1.5px solid ${done || review ? "var(--theme-text-contrast)" : "var(--theme-border)"}`,
+                        border: `1.5px solid ${done || review ? "var(--theme-text-contrast)" : "var(--theme-outline)"}`,
                         background: done ? "var(--theme-text-contrast)" : (review ? "var(--ag-grid-selected-bg)" : "transparent"),
                         opacity: canToggleCheck ? 1 : 0.6,
                         cursor: canToggleCheck && !done ? "pointer" : "default",
@@ -763,19 +725,19 @@ function TaskRow({
                 </button>
 
                 <span style={{ flex: "1 1 200px", minWidth: 130, display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "2px 10px" }}>
-                    <span style={{
-                        flex: "1 1 auto", minWidth: 90, fontSize: 14.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                    <span className="text-sm font-semibold" style={{
+                        flex: "1 1 auto", minWidth: 90, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                         color: done ? "var(--theme-subtext-color)" : "var(--theme-h1-color)", textDecoration: done ? "line-through" : "none",
                     }}>
                         {task.title}
                     </span>
-                    <span style={{ flex: "none", fontSize: 12, whiteSpace: "nowrap", color: "var(--theme-subtext-color)" }}>
+                    <span className="text-xs" style={{ flex: "none", whiteSpace: "nowrap", color: "var(--theme-subtext-color)" }}>
                         <span style={{ color: due.color }}>{due.text}</span> · {formatPosted(task.created_at)}
                     </span>
                     {critical ? (
                         <span style={{ ...CRITICAL_BADGE_STYLE, flex: "none", alignSelf: "center" }}>☠ {PRIORITY_LABEL.critical}</span>
                     ) : (
-                        <span style={{ flex: "none", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap", color: "var(--theme-subtext-color)", opacity: 0.75 }}>
+                        <span className="text-xs uppercase tracking-widest whitespace-nowrap shrink-0 theme-subtext-color opacity-75">
                             {PRIORITY_LABEL[task.priority]}
                         </span>
                     )}
@@ -786,17 +748,17 @@ function TaskRow({
                         type="button"
                         onClick={e => { e.stopPropagation(); onOpenForNote() }}
                         aria-label="Notes"
-                        className="hover:border-(--theme-text-contrast)"
+                        className={`hover:border-(--theme-text-contrast) text-xs font-semibold ${focusRing}`}
                         style={{
                             font: "inherit",
-                            display: "flex", alignItems: "center", gap: 5, height: 26, padding: "0 9px", borderRadius: 999,
-                            fontSize: 12, fontWeight: 600, cursor: "pointer",
-                            border: `1px solid ${chipUnread ? "var(--theme-text-contrast)" : "var(--theme-border)"}`,
+                            display: "flex", alignItems: "center", gap: 4, height: 28, padding: "0 8px", borderRadius: 999,
+                            cursor: "pointer",
+                            border: `1px solid ${chipUnread ? "var(--theme-text-contrast)" : "var(--theme-outline)"}`,
                             background: chipUnread ? "var(--ag-grid-selected-bg)" : "transparent",
                             color: noteColor,
                         }}
                     >
-                        <span style={{ fontSize: 11 }}>✎</span>
+                        <span className="text-xs">✎</span>
                         {task.note_count > 0 && <span>{task.note_count}</span>}
                     </button>
 
@@ -805,9 +767,10 @@ function TaskRow({
                             <span
                                 key={p.id}
                                 title={p.name}
+                                className="text-xs font-bold"
                                 style={{
                                     width: 24, height: 24, borderRadius: "50%", display: "grid", placeItems: "center",
-                                    fontSize: 10.5, fontWeight: 700, marginLeft: -6,
+                                    marginLeft: -6,
                                     border: "1.5px solid var(--theme-bg)", background: avatarBg(p.name), color: AVATAR_INK,
                                 }}
                             >
@@ -818,11 +781,11 @@ function TaskRow({
                             <button
                                 type="button"
                                 onClick={e => { e.stopPropagation(); onClaim() }}
-                                className="hover:bg-(--ag-grid-selected-bg)"
+                                className={`hover:bg-(--ag-grid-selected-bg) text-xs font-semibold ${focusRing}`}
                                 style={{
                                     font: "inherit", background: "transparent",
-                                    height: 26, padding: "0 11px", borderRadius: 999, border: "1px dashed var(--theme-text-contrast)",
-                                    fontSize: 12, fontWeight: 600, display: "grid", placeItems: "center", color: "var(--theme-text-contrast)", cursor: "pointer",
+                                    height: 28, padding: "0 12px", borderRadius: 999, border: "1px dashed var(--theme-text-contrast)",
+                                    display: "grid", placeItems: "center", color: "var(--theme-text-contrast)", cursor: "pointer",
                                 }}
                             >
                                 Claim
@@ -837,39 +800,35 @@ function TaskRow({
                                 onClick={e => { e.stopPropagation(); if (canChangeStatus) onToggleStatusMenu() }}
                                 disabled={!canChangeStatus}
                                 title={canChangeStatus ? undefined : disabledTitle}
-                                className="hover:border-(--theme-text-contrast) disabled:cursor-not-allowed"
+                                className={`hover:border-(--theme-text-contrast) disabled:cursor-not-allowed text-xs font-semibold rounded-lg ${focusRing}`}
                                 style={{
-                                    minWidth: 118, height: 28, boxSizing: "border-box", padding: "0 10px", borderRadius: 7,
-                                    fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6,
+                                    minWidth: 118, height: 28, boxSizing: "border-box", padding: "0 8px",
+                                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
                                     border: "1px solid var(--theme-border)", background: "var(--theme-bg)", color: "var(--theme-text)",
                                     opacity: canChangeStatus ? 1 : 0.6,
                                 }}
                             >
                                 <span>{STATUS_LABEL[task.status]}</span>
-                                <span style={{ fontSize: 8, opacity: 0.7 }}>▾</span>
+                                <ChevronDown size={14} className="opacity-70" aria-hidden="true" />
                             </button>
                             {statusMenuOpen && canChangeStatus && (
-                                <span style={{
-                                    position: "absolute", top: 32, right: 0, zIndex: 30, border: "1px solid var(--theme-border)",
-                                    borderRadius: 9, background: "var(--theme-bg)", padding: 5, display: "flex", flexDirection: "column",
-                                    minWidth: 150, boxShadow: "0 12px 28px rgba(0,0,0,0.5)",
-                                }}>
+                                <span className="absolute top-8 right-0 z-40 flex flex-col min-w-40 rounded-xl border theme-border theme-bg p-1 shadow-lg">
                                     {(["todo", "doing", "review"] as const).map(k => (
                                         <button
                                             key={k}
                                             type="button"
                                             onClick={e => { e.stopPropagation(); if (k !== task.status) onSetStatus(k); onToggleStatusMenu() }}
-                                            className="hover:bg-(--ag-grid-hover-bg)"
+                                            className={`hover:bg-(--ag-grid-hover-bg) text-sm rounded-lg ${focusRing}`}
                                             style={{
                                                 font: "inherit", border: "none", background: "transparent", width: "100%", textAlign: "left",
-                                                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
-                                                padding: "7px 10px", borderRadius: 6, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap",
+                                                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                                                padding: "8px 12px", cursor: "pointer", whiteSpace: "nowrap",
                                                 fontWeight: k === task.status ? 700 : 500,
                                                 color: k === task.status ? "var(--theme-text-contrast)" : "var(--theme-text)",
                                             }}
                                         >
                                             <span>{STATUS_LABEL[k]}</span>
-                                            <span style={{ fontSize: 11 }}>{k === task.status ? "✓" : ""}</span>
+                                            <span className="text-xs">{k === task.status ? "✓" : ""}</span>
                                         </button>
                                     ))}
                                 </span>
@@ -882,9 +841,9 @@ function TaskRow({
                             <button
                                 type="button"
                                 onClick={e => { e.stopPropagation(); onSetStatus("doing") }}
-                                className="hover:border-(--theme-text-contrast)"
+                                className={`hover:border-(--theme-text-contrast) text-xs font-semibold rounded-lg ${focusRing}`}
                                 style={{
-                                    height: 28, boxSizing: "border-box", padding: "0 11px", borderRadius: 7, fontSize: 12, fontWeight: 600,
+                                    height: 28, boxSizing: "border-box", padding: "0 12px",
                                     display: "grid", placeItems: "center", whiteSpace: "nowrap", border: "1px solid var(--theme-border)",
                                     color: "var(--theme-text)",
                                 }}
@@ -896,9 +855,9 @@ function TaskRow({
                                     type="button"
                                     onClick={e => { e.stopPropagation(); onMarkReviewed() }}
                                     title={isFinisher && canAssign ? "You finished this task — mark it reviewed anyway" : undefined}
-                                    className="hover:brightness-110"
+                                    className={`hover:brightness-110 text-xs font-bold rounded-lg ${focusRing}`}
                                     style={{
-                                        height: 28, boxSizing: "border-box", padding: "0 12px", borderRadius: 7, fontSize: 12, fontWeight: 700,
+                                        height: 28, boxSizing: "border-box", padding: "0 12px",
                                         display: "grid", placeItems: "center", whiteSpace: "nowrap", background: "var(--theme-text-contrast)", color: "var(--theme-bg)",
                                     }}
                                 >
@@ -908,8 +867,9 @@ function TaskRow({
                             {isFinisher && !canAssign && (
                                 <span
                                     title="Someone else on the team needs to review this"
+                                    className="text-xs font-semibold rounded-lg"
                                     style={{
-                                        height: 28, boxSizing: "border-box", padding: "0 10px", borderRadius: 7, fontSize: 12, fontWeight: 600,
+                                        height: 28, boxSizing: "border-box", padding: "0 8px",
                                         display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
                                         border: `1px dashed ${tint("--theme-text-contrast", 55)}`, color: "var(--theme-text-contrast)",
                                     }}
@@ -922,8 +882,8 @@ function TaskRow({
                     )}
 
                     {done && (
-                        <span style={{
-                            minWidth: 118, height: 28, boxSizing: "border-box", padding: "0 10px", borderRadius: 7, fontSize: 12, fontWeight: 600,
+                        <span className="text-xs font-semibold rounded-lg" style={{
+                            minWidth: 118, height: 28, boxSizing: "border-box", padding: "0 8px",
                             display: "flex", alignItems: "center", gap: 6, background: "var(--ag-grid-selected-bg)", color: "var(--theme-text-contrast)",
                         }}>
                             <span>✓</span><span>Done</span>
@@ -934,32 +894,29 @@ function TaskRow({
                         <button
                             type="button"
                             onClick={e => { e.stopPropagation(); onToggleMenu() }}
-                            className="hover:bg-(--ag-grid-hover-bg) hover:text-(--theme-h1-color)"
+                            aria-label="More actions"
+                            className={`hover:bg-(--ag-grid-hover-bg) hover:text-(--theme-h1-color) text-sm rounded-lg ${focusRing}`}
                             style={{
-                                width: 26, height: 26, borderRadius: 7, display: "grid", placeItems: "center", fontSize: 14,
+                                width: 28, height: 28, display: "grid", placeItems: "center",
                                 color: "var(--theme-subtext-color)", background: menuOpen ? "var(--ag-grid-hover-bg)" : "transparent",
                             }}
                         >
                             ⋯
                         </button>
                         {menuOpen && (
-                            <span style={{
-                                position: "absolute", top: 30, right: 0, zIndex: 30, border: "1px solid var(--theme-border)",
-                                borderRadius: 9, background: "var(--theme-bg)", padding: 5, display: "flex", flexDirection: "column",
-                                minWidth: 180, boxShadow: "0 12px 28px rgba(0,0,0,0.5)",
-                            }}>
+                            <span className="absolute top-8 right-0 z-40 flex flex-col min-w-44 rounded-xl border theme-border theme-bg p-1 shadow-lg">
                                 {menuItems.map((item, i) => (
                                     <button
                                         key={item.label}
                                         type="button"
                                         onClick={e => { e.stopPropagation(); item.onClick(); onToggleMenu() }}
-                                        className={item.danger ? "hover:bg-[rgba(248,113,113,0.12)]" : "hover:bg-(--ag-grid-hover-bg)"}
+                                        className={`${item.danger ? "hover:bg-[color-mix(in_oklch,var(--theme-danger)_12%,transparent)]" : "hover:bg-(--ag-grid-hover-bg)"} text-sm rounded-lg ${focusRing}`}
                                         style={{
                                             font: "inherit", border: "none", background: "transparent", width: "100%", textAlign: "left",
-                                            padding: item.danger && i > 0 ? "12px 10px 7px" : "7px 10px", borderRadius: 6, fontSize: 13,
+                                            padding: item.danger && i > 0 ? "12px 12px 8px" : "8px 12px",
                                             cursor: "pointer", whiteSpace: "nowrap",
                                             borderTop: item.danger && i > 0 ? "1px solid var(--theme-border)" : "none",
-                                            marginTop: item.danger && i > 0 ? 5 : 0,
+                                            marginTop: item.danger && i > 0 ? 4 : 0,
                                             color: item.danger ? DANGER_RED : "var(--theme-text)",
                                         }}
                                     >
@@ -976,7 +933,7 @@ function TaskRow({
                 <div style={{ padding: "4px 16px 18px 31px", display: "flex", flexWrap: "wrap", gap: "8px 24px", alignItems: "flex-start", borderTop: "1px dashed var(--theme-border)" }}>
                     <div style={{ flex: "1 1 220px", maxWidth: 280, display: "flex", flexDirection: "column", gap: 16, paddingTop: 14 }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                            <span style={detailLabelStyle}>Owner</span>
+                            <span className={detailLabelClass}>Owner</span>
                             {canAssign ? (
                                 <Dropdown value={task.assignee_id ?? ""} onChange={onOwnerChange} options={assigneeOptions(people)} triggerClassName={dropdownTriggerClassName} searchable />
                             ) : (
@@ -985,25 +942,17 @@ function TaskRow({
                                         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                             <span style={{
                                                 width: 24, height: 24, borderRadius: "50%", display: "grid", placeItems: "center",
-                                                fontSize: 10.5, fontWeight: 700, color: AVATAR_INK, background: avatarBg(task.assignee_name ?? "?"),
-                                            }}>
+                                                color: AVATAR_INK, background: avatarBg(task.assignee_name ?? "?"),
+                                            }} className="text-xs font-bold">
                                                 {initialOf(task.assignee_name)}
                                             </span>
-                                            <span style={{ fontSize: 13.5, color: "var(--theme-text)" }}>{task.assignee_name}</span>
+                                            <span className="text-sm theme-text">{task.assignee_name}</span>
                                         </span>
                                     )}
                                     {!task.assignee_id && (
-                                        <button
-                                            type="button"
-                                            onClick={e => { e.stopPropagation(); onClaim() }}
-                                            className="hover:brightness-110"
-                                            style={{
-                                                height: 32, padding: "0 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer",
-                                                display: "grid", placeItems: "center", background: "var(--theme-text-contrast)", color: "var(--theme-bg)",
-                                            }}
-                                        >
+                                        <Button onClick={e => { e.stopPropagation(); onClaim() }}>
                                             Claim task
-                                        </button>
+                                        </Button>
                                     )}
                                     {/* Releasing goes through the leave route, which hands the task to
                                         the earliest contributor or leaves it unassigned. */}
@@ -1011,14 +960,14 @@ function TaskRow({
                                         <button
                                             type="button"
                                             onClick={e => { e.stopPropagation(); onLeave() }}
-                                            className="hover:text-[#dc2626]"
-                                            style={{ font: "inherit", border: "none", background: "transparent", padding: 0, cursor: "pointer", fontSize: 12, color: "var(--theme-subtext-color)" }}
+                                            className={`hover:text-(--theme-danger) text-xs theme-subtext-color ${focusRing}`}
+                                            style={{ font: "inherit", border: "none", background: "transparent", padding: 0, cursor: "pointer" }}
                                         >
                                             Release
                                         </button>
                                     )}
                                     {task.assignee_id && task.assignee_id !== currentUser.id && (
-                                        <span style={{ fontSize: 11.5, color: "var(--theme-subtext-color)", opacity: 0.8 }}>Only leads can reassign</span>
+                                        <span className="text-xs theme-subtext-color opacity-80">Only leads can reassign</span>
                                     )}
                                 </div>
                             )}
@@ -1084,7 +1033,7 @@ function ContributorsSection({ task, canAssign, currentUserId, people, dropdownT
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            <span style={detailLabelStyle}>Contributors</span>
+            <span className={detailLabelClass}>Contributors</span>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
                 {task.contributors.map(c => {
                     const removable = canAssign || c.id === currentUserId
@@ -1093,9 +1042,10 @@ function ContributorsSection({ task, canAssign, currentUserId, people, dropdownT
                             key={c.id}
                             style={{
                                 display: "flex", alignItems: "center", gap: 6, height: 28,
-                                padding: removable ? "0 7px 0 10px" : "0 10px", borderRadius: 999,
-                                border: "1px solid var(--theme-border)", fontSize: 12.5, color: "var(--theme-text)",
+                                padding: removable ? "0 8px 0 12px" : "0 12px", borderRadius: 999,
+                                border: "1px solid var(--theme-border)", color: "var(--theme-text)",
                             }}
+                            className="text-xs"
                         >
                             <span>{c.display_name}</span>
                             {removable && (
@@ -1103,8 +1053,8 @@ function ContributorsSection({ task, canAssign, currentUserId, people, dropdownT
                                     type="button"
                                     onClick={e => { e.stopPropagation(); if (canAssign) onRemoveContributor(c.id); else onLeave() }}
                                     aria-label={`Remove ${c.display_name}`}
-                                    className="hover:text-[#dc2626]"
-                                    style={{ font: "inherit", border: "none", background: "transparent", padding: 0, cursor: "pointer", fontSize: 11, color: "var(--theme-subtext-color)" }}
+                                    className={`hover:text-(--theme-danger) text-xs theme-subtext-color ${focusRing}`}
+                                    style={{ font: "inherit", border: "none", background: "transparent", padding: 0, cursor: "pointer" }}
                                 >
                                     ✕
                                 </button>
@@ -1120,7 +1070,7 @@ function ContributorsSection({ task, canAssign, currentUserId, people, dropdownT
                            time. Dismissing it without choosing anyone puts the
                            "+ Add" pill back, rather than stranding a closed
                            picker that would need that second click anyway. */
-                        <div style={{ width: 170 }} onClick={e => e.stopPropagation()}>
+                        <div className="w-44" onClick={e => e.stopPropagation()}>
                             <Dropdown
                                 value=""
                                 onChange={v => { onAddOther(v); setAddingContributor(false) }}
@@ -1128,6 +1078,7 @@ function ContributorsSection({ task, canAssign, currentUserId, people, dropdownT
                                 placeholder="Add…"
                                 triggerClassName={dropdownTriggerClassName}
                                 searchable
+                                label="Add contributor"
                                 defaultOpen
                                 onOpenChange={isOpen => { if (!isOpen) setAddingContributor(false) }}
                             />
@@ -1136,11 +1087,11 @@ function ContributorsSection({ task, canAssign, currentUserId, people, dropdownT
                         <button
                             type="button"
                             onClick={e => { e.stopPropagation(); if (canAssign) setAddingContributor(true); else onAddSelf() }}
-                            className="hover:border-(--theme-text-contrast) hover:text-(--theme-text-contrast)"
+                            className={`hover:border-(--theme-text-contrast) hover:text-(--theme-text-contrast) text-xs ${focusRing}`}
                             style={{
                                 font: "inherit", background: "transparent",
-                                height: 28, padding: "0 11px", borderRadius: 999, border: "1px dashed var(--theme-border)",
-                                fontSize: 12.5, cursor: "pointer", display: "grid", placeItems: "center", color: "var(--theme-subtext-color)",
+                                height: 28, padding: "0 12px", borderRadius: 999, border: "1px dashed var(--theme-outline)",
+                                cursor: "pointer", display: "grid", placeItems: "center", color: "var(--theme-subtext-color)",
                             }}
                         >
                             {canAssign ? "+ Add" : "+ Join"}
@@ -1175,7 +1126,7 @@ function NotesThread({ taskId, currentUserId, currentUserGivenName, canAssign, u
         setNotes(null)
         fetchNotes(taskId)
             .then(data => { if (!cancelled) setNotes(data) })
-            .catch(err => { if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load notes") })
+            .catch(err => { if (!cancelled) setError(failMessage(err, "Couldn't load the notes.")) })
         return () => { cancelled = true }
     }, [taskId])
 
@@ -1190,7 +1141,7 @@ function NotesThread({ taskId, currentUserId, currentUserGivenName, canAssign, u
             onDraftChange("")
             onNoteCountChange(taskId, 1)
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to post note")
+            setError(failMessage(err, "Couldn't post the note."))
         } finally {
             setPosting(false)
         }
@@ -1203,7 +1154,7 @@ function NotesThread({ taskId, currentUserId, currentUserGivenName, canAssign, u
             setNotes(prev => (prev ?? []).filter(n => n.id !== note.id))
             onNoteCountChange(taskId, -1)
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to delete note")
+            setError(failMessage(err, "Couldn't delete the note."))
         }
     }
 
@@ -1220,8 +1171,8 @@ function NotesThread({ taskId, currentUserId, currentUserGivenName, canAssign, u
     return (
         <div style={{ flex: "999 1 300px", minWidth: 0, display: "flex", flexDirection: "column", gap: 10, paddingTop: 14 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={detailLabelStyle}>Notes</span>
-                <span style={{ fontSize: 11, color: "var(--theme-subtext-color)", opacity: 0.7 }}>
+                <span className={detailLabelClass}>Notes</span>
+                <span className="text-xs theme-subtext-color opacity-70">
                     {count > 0 ? (unreadCount > 0 ? `${count} · ${unreadCount} new` : String(count)) : ""}
                 </span>
             </div>
@@ -1229,9 +1180,12 @@ function NotesThread({ taskId, currentUserId, currentUserGivenName, canAssign, u
             {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
             {notes === null ? (
-                <p style={{ fontSize: 13, color: "var(--theme-subtext-color)", margin: 0 }}>Loading notes…</p>
+                <div role="status" aria-label="Loading notes" className="flex flex-col gap-2">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                </div>
             ) : notes.length === 0 ? (
-                <span style={{ fontSize: 13, color: "var(--theme-subtext-color)", padding: "2px 0 4px" }}>No notes yet — leave context for whoever picks this up.</span>
+                <EmptyState>No notes yet — leave context for whoever picks this up.</EmptyState>
             ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                     {notes.map((note, i) => {
@@ -1242,27 +1196,27 @@ function NotesThread({ taskId, currentUserId, currentUserGivenName, canAssign, u
                             <div key={note.id} style={{ display: "flex", gap: 10, padding: "9px 8px 9px 0", borderTop: i === 0 ? "none" : "1px solid var(--ag-grid-row-border)" }}>
                                 <span style={{
                                     width: 24, height: 24, flex: "none", borderRadius: "50%", display: "grid", placeItems: "center",
-                                    fontSize: 10.5, fontWeight: 700, color: AVATAR_INK, background: avatarBg(note.author_name ?? "?"),
-                                }}>
+                                    color: AVATAR_INK, background: avatarBg(note.author_name ?? "?"),
+                                }} className="text-xs font-bold">
                                     {initialOf(note.author_name)}
                                 </span>
                                 <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
                                     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 7px" }}>
-                                        <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--theme-h1-color)" }}>{note.author_name ?? "Someone"}</span>
-                                        <span style={{ fontSize: 11, color: "var(--theme-subtext-color)" }}>{formatRelativeTime(note.created_at)}</span>
+                                        <span className="text-xs font-bold theme-h1-color">{note.author_name ?? "Someone"}</span>
+                                        <span className="text-xs theme-subtext-color">{formatRelativeTime(note.created_at)}</span>
                                         {isUnread && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--theme-text-contrast)" }} />}
                                     </div>
-                                    <span style={{ fontSize: 13.5, lineHeight: 1.5, color: "var(--theme-text)", overflowWrap: "anywhere" }}>{note.body}</span>
+                                    <span className="text-sm theme-text" style={{ lineHeight: 1.5, overflowWrap: "anywhere" }}>{note.body}</span>
                                 </div>
                                 {canDelete && (
                                     <button
                                         type="button"
                                         onClick={() => void handleDelete(note)}
                                         aria-label="Delete note"
-                                        className="hover:bg-[rgba(248,113,113,0.12)] hover:text-[#dc2626]"
+                                        className={`hover:bg-[color-mix(in_oklch,var(--theme-danger)_12%,transparent)] hover:text-(--theme-danger) text-xs rounded-lg ${focusRing}`}
                                         style={{
                                             font: "inherit", border: "none", background: "transparent", padding: 0,
-                                            width: 24, height: 24, flex: "none", borderRadius: 6, display: "grid", placeItems: "center", fontSize: 12, cursor: "pointer", color: "var(--theme-subtext-color)",
+                                            width: 28, height: 28, flex: "none", display: "grid", placeItems: "center", cursor: "pointer", color: "var(--theme-subtext-color)",
                                         }}
                                     >
                                         ✕
@@ -1277,8 +1231,8 @@ function NotesThread({ taskId, currentUserId, currentUserGivenName, canAssign, u
             <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                 <span style={{
                     width: 24, height: 24, flex: "none", borderRadius: "50%", display: "grid", placeItems: "center",
-                    fontSize: 10.5, fontWeight: 700, color: "var(--theme-bg)", background: "var(--theme-text-contrast)",
-                }}>
+                    color: "var(--theme-bg)", background: "var(--theme-text-contrast)",
+                }} className="text-xs font-bold">
                     {initialOf(currentUserGivenName)}
                 </span>
                 <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1289,40 +1243,20 @@ function NotesThread({ taskId, currentUserId, currentUserGivenName, canAssign, u
                         placeholder="Add a note… ⌘↵ to post"
                         rows={2}
                         maxLength={2000}
-                        className="focus:border-(--theme-text-contrast)"
-                        style={{
-                            width: "100%", boxSizing: "border-box", resize: "vertical", borderRadius: 9, border: "1px solid var(--theme-border)",
-                            background: "var(--theme-bg)", color: "var(--theme-text)", fontSize: 13.5, lineHeight: 1.5, padding: "9px 11px", outline: "none",
-                        }}
+                        aria-label="Add a note"
+                        className={`${inputClass} w-full resize-y`}
                     />
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10 }}>
-                        <span style={{ fontSize: 11, color: "var(--theme-subtext-color)" }}>{canPost ? "⌘↵ to post" : ""}</span>
-                        <button
-                            type="button"
-                            onClick={() => void handlePost()}
-                            disabled={!canPost}
-                            style={{
-                                height: 30, padding: "0 14px", borderRadius: 7, border: "none", fontSize: 12.5, fontWeight: 700,
-                                cursor: canPost ? "pointer" : "default",
-                                background: canPost ? "var(--theme-text-contrast)" : tint("--theme-border", 60),
-                                color: canPost ? "var(--theme-bg)" : "var(--theme-subtext-color)",
-                            }}
-                        >
+                        <span className="text-xs theme-subtext-color">{canPost ? "⌘↵ to post" : ""}</span>
+                        <Button onClick={() => void handlePost()} disabled={!canPost}>
                             {posting ? "Posting…" : "Post note"}
-                        </button>
+                        </Button>
                     </div>
                 </div>
             </div>
         </div>
     )
 }
-
-const fieldInputClass = "rounded-lg border theme-border theme-text text-sm px-2.5 outline-none focus:ring-1 bg-transparent"
-const fieldInputStyle: CSSProperties = { minHeight: 38, boxSizing: "border-box" }
-// Deliberately no overflow-hidden: Dropdown's menu is absolutely positioned
-// inside this wrapper, and clipping it would make the menu invisible.
-const dropdownWrapClass = "rounded-lg border theme-border theme-text"
-const dropdownWrapStyle: CSSProperties = { minHeight: 38, boxSizing: "border-box" }
 
 interface EditTaskModalProps {
     task: Task
@@ -1345,6 +1279,8 @@ function EditTaskModal({ task, tasks, canAssign, people, onClose, onSaved, onErr
     const [dueDate, setDueDate] = useState(task.due_date ?? "")
     const [assigneeId, setAssigneeId] = useState(task.assignee_id ?? "")
     const [saving, setSaving] = useState(false)
+    const dirty = useIsDirty({ title, area, bucket, priority, dueDate, assigneeId })
+    const confirmDiscard = useDiscardGuard(dirty)
 
     async function handleSave() {
         if (!title.trim()) return
@@ -1360,85 +1296,64 @@ function EditTaskModal({ task, tasks, canAssign, people, onClose, onSaved, onErr
             if (canAssign) patch.assignee_id = assigneeId || null
             onSaved(await updateTask(task.id, patch))
         } catch (err) {
-            onError(err instanceof Error ? err.message : "Failed to save task")
+            onError(failMessage(err, "Couldn't save the task."))
         } finally {
             setSaving(false)
         }
     }
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
-            style={{ background: "rgba(0,0,0,0.5)" }}
-            onClick={e => { if (e.target === e.currentTarget) onClose() }}
-        >
-            <div className="w-full max-w-md rounded-2xl border p-5 flex flex-col gap-4 backdrop-blur-sm theme-bg theme-border">
-                <div className="flex items-center gap-2">
-                    <Pencil size={16} className="theme-subtext-color" />
-                    <h2 className="text-sm font-semibold theme-text-contrast flex-1">Edit task</h2>
-                    <button onClick={onClose} className="theme-subtext-color hover:opacity-70 transition-opacity">
-                        <X size={16} />
-                    </button>
-                </div>
-
-                <div className="flex flex-col gap-3">
-                    <label className="flex flex-col gap-1">
-                        <span className="text-xs font-medium theme-subtext-color">Title</span>
-                        <input value={title} onChange={e => setTitle(e.target.value)} className={fieldInputClass} style={fieldInputStyle} />
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="flex flex-col gap-1">
-                            <span className="text-xs font-medium theme-subtext-color">Area</span>
-                            <AreaInput value={area} onChange={setArea} suggestions={areaSuggestions(tasks, bucket)} placeholder="General" className={fieldInputClass} style={fieldInputStyle} />
-                        </div>
-                        <label className="flex flex-col gap-1">
-                            <span className="text-xs font-medium theme-subtext-color">Due date</span>
-                            <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={fieldInputClass} style={fieldInputStyle} />
-                        </label>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                        <label className="flex flex-col gap-1">
-                            <span className="text-xs font-medium theme-subtext-color">Subteam</span>
-                            <div className={dropdownWrapClass} style={dropdownWrapStyle}>
-                                <Dropdown value={bucket} onChange={setBucket} options={BUCKET_OPTIONS} triggerClassName="px-3 py-2 text-sm theme-text" />
-                            </div>
-                        </label>
-                        <label className="flex flex-col gap-1">
-                            <span className="text-xs font-medium theme-subtext-color">Priority</span>
-                            <div className={dropdownWrapClass} style={dropdownWrapStyle}>
-                                <Dropdown
-                                    value={priority}
-                                    onChange={v => setPriority(v as TaskPriority)}
-                                    options={priorityChoices(canAssign, task.priority).map(p => ({ value: p, label: PRIORITY_LABEL[p] }))}
-                                    triggerClassName="px-3 py-2 text-sm theme-text"
-                                />
-                            </div>
-                        </label>
-                    </div>
-                    {canAssign && (
-                        <label className="flex flex-col gap-1">
-                            <span className="text-xs font-medium theme-subtext-color">Assign to</span>
-                            <div className={dropdownWrapClass} style={dropdownWrapStyle}>
-                                <Dropdown value={assigneeId} onChange={setAssigneeId} options={assigneeOptions(people)} triggerClassName="px-3 py-2 text-sm theme-text" searchable />
-                            </div>
-                        </label>
-                    )}
-                </div>
-
-                <div className="flex items-center justify-end gap-2">
-                    <button onClick={onClose} className="rounded-lg border px-3.5 py-1.5 text-sm font-medium theme-text theme-border transition-opacity hover:opacity-80">
-                        Cancel
-                    </button>
-                    <button
-                        onClick={() => void handleSave()}
-                        disabled={saving || !title.trim()}
-                        className="rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-                        style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
-                    >
+        <Sheet
+            title="Edit task"
+            onClose={onClose}
+            dirty={dirty}
+            footer={
+                <FormFooter safeArea>
+                    <Button variant="text" size="footer" className="ml-auto" onClick={() => void confirmDiscard().then(ok => { if (ok) onClose() })}>Cancel</Button>
+                    <Button size="footer" onClick={() => void handleSave()} disabled={saving || !title.trim()}>
                         {saving ? "Saving…" : "Save"}
-                    </button>
+                    </Button>
+                </FormFooter>
+            }
+        >
+            <div className="flex flex-col gap-4">
+                <label className="flex flex-col gap-1.5">
+                    <span className={fieldLabelClass}>Title</span>
+                    <input value={title} onChange={e => setTitle(e.target.value)} className={`${inputClass} w-full`} />
+                </label>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1.5">
+                        <span className={fieldLabelClass}>Area</span>
+                        <AreaInput value={area} onChange={setArea} suggestions={areaSuggestions(tasks, bucket)} placeholder="General" className={`${inputClass} w-full`} />
+                    </div>
+                    <label className="flex flex-col gap-1.5">
+                        <span className={fieldLabelClass}>Due date</span>
+                        <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={`${inputClass} w-full`} />
+                    </label>
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <label className="flex flex-col gap-1.5">
+                        <span className={fieldLabelClass}>Subteam</span>
+                        <Dropdown value={bucket} onChange={setBucket} options={BUCKET_OPTIONS} triggerClassName={inputClass} label="Subteam" />
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                        <span className={fieldLabelClass}>Priority</span>
+                        <Dropdown
+                            value={priority}
+                            onChange={v => setPriority(v as TaskPriority)}
+                            options={priorityChoices(canAssign, task.priority).map(p => ({ value: p, label: PRIORITY_LABEL[p] }))}
+                            triggerClassName={inputClass}
+                            label="Priority"
+                        />
+                    </label>
+                </div>
+                {canAssign && (
+                    <label className="flex flex-col gap-1.5">
+                        <span className={fieldLabelClass}>Assign to</span>
+                        <Dropdown value={assigneeId} onChange={setAssigneeId} options={assigneeOptions(people)} triggerClassName={inputClass} searchable label="Assign to" />
+                    </label>
+                )}
             </div>
-        </div>
+        </Sheet>
     )
 }

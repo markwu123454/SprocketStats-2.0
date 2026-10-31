@@ -2,6 +2,7 @@ import {useEffect, type ReactNode} from "react"
 import {ArrowLeft, ExternalLink, Mail} from "lucide-react"
 import {Link} from "react-router-dom"
 import {useAppReady} from "@/contexts/appReadyContext"
+import {focusRing} from "@/lib/uiClasses"
 
 export type LegalSection = {
     id: string
@@ -54,9 +55,9 @@ export default function LegalPageLayout({
                 }}
             />
 
-            <header className="sticky top-0 z-20 border-b theme-border backdrop-blur-xl bg-[color-mix(in_srgb,var(--theme-button-bg)_88%,transparent)]">
+            <header className="sticky top-0 z-10 border-b theme-border backdrop-blur-xl bg-[color-mix(in_srgb,var(--theme-button-bg)_88%,transparent)]">
                 <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-8">
-                    <Link to="/" className="group flex items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4">
+                    <Link to="/" className={`group flex items-center gap-3 rounded-lg ${focusRing}`}>
                         <span
                             aria-hidden="true"
                             className="block h-8 w-8 transition-transform duration-300 group-hover:rotate-12"
@@ -73,14 +74,14 @@ export default function LegalPageLayout({
                         <Link
                             to="/privacy"
                             aria-current={activePage === "privacy" ? "page" : undefined}
-                            className={`rounded-lg px-3 py-1.5 font-medium transition-opacity ${activePage === "privacy" ? "theme-bg theme-h1-color" : "theme-subtext-color hover:opacity-75"}`}
+                            className={`rounded-lg px-3 py-2.5 font-medium transition-opacity ${focusRing} ${activePage === "privacy" ? "theme-bg theme-h1-color" : "theme-subtext-color hover:opacity-75"}`}
                         >
                             Privacy
                         </Link>
                         <Link
                             to="/terms"
                             aria-current={activePage === "terms" ? "page" : undefined}
-                            className={`rounded-lg px-3 py-1.5 font-medium transition-opacity ${activePage === "terms" ? "theme-bg theme-h1-color" : "theme-subtext-color hover:opacity-75"}`}
+                            className={`rounded-lg px-3 py-2.5 font-medium transition-opacity ${focusRing} ${activePage === "terms" ? "theme-bg theme-h1-color" : "theme-subtext-color hover:opacity-75"}`}
                         >
                             Terms
                         </Link>
@@ -92,7 +93,7 @@ export default function LegalPageLayout({
                 <div className="max-w-3xl">
                     <Link
                         to="/"
-                        className="mb-9 inline-flex items-center gap-2 text-sm font-semibold theme-text-contrast transition-opacity hover:opacity-75"
+                        className={`mb-9 inline-flex items-center gap-2 rounded-lg text-sm font-semibold theme-text-contrast transition-opacity hover:opacity-75 ${focusRing}`}
                     >
                         <ArrowLeft size={16} aria-hidden="true" />
                         Back to sign in
@@ -122,7 +123,7 @@ export default function LegalPageLayout({
                                     <li key={section.id}>
                                         <a
                                             href={`#${section.id}`}
-                                            className="-ml-px flex gap-3 border-l border-transparent py-2 pl-4 text-sm theme-subtext-color transition-opacity hover:border-[var(--theme-text-contrast)] hover:opacity-75"
+                                            className={`-ml-px flex gap-3 border-l border-transparent py-2 pl-4 text-sm theme-subtext-color transition-opacity hover:border-[var(--theme-text-contrast)] hover:opacity-75 ${focusRing}`}
                                         >
                                             <span className="font-mono text-[11px] opacity-55">{String(index + 1).padStart(2, "0")}</span>
                                             <span>{section.title}</span>
@@ -162,11 +163,11 @@ export default function LegalPageLayout({
                         </p>
                     </div>
                     <div className="flex flex-wrap gap-x-5 gap-y-2 md:justify-end">
-                        <a href={`mailto:${contactEmail}`} className="inline-flex items-center gap-1.5 font-medium hover:opacity-75">
-                            <Mail size={13} aria-hidden="true" /> Contact
+                        <a href={`mailto:${contactEmail}`} className={`inline-flex items-center gap-1.5 rounded-lg font-medium hover:opacity-75 ${focusRing}`}>
+                            <Mail size={14} aria-hidden="true" /> Contact
                         </a>
-                        <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-medium hover:opacity-75">
-                            Source <ExternalLink size={12} aria-hidden="true" />
+                        <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1.5 rounded-lg font-medium hover:opacity-75 ${focusRing}`}>
+                            Source <ExternalLink size={14} aria-hidden="true" />
                         </a>
                     </div>
                 </div>

@@ -4,6 +4,13 @@ import { ChevronRight } from "lucide-react"
 import { useEventContext } from "@/contexts/eventContext"
 import type { TBAMatch, ItineraryItem } from "@/lib/eventApi"
 import { getAlliance, matchLabel, formatUnix, nextMatchFor, TEAM_KEY } from "@/lib/eventMatches"
+import { tintColor } from "@/lib/taskFormat"
+import { typeH2 } from "@/lib/uiClasses"
+
+// FRC alliance red / blue are fixed by the game, not theme roles -- they must read
+// the same in every season.
+const ALLIANCE_RED  = "#ef4444"
+const ALLIANCE_BLUE = "#3b82f6"
 
 const SISTER_TEAMS  = ["frc968", "frc3476", "frc5857", "frc7157"]
 const NOTABLE_TEAMS = ["frc4414", "frc5199", "frc6995"]
@@ -77,7 +84,7 @@ export default function EventHubPage() {
 
             {/* Intro text an editor wrote for this event */}
             {description && (
-                <section>
+                <section className="rounded-xl border px-4 py-3" style={cardBase}>
                     <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--theme-text)" }}>
                         {description}
                     </p>
@@ -85,9 +92,9 @@ export default function EventHubPage() {
             )}
 
             {/* Day timeline (live only) */}
-            {!archived && !itineraryHidden && <section>
+            {!archived && !itineraryHidden && <section className="rounded-xl border overflow-hidden" style={cardBase}>
                 <SectionLabel>Today</SectionLabel>
-                <div className="rounded-xl border overflow-hidden" style={cardBase}>
+                <div className="border-t" style={cardBase}>
                     {timeline && (timeline.current || timeline.upcoming.length > 0) ? (
                         <>
                             {timeline.current && <TimelineRow item={timeline.current} isCurrent />}
@@ -101,10 +108,10 @@ export default function EventHubPage() {
 
             {/* Our team -- competition info, so it goes wherever Comp does
                 (hidden by an editor, or a non-TBA event like outreach). */}
-            {!compHidden && <section className="flex flex-col gap-2">
+            {!compHidden && <section className="flex flex-col rounded-xl border overflow-hidden" style={cardBase}>
                 <SectionLabel>{archived ? "Final Result" : "Our Team"}</SectionLabel>
                 {rankEntry ? (
-                    <div className="flex items-center gap-4 px-4 py-3 rounded-xl border" style={cardBase}>
+                    <div className="flex items-center gap-4 px-4 py-3 border-t" style={cardBase}>
                         <span className="text-sm font-semibold" style={{ color: "var(--theme-text)" }}>
                             Rank {rankEntry.rank} / {rankTotal}
                         </span>
@@ -113,7 +120,7 @@ export default function EventHubPage() {
                         </span>
                     </div>
                 ) : (
-                    <div className="flex items-center px-4 py-3 rounded-xl border" style={cardBase}>
+                    <div className="flex items-center px-4 py-3 border-t" style={cardBase}>
                         <span className="text-sm" style={{ color: "var(--theme-subtext-color)" }}>
                             {archived ? "No rankings were posted" : "Rankings not yet available"}
                         </span>
@@ -122,7 +129,7 @@ export default function EventHubPage() {
                 {archived ? (
                     <Link
                         to="comp"
-                        className="flex items-center justify-between gap-3 px-4 py-3 min-h-11 rounded-xl border transition-colors hover:border-(--theme-text-contrast)"
+                        className="flex items-center justify-between gap-3 px-4 py-3 min-h-11 border-t transition-colors hover:border-(--theme-text-contrast)"
                         style={cardBase}
                     >
                         <span className="text-sm" style={{ color: "var(--theme-text)" }}>
@@ -131,18 +138,18 @@ export default function EventHubPage() {
                         <ChevronRight size={16} className="theme-subtext-color" />
                     </Link>
                 ) : ourNext ? (
-                    <NextMatchCard match={ourNext} />
+                    <div className="p-3 border-t" style={cardBase}><NextMatchCard match={ourNext} /></div>
                 ) : (
-                    <div className="flex items-center px-4 py-3 rounded-xl border" style={cardBase}>
+                    <div className="flex items-center px-4 py-3 border-t" style={cardBase}>
                         <span className="text-sm" style={{ color: "var(--theme-subtext-color)" }}>No upcoming match</span>
                     </div>
                 )}
             </section>}
 
             {/* Watch teams (live only -- grouped by each team's next match) */}
-            {!archived && !compHidden && <section>
+            {!archived && !compHidden && <section className="rounded-xl border overflow-hidden" style={cardBase}>
                 <SectionLabel>Watch</SectionLabel>
-                <div className="rounded-xl border overflow-hidden" style={cardBase}>
+                <div className="border-t" style={cardBase}>
                     {watchGroups.length > 0 ? (
                         watchGroups.map(([matchKey, entries]) => (
                             <WatchRow key={matchKey} entries={entries} />
@@ -155,10 +162,10 @@ export default function EventHubPage() {
 
             {/* Quick links -- all competition services, so the "not yet
                 available" placeholder is only worth showing for a competition. */}
-            {(hasLinks || !compHidden) && <section>
+            {(hasLinks || !compHidden) && <section className="rounded-xl border overflow-hidden" style={cardBase}>
                 <SectionLabel>Links</SectionLabel>
                 {hasLinks ? (
-                    <div className="flex gap-3">
+                    <div className="flex gap-3 px-4 pb-4">
                         {SERVICES.map(({ key, label, favicon }) => {
                             const href = links![key]
                             if (!href) return null
@@ -166,7 +173,7 @@ export default function EventHubPage() {
                         })}
                     </div>
                 ) : (
-                    <div className="flex items-center px-4 py-3 rounded-xl border" style={cardBase}>
+                    <div className="flex items-center px-4 py-3 border-t" style={cardBase}>
                         <span className="text-sm" style={{ color: "var(--theme-subtext-color)" }}>Links not yet available</span>
                     </div>
                 )}
@@ -177,9 +184,7 @@ export default function EventHubPage() {
 
 function SectionLabel({ children }: { children: string }) {
     return (
-        <p className="text-[11px] font-bold tracking-wider uppercase mb-3" style={{ color: "var(--theme-subtext-color)" }}>
-            {children}
-        </p>
+        <h2 className={`${typeH2} theme-subtext-color px-4 pt-3 pb-2`}>{children}</h2>
     )
 }
 
@@ -216,7 +221,7 @@ function TimelineRow({ item, isCurrent }: { item: ItineraryItem; isCurrent?: boo
             </div>
             {isCurrent && (
                 <span
-                    className="ml-auto shrink-0 text-[10px] font-bold tracking-wide px-1.5 py-0.5 rounded"
+                    className="ml-auto shrink-0 text-xs font-bold tracking-wide px-1.5 py-0.5 rounded-full"
                     style={{
                         background: "color-mix(in oklch, var(--theme-text-contrast) 15%, transparent)",
                         color: "var(--theme-text-contrast)",
@@ -237,13 +242,13 @@ function NextMatchCard({ match }: { match: TBAMatch }) {
     return (
         <div
             className="rounded-xl border-2 px-4 py-3 flex flex-col gap-3"
-            style={{ background: "var(--theme-bg)", borderColor: alliance === "red" ? "#ef4444" : "#3b82f6" }}
+            style={{ background: "var(--theme-bg)", borderColor: alliance === "red" ? ALLIANCE_RED : ALLIANCE_BLUE }}
         >
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold px-2 py-0.5 rounded" style={{
-                        background: alliance === "red" ? "#ef444422" : "#3b82f622",
-                        color:      alliance === "red" ? "#ef4444"   : "#3b82f6",
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{
+                        background: tintColor(alliance === "red" ? ALLIANCE_RED : ALLIANCE_BLUE, 13),
+                        color:      alliance === "red" ? ALLIANCE_RED : ALLIANCE_BLUE,
                     }}>
                         {alliance.toUpperCase()}
                     </span>
@@ -255,12 +260,12 @@ function NextMatchCard({ match }: { match: TBAMatch }) {
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                    <p className="text-[10px] font-bold tracking-wider uppercase mb-1.5" style={{ color: "var(--theme-subtext-color)" }}>Allies</p>
+                    <p className={`${typeH2} theme-subtext-color mb-1.5`}>Allies</p>
                     <p className="font-medium" style={{ color: "var(--theme-text-contrast)" }}>3473</p>
                     {partners.map(k => <p key={k} style={{ color: "var(--theme-subtext-color)" }}>{k.replace("frc", "")}</p>)}
                 </div>
                 <div>
-                    <p className="text-[10px] font-bold tracking-wider uppercase mb-1.5" style={{ color: "var(--theme-subtext-color)" }}>Opponents</p>
+                    <p className={`${typeH2} theme-subtext-color mb-1.5`}>Opponents</p>
                     {opponents.map(k => <p key={k} style={{ color: "var(--theme-subtext-color)" }}>{k.replace("frc", "")}</p>)}
                 </div>
             </div>
@@ -290,7 +295,7 @@ function WatchRow({ entries }: { entries: WatchEntry[] }) {
                         <span key={team} className="flex items-center gap-1.5">
                             <span
                                 className="w-1.5 h-1.5 rounded-full shrink-0"
-                                style={{ background: side === "red" ? "#ef4444" : side === "blue" ? "#3b82f6" : "var(--theme-border)" }}
+                                style={{ background: side === "red" ? ALLIANCE_RED : side === "blue" ? ALLIANCE_BLUE : "var(--theme-border)" }}
                             />
                             <span
                                 className="font-medium"

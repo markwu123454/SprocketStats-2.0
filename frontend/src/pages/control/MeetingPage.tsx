@@ -2,6 +2,7 @@ import { useOnboardedUser } from "@/contexts/authContext"
 import { can } from "@/lib/permissions"
 import ControlSectionLayout from "./ControlSectionLayout"
 import MeetingHoursEditor from "./MeetingHoursEditor"
+import { typeH2 } from "@/lib/uiClasses"
 
 /**
  * Meeting control page — one page for both meeting time and agenda.
@@ -20,15 +21,12 @@ export default function MeetingPage() {
     return (
         <ControlSectionLayout title="Meeting">
             {canTime && (
-                <section className="flex flex-col gap-2">
-                    <h2 className="text-sm font-semibold theme-text">Meeting Time</h2>
-                    <MeetingHoursEditor />
-                </section>
+                <MeetingHoursEditor />
             )}
 
             {canAgenda && (
-                <section className="flex flex-col gap-2">
-                    <h2 className="text-sm font-semibold theme-text">Meeting Agenda</h2>
+                <section className="flex flex-col gap-2 rounded-xl border p-5 theme-border theme-bg">
+                    <h2 className={`${typeH2} theme-subtext-color`}>Meeting Agenda</h2>
                     <p className="text-sm theme-subtext-color">Draft and share the meeting agenda.</p>
                 </section>
             )}

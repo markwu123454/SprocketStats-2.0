@@ -1,6 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { ClipboardList, ExternalLink } from "lucide-react"
+import Button from "@/components/ui/Button"
+import Checkbox from "@/components/ui/Checkbox"
+import FormFooter from "@/components/ui/FormFooter"
+import Notice from "@/components/ui/Notice"
+import Sheet from "@/components/ui/Sheet"
+import Skeleton from "@/components/ui/Skeleton"
+import { buttonClass, focusRing, typeH2 } from "@/lib/uiClasses"
 
 const LS_KEY = "label_studio_email_ack"
 
@@ -59,7 +66,6 @@ export default function ScoutingPage() {
     const [modalOpen, setModalOpen] = useState(false)
     const [checked, setChecked] = useState(false)
     const [sort, setSort] = useState<Sort>("count")
-    const backdropRef = useRef<HTMLDivElement>(null)
 
     function handleLabelStudioClick() {
         if (localStorage.getItem(LS_KEY) === "1") {
@@ -81,12 +87,12 @@ export default function ScoutingPage() {
         async function load() {
             try {
                 const res = await fetch(`${API}/labeling`, { credentials: "include" })
-                if (!res.ok) throw new Error("Failed to load")
+                if (!res.ok) throw new Error("Couldn't load")
                 const data = await res.json() as LabelingResponse
                 setSummary(data.summary)
                 setContributions(data.contributions)
             } catch {
-                setError("Failed to load labeling data")
+                setError("Couldn't load labeling data")
             } finally {
                 setLoading(false)
             }
@@ -114,21 +120,18 @@ export default function ScoutingPage() {
         return arr
     }, [contributions, sort])
 
-    const rankStyle = (rank: number): React.CSSProperties => {
-        const base: React.CSSProperties = {
-            width: 26, height: 26, borderRadius: "9999px", display: "flex",
-            alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, flexShrink: 0,
-        }
-        if (rank === 1) return { ...base, background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }
-        if (rank === 2) return { ...base, border: "1px solid var(--theme-text-contrast)", color: "var(--theme-text-contrast)" }
-        if (rank === 3) return { ...base, border: "1px solid var(--theme-border)", color: "var(--theme-subtext-color)" }
-        return { ...base, color: "var(--theme-subtext-color)", fontWeight: 700 }
+    const rankClass = (rank: number): string => {
+        const base = "w-[26px] h-[26px] rounded-full flex items-center justify-center text-sm shrink-0"
+        if (rank === 1) return `${base} font-extrabold theme-accent-fill`
+        if (rank === 2) return `${base} font-extrabold border border-[var(--theme-text-contrast)] theme-text-contrast`
+        if (rank === 3) return `${base} font-extrabold border theme-border theme-subtext-color`
+        return `${base} font-bold theme-subtext-color`
     }
 
     const sortPill = (key: Sort, label: string) => (
         <button
             onClick={() => setSort(key)}
-            className="rounded-full border px-3 py-1 text-xs font-medium transition-colors theme-border"
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors theme-border ${focusRing}`}
             style={{
                 color: sort === key ? "var(--theme-text-contrast)" : "var(--theme-subtext-color)",
                 background: sort === key ? "color-mix(in oklch, var(--theme-text-contrast) 10%, transparent)" : "transparent",
@@ -163,9 +166,9 @@ export default function ScoutingPage() {
                         </div>
                     </div>
                     <div className="flex flex-col gap-1 min-w-0">
-                        <span className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">Overall completion</span>
+                        <span className={`${typeH2} theme-subtext-color`}>Overall completion</span>
                         <span className="text-sm theme-subtext-color">
-                            {loading ? "Loading…" : `${labeledTasks.toLocaleString()} / ${totalTasks.toLocaleString()} tasks labeled`}
+                            {loading ? <Skeleton className="h-4 w-40" /> : `${labeledTasks.toLocaleString()} / ${totalTasks.toLocaleString()} tasks labeled`}
                         </span>
                     </div>
                 </div>
@@ -174,26 +177,15 @@ export default function ScoutingPage() {
                      style={{ background: "var(--theme-bg)" }}>
                     <Link
                         to="/scouting/scout"
-                        className="w-full flex items-center justify-center gap-3 rounded-xl border p-4 font-semibold text-lg transition-opacity hover:opacity-80 theme-text-contrast backdrop-blur-sm"
-                        style={{
-                            background: "color-mix(in oklch, var(--theme-button-bg) 80%, transparent)",
-                            borderColor: "var(--theme-border)",
-                        }}
+                        className={buttonClass({ size: "hero", className: "w-full gap-3" })}
                     >
-                        <ClipboardList size={22} />
+                        <ClipboardList size={21} />
                         Scouting Page
                     </Link>
-                    <button
-                        onClick={handleLabelStudioClick}
-                        className="w-full flex items-center justify-center gap-3 rounded-xl border p-4 font-semibold text-lg transition-opacity hover:opacity-80 theme-text-contrast backdrop-blur-sm"
-                        style={{
-                            background: "color-mix(in oklch, var(--theme-button-bg) 80%, transparent)",
-                            borderColor: "var(--theme-border)",
-                        }}
-                    >
-                        <ExternalLink size={22} />
+                    <Button size="hero" onClick={handleLabelStudioClick} className="w-full gap-3">
+                        <ExternalLink size={21} />
                         Open Label Studio
-                    </button>
+                    </Button>
                     <p className="text-xs theme-subtext-color text-center">
                         Sponsored by{" "}
                         <a href="https://humansignal.com" target="_blank" rel="noopener noreferrer"
@@ -206,25 +198,26 @@ export default function ScoutingPage() {
             </div>
 
             {/* Leaderboard */}
-            <div className="flex flex-col gap-3 flex-1 min-h-0">
+            <div className="flex flex-col gap-3 flex-1 min-h-0 rounded-xl border p-5 theme-border theme-bg">
                 <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">Contributor leaderboard</span>
-                    <div className="ml-auto flex gap-1.5">
+                    <h2 className={`${typeH2} theme-subtext-color`}>Contributor leaderboard</h2>
+                    <div className="ml-auto flex gap-2">
                         {sortPill("count", "Most annotations")}
                         {sortPill("time", "Fastest")}
                     </div>
                 </div>
 
                 {error && (
-                    <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
-                       style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
-                        {error}
-                    </p>
+                    <Notice>{error}</Notice>
                 )}
 
                 <div className="flex flex-col gap-2 flex-1 min-h-0 overflow-y-auto theme-scrollbar">
                     {loading ? (
-                        <p className="text-sm theme-subtext-color px-1">Loading…</p>
+                        <>
+                            <Skeleton className="h-14 w-full rounded-xl" />
+                            <Skeleton className="h-14 w-full rounded-xl" />
+                            <Skeleton className="h-14 w-full rounded-xl" />
+                        </>
                     ) : ranked.length === 0 ? (
                         <p className="text-sm theme-subtext-color px-1">No contributions yet.</p>
                     ) : (
@@ -236,7 +229,7 @@ export default function ScoutingPage() {
                                     className="flex items-center gap-3.5 rounded-xl border px-4 py-3 theme-border backdrop-blur-sm"
                                     style={{ background: rank === 1 ? "color-mix(in oklch, var(--theme-text-contrast) 8%, var(--theme-bg))" : "var(--theme-bg)" }}
                                 >
-                                    <span style={rankStyle(rank)}>{rank}</span>
+                                    <span className={rankClass(rank)}>{rank}</span>
                                     <span className="flex-1 min-w-0 truncate text-sm font-medium theme-text">{c.annotator}</span>
                                     <span
                                         className="text-sm font-bold shrink-0"
@@ -256,18 +249,22 @@ export default function ScoutingPage() {
 
             {/* Email-acknowledgment modal (unchanged behavior) */}
             {modalOpen && (
-                <div
-                    ref={backdropRef}
-                    className="fixed inset-0 z-50 flex items-center justify-center p-4"
-                    style={{ background: "rgba(0,0,0,0.5)" }}
-                    onClick={(e) => { if (e.target === backdropRef.current) setModalOpen(false) }}
+                <Sheet
+                    title="Before you continue"
+                    onClose={() => setModalOpen(false)}
+                    className="px-4 md:px-6 pt-4 pb-4"
+                    footer={
+                        <FormFooter safeArea>
+                            <Button variant="outlined" size="footer" className="ml-auto" onClick={() => setModalOpen(false)}>
+                                Cancel
+                            </Button>
+                            <Button size="footer" onClick={handleContinue} disabled={!checked}>
+                                Continue →
+                            </Button>
+                        </FormFooter>
+                    }
                 >
-                    <div className="w-full max-w-md rounded-2xl border p-6 flex flex-col gap-4 backdrop-blur-sm theme-bg theme-border">
-                        <div className="flex items-center gap-2">
-                            <ExternalLink size={18} className="theme-subtext-color" />
-                            <h2 className="text-base font-semibold theme-text-contrast">Before you continue</h2>
-                        </div>
-
+                    <div className="flex flex-col gap-4">
                         <p className="text-sm theme-subtext-color leading-relaxed">
                             Label Studio tracks your contributions by email. Make sure you sign
                             in with the <span className="theme-text font-medium">same email</span> you
@@ -276,39 +273,17 @@ export default function ScoutingPage() {
                         </p>
 
                         <label className="flex items-start gap-3 cursor-pointer">
-                            <input
-                                type="checkbox"
+                            <Checkbox
                                 checked={checked}
-                                onChange={(e) => setChecked(e.target.checked)}
-                                className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-(--theme-text-contrast)"
+                                onChange={() => setChecked(c => !c)}
+                                className="mt-0.5"
                             />
                             <span className="text-sm theme-text leading-snug">
                                 I'll use the same email I registered with on this platform.
                             </span>
                         </label>
-
-                        <div className="flex gap-2 pt-1">
-                            <button
-                                onClick={() => setModalOpen(false)}
-                                className="flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition-opacity hover:opacity-70 theme-subtext-color theme-border"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleContinue}
-                                disabled={!checked}
-                                className="flex-1 rounded-lg border px-4 py-2 text-sm font-semibold transition-opacity theme-text-contrast theme-border"
-                                style={{
-                                    background: "color-mix(in oklch, var(--theme-button-bg) 80%, transparent)",
-                                    opacity: checked ? 1 : 0.35,
-                                    cursor: checked ? "pointer" : "not-allowed",
-                                }}
-                            >
-                                Continue →
-                            </button>
-                        </div>
                     </div>
-                </div>
+                </Sheet>
             )}
         </div>
     )

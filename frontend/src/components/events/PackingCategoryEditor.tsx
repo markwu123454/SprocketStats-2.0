@@ -1,10 +1,12 @@
 import { useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
-import { DANGER_RED, tintColor } from "@/lib/taskFormat"
+import Button from "@/components/ui/Button"
+import FormFooter from "@/components/ui/FormFooter"
+import Notice from "@/components/ui/Notice"
+import { useDiscardGuard, useIsDirty } from "@/lib/useDiscardGuard"
+import { fieldLabelClass, inputClass } from "@/lib/uiClasses"
 import { MAX_PACKING_ITEM, MAX_SHORT_TEXT } from "@/lib/eventContent"
 
-const inputClass = "rounded-lg border theme-border theme-bg theme-text px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
-const addButtonClass = "inline-flex items-center gap-1.5 self-start rounded-lg border theme-border theme-bg theme-text-contrast text-sm font-semibold px-3 py-2 min-h-11 hover:opacity-90 transition-opacity outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
 
 interface Props {
     /** The category name being edited, or "" for a brand-new category not yet saved. */
@@ -26,6 +28,7 @@ interface Props {
 export default function PackingCategoryEditor({ category, items, saving, error, onCancel, onSave, onDelete }: Props) {
     const [name, setName] = useState(category)
     const [draftItems, setDraftItems] = useState<string[]>(() => (items.length > 0 ? items : [""]))
+    const confirmDiscard = useDiscardGuard(useIsDirty({ name, draftItems }))
 
     function updateItem(i: number, value: string) {
         setDraftItems(prev => prev.map((item, idx) => (idx === i ? value : item)))
@@ -42,7 +45,7 @@ export default function PackingCategoryEditor({ category, items, saving, error, 
     return (
         <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1">
-                <label htmlFor={`category-name-${category || "new"}`} className="text-sm font-semibold theme-text">Category name</label>
+                <label htmlFor={`category-name-${category || "new"}`} className={fieldLabelClass}>Category name</label>
                 <input
                     id={`category-name-${category || "new"}`}
                     type="text"
@@ -65,65 +68,38 @@ export default function PackingCategoryEditor({ category, items, saving, error, 
                             onChange={e => updateItem(i, e.target.value)}
                             className={`${inputClass} flex-1 min-w-0`}
                         />
-                        <button
-                            type="button"
+                        <Button
+                            variant="icon"
                             aria-label="Remove item"
                             onClick={() => removeItem(i)}
-                            className="inline-flex items-center justify-center w-9 h-9 shrink-0 opacity-50 hover:opacity-100 transition-opacity rounded-lg outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
+                            className="shrink-0"
                         >
-                            <Trash2 size={16} className="theme-text" />
-                        </button>
+                            <Trash2 size={16} />
+                        </Button>
                     </div>
                 ))}
             </div>
 
-            <button type="button" onClick={addItem} className={addButtonClass}>
+            <Button variant="outlined" className="self-start" onClick={addItem}>
                 <Plus size={15} />
                 Add item
-            </button>
+            </Button>
 
-            {error && (
-                <p
-                    role="alert"
-                    className="text-sm rounded-lg border px-3 py-2"
-                    style={{ color: DANGER_RED, borderColor: tintColor(DANGER_RED, 40), background: tintColor(DANGER_RED, 10) }}
-                >
-                    {error}
-                </p>
-            )}
+            {error && <Notice>{error}</Notice>}
 
-            <div className="flex items-center justify-between gap-3">
-                {onDelete ? (
-                    <button
-                        type="button"
-                        onClick={onDelete}
-                        disabled={saving}
-                        className="text-sm font-semibold px-3 py-2 min-h-11 rounded-lg hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
-                        style={{ color: DANGER_RED }}
-                    >
+            <FormFooter className="-mx-4 -mb-3 rounded-b-xl">
+                {onDelete && (
+                    <Button variant="danger" size="footer" className="mr-auto" onClick={onDelete} disabled={saving}>
                         Delete category
-                    </button>
-                ) : <span />}
-
-                <div className="flex items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={onCancel}
-                        disabled={saving}
-                        className="text-sm font-semibold theme-subtext-color px-3 py-2 min-h-11 rounded-lg hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => onSave(name, draftItems)}
-                        disabled={saving}
-                        className="rounded-lg border theme-bg theme-border theme-text-contrast text-sm font-semibold px-4 py-2 min-h-11 disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
-                    >
-                        {saving ? "Saving…" : "Save"}
-                    </button>
-                </div>
-            </div>
+                    </Button>
+                )}
+                <Button variant="text" size="footer" className="ml-auto" onClick={() => void confirmDiscard().then(ok => { if (ok) onCancel() })} disabled={saving}>
+                    Cancel
+                </Button>
+                <Button size="footer" onClick={() => onSave(name, draftItems)} disabled={saving}>
+                    {saving ? "Saving…" : "Save"}
+                </Button>
+            </FormFooter>
         </div>
     )
 }

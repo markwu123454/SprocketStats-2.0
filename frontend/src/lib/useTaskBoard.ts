@@ -6,7 +6,8 @@ import {
     claimTask, deleteTask, fetchPeople, fetchTasks,
     type Person, type Task,
 } from "@/lib/tasksApi"
-import { startOfTodayMs } from "@/lib/taskFormat"
+import { failMessage, startOfTodayMs } from "@/lib/taskFormat"
+import { confirmDialog } from "@/lib/confirmDialog"
 
 // ── Unread notes: count-based, localStorage-backed ──────────────────────
 // The backend has no read-tracking and `Task` only carries `note_count` (no
@@ -59,7 +60,7 @@ export interface TaskBoard {
     runAction: (fn: () => Promise<Task>) => Promise<void>
     /** claim + the 409 "someone beat you to it" silent-refresh path. */
     handleClaim: (taskId: string) => Promise<void>
-    /** window.confirm, then DELETE, then drop the row. */
+    /** Confirm via the shared dialog, then DELETE, then drop the row. */
     handleDelete: (task: Task) => Promise<void>
     applyTask: (task: Task) => void
     bumpNoteCount: (taskId: string, delta: number) => void
@@ -135,7 +136,7 @@ export function useTaskBoard(): TaskBoard {
             setPeople(p)
             stampSeenForNewTasks(t)
         } catch {
-            setLoadError("Failed to load tasks")
+            setLoadError("Couldn't load tasks")
         } finally {
             setLoading(false)
         }
@@ -280,18 +281,24 @@ export function useTaskBoard(): TaskBoard {
         try {
             applyTask(await fn())
         } catch (err) {
-            setActionError(err instanceof Error ? err.message : "Something went wrong")
+            setActionError(failMessage(err, "Couldn't update the task."))
         }
     }
 
     async function handleDelete(task: Task) {
-        if (!window.confirm(`Delete "${task.title}"? This can't be undone.`)) return
+        const confirmed = await confirmDialog({
+            title: "Delete task?",
+            body: `"${task.title}" will be deleted. This can't be undone.`,
+            confirmLabel: "Delete",
+            danger: true,
+        })
+        if (!confirmed) return
         setActionError(null)
         try {
             await deleteTask(task.id)
             removeTask(task.id)
         } catch (err) {
-            setActionError(err instanceof Error ? err.message : "Failed to delete task")
+            setActionError(failMessage(err, "Couldn't delete the task."))
         }
     }
 
@@ -308,7 +315,7 @@ export function useTaskBoard(): TaskBoard {
         try {
             applyTask(await claimTask(taskId))
         } catch (err) {
-            setActionError(err instanceof Error ? err.message : "Something went wrong")
+            setActionError(failMessage(err, "Couldn't claim the task."))
             void refreshTasksSilently()
         }
     }

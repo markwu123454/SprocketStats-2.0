@@ -24,11 +24,12 @@ text renders immediately on slow networks.
   already uses this pattern; extending it lets us remove the lock.
 - **All modal titles use `title`.** Today they vary: `text-base font-bold`, 19px inline,
   `text-sm` in accent, and `text-lg`. One style makes sheets and dialogs read as a family.
-- **Tab labels rise from 10px to 11px.** Material 3 uses 12px, but "Control Panel" needs to
-  fit a fifth of a 360px phone. 11px is the largest size that leaves it room.
+- **Tab labels rise from 10px to 11px.** Material 3 uses 12px. At 11px "Control Panel" (about 74px) does
+  not fit one line in a fifth of a 340px phone (68px), so labels have no tracking or cell padding and wrap to
+  two centred lines with tight leading rather than clip.
 - **`display` and `h1` stay disjoint:** hero surfaces and interior screens respectively.
 
-## Migration
+## Remaining debt
 
-- Replace inline `fontSize` in `TasksPageMobile.tsx` and `TasksPageDesktop.tsx`, such as `sheetTitleStyle` at `TasksPageMobile.tsx:963`.
-- Apply `input` to every text field, then remove the zoom lock.
+- Inline `fontSize` / `fontWeight` that the named scale cannot express: `HelpTip.tsx` (10px glyph), `taskFormat.ts` `CRITICAL_BADGE_STYLE` (11px, weight 800), `Avatar.tsx` (size-relative initials), `agGridTheme.ts` (13px grid text). Calendar day cells in `AttendancePage.tsx` and `MeetingHoursEditor.tsx`, and the status menu in `TasksPageDesktop.tsx`, set weight inline (the menu also sets `font: inherit`, which would override a class).
+- `LegalPageLayout.tsx` uses a marketing scale (`text-4xl`/`6xl`) on purpose, like the auth hero.

@@ -138,7 +138,7 @@ export default function LoginPageMobile({ season, timeInfo, loading, loginNotice
                     display: flex;
                     flex-direction: column;
                     justify-content: flex-end;
-                    border-radius: 20px 20px 0 0;
+                    border-radius: 16px 16px 0 0;
                     border-top: 1px solid var(--theme-border);
                     padding: 0 24px;
                     z-index: 10;
@@ -225,7 +225,7 @@ export default function LoginPageMobile({ season, timeInfo, loading, loginNotice
                 }
             `}</style>
 
-            <div className="lpm-root">
+            <main className="lpm-root">
                 {/* ══ TOP — hero ══ */}
                 <aside className="lpm-aside theme-h1-color">
                     <div
@@ -260,7 +260,7 @@ export default function LoginPageMobile({ season, timeInfo, loading, loginNotice
                     style={{
                         background: "var(--theme-button-bg)",
                         height: `calc(${sheetHeight}px + env(safe-area-inset-bottom, 0px))`,
-                        transition: dragging ? "none" : "height 0.38s cubic-bezier(0.32, 0.72, 0, 1)",
+                        transition: dragging ? "none" : "height 340ms cubic-bezier(0.32, 0.72, 0, 1)",
                         touchAction: "none",
                         ["--btn-clamp" as string]: `${btnClamp}px`,
                         ...(dragging ? {["--reveal" as string]: reveal} : {}),
@@ -284,7 +284,7 @@ export default function LoginPageMobile({ season, timeInfo, loading, loginNotice
                             // pushes the button/notices/peek-legal-line up or down)
                             // snaps instantly, since it's a plain inline style with
                             // no CSS transition of its own.
-                            transition: dragging ? "none" : "padding-bottom 0.38s cubic-bezier(0.32, 0.72, 0, 1)",
+                            transition: dragging ? "none" : "padding-bottom 340ms cubic-bezier(0.32, 0.72, 0, 1)",
                         }}
                     >
                         {/* Heading — fades in as sheet expands */}
@@ -320,7 +320,7 @@ export default function LoginPageMobile({ season, timeInfo, loading, loginNotice
                         </div>
                     </div>
                 </section>
-            </div>
+            </main>
         </>
     );
 }

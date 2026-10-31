@@ -91,6 +91,12 @@
     --theme-season-tag: "2027 · CANOPY";
 }
 
+/* A page never scrolls sideways. `clip`, not `hidden`: hidden makes a scroll container and breaks sticky footers. */
+html, body {
+    overflow-x: clip;
+    overscroll-behavior-x: none;
+}
+
 @layer utilities {
     .theme-bg {
         background-color: var(--theme-bg);
@@ -119,6 +125,25 @@
 
     .theme-button-bg {
         background: var(--theme-button-bg);
+    }
+
+    /* Control boundaries (inputs, checkboxes, outlined buttons) use the outline role, not the divider. */
+    .theme-outline {
+        border-color: var(--theme-outline);
+    }
+
+    .theme-danger {
+        color: var(--theme-danger);
+    }
+
+    .theme-border-danger {
+        border-color: var(--theme-danger);
+    }
+
+    /* Filled accent surface: accent fill, surface-coloured label. */
+    .theme-accent-fill {
+        background: var(--theme-text-contrast);
+        color: var(--theme-bg);
     }
 
     .theme-button-hover {
@@ -163,10 +188,60 @@
     }
 }
 
+/* Sheet and dialog motion (design-system/motion.md). Enter keyframes only declare `from`, so at
+   rest the element has no transform and nothing inside gets a transformed containing block. */
+@keyframes sds-sheet-in {
+    from { transform: translateY(100%); }
+}
+
+@keyframes sds-dialog-in {
+    from { opacity: 0; transform: scale(0.95); }
+}
+
+@keyframes sds-fade-in {
+    from { opacity: 0; }
+}
+
+.sds-sheet-enter {
+    animation: sds-sheet-in 340ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.sds-dialog-enter {
+    animation: sds-dialog-in 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sds-scrim-enter {
+    animation: sds-fade-in 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Below md a Sheet rises from the bottom; from md up it is a centred dialog. */
+@media (min-width: 768px) {
+    .sds-sheet-enter {
+        animation: sds-dialog-in 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Kill the column-slide animation that plays when ag-grid sizes columns to fit the grid width. */
 .ag-header-cell,
 .ag-cell {
     transition-duration: 0s !important;
+}
+
+/* AG Grid's column-filter popup has text inputs. Below md they must be 16px or iOS
+   zooms the page on focus (typography.md, "Mobile inputs are 16px"). */
+@media (max-width: 767.98px) {
+    .ag-popup input:not([type="checkbox"]):not([type="radio"]) {
+        font-size: 1rem;
+    }
 }
 
 /* RosterPage's narrow per-day attendance columns (`headerClass: "day-col-header"`):
@@ -256,7 +331,7 @@
         color: var(--theme-text-contrast);
         font-weight: 600;
         text-decoration: underline;
-        text-decoration-color: color-mix(in srgb, var(--theme-text-contrast) 35%, transparent);
+        text-decoration-color: color-mix(in oklch, var(--theme-text-contrast) 35%, transparent);
         text-underline-offset: 0.2rem;
     }
 
@@ -285,7 +360,7 @@
     }
 
     .legal-copy th {
-        background: color-mix(in srgb, var(--theme-bg) 70%, transparent);
+        background: color-mix(in oklch, var(--theme-bg) 70%, transparent);
         color: var(--theme-h1-color);
         font-size: 0.75rem;
         font-weight: 700;

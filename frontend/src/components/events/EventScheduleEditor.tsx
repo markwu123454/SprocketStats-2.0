@@ -4,21 +4,11 @@ import { Plus, X } from "lucide-react"
 import { HIDEABLE_TABS, checkInRolesOf, hasEventPage, usesCheckIn, type EventEntry, type HubTab } from "@/lib/events"
 import { createEvent, patchEventSchedule, type EventSchedulePatch } from "@/lib/eventApi"
 import { saveErrorMessage } from "@/lib/eventContent"
-import { DANGER_RED, tintColor } from "@/lib/taskFormat"
-
-// Same button treatments as ActiveEventCard / RosterPage's editor panel.
-const primaryButtonClass =
-    "theme-bg border theme-border theme-text-contrast rounded-xl text-sm font-semibold h-11 px-4 " +
-    "inline-flex items-center justify-center gap-2 outline-none focus:ring-2 transition-opacity " +
-    "disabled:opacity-40 disabled:cursor-not-allowed"
-
-const ghostButtonClass =
-    "h-11 px-2 rounded-lg text-sm theme-subtext-color hover:underline outline-none focus:ring-2 " +
-    "disabled:opacity-40 disabled:cursor-not-allowed"
-
-const inputClass =
-    "rounded-lg border theme-border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-text " +
-    "disabled:opacity-60 min-w-0"
+import Button from "@/components/ui/Button"
+import FormFooter from "@/components/ui/FormFooter"
+import Notice from "@/components/ui/Notice"
+import { useDiscardGuard, useIsDirty } from "@/lib/useDiscardGuard"
+import { fieldLabelClass, helperClass, inputClass, typeTitle } from "@/lib/uiClasses"
 
 // Mirror MAX_DESCRIPTION / MAX_CHECKIN_ROLES / MAX_ROLE_LABEL in backend/db/events.py.
 const MAX_DESCRIPTION = 5000
@@ -68,9 +58,11 @@ interface EventScheduleEditorProps {
     event?: EventEntry & { id: number }
     onSaved: (updated: EventEntry) => void
     onCancel: () => void
+    /** Extra footer classes; the inline card passes `rounded-b-xl` so the footer follows the card corners. */
+    footerClassName?: string
 }
 
-export default function EventScheduleEditor({ event: existing, onSaved, onCancel }: EventScheduleEditorProps) {
+export default function EventScheduleEditor({ event: existing, onSaved, onCancel, footerClassName = "" }: EventScheduleEditorProps) {
     const creating = !existing
     // A blank stand-in keeps every draft initializer below working unchanged.
     const event = existing ?? ({ name: "", start: "", location: "", type: "", id: -1 } as EventEntry & { id: number })
@@ -104,6 +96,8 @@ export default function EventScheduleEditor({ event: existing, onSaved, onCancel
     }
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    // Dirty = any field differs from what the form opened with. Guards Cancel, the sheet, links and tab close.
+    const confirmDiscard = useDiscardGuard(useIsDirty({ name, location, type, start, end, checkin, hidden, description, checkInOn, roles }))
 
     const hasHub = !creating && !!(event.hubKey || event.tbaKey || event.url)
     // Comp only exists for TBA events -- not offered as a toggle otherwise.
@@ -170,17 +164,9 @@ export default function EventScheduleEditor({ event: existing, onSaved, onCancel
 
     return (
         <div className="flex flex-col gap-4">
-            {!creating && <p className="text-sm font-semibold theme-text truncate">Edit {event.name}</p>}
+            {!creating && <p className={`${typeTitle} theme-text truncate`}>Edit {event.name}</p>}
 
-            {error && (
-                <p
-                    role="alert"
-                    className="text-xs rounded-lg px-3 py-2"
-                    style={{ color: DANGER_RED, background: tintColor(DANGER_RED, 10), border: `1px solid ${tintColor(DANGER_RED, 40)}` }}
-                >
-                    {error}
-                </p>
-            )}
+            {error && <Notice>{error}</Notice>}
 
             <TextField label="Name" value={name} onChange={setName} disabled={saving} placeholder="e.g. Cascade Regional" />
             <TextField label="Type" value={type} onChange={setType} disabled={saving} placeholder="e.g. regional, outreach" suggestions={TYPE_SUGGESTIONS} />
@@ -203,8 +189,8 @@ export default function EventScheduleEditor({ event: existing, onSaved, onCancel
             )}
             {checkInOn && (
                 <fieldset className="flex flex-col gap-2">
-                    <legend className="text-sm font-semibold theme-text mb-1">Check-in roles</legend>
-                    <p className="text-xs theme-subtext-color -mt-1">
+                    <legend className={`${fieldLabelClass} mb-1`}>Check-in roles</legend>
+                    <p className={`${helperClass} -mt-1`}>
                         Members pick one when they check in. Renaming a role keeps everyone already checked in under it.
                     </p>
                     {roles.map((r, i) => (
@@ -215,31 +201,31 @@ export default function EventScheduleEditor({ event: existing, onSaved, onCancel
                                 disabled={saving}
                                 maxLength={MAX_ROLE_LABEL}
                                 onChange={e => updateRole(r.id, e.target.value)}
-                                className={`${inputClass} flex-1`}
+                                className={`${inputClass} flex-1 min-w-0`}
                             />
-                            <button
-                                type="button"
+                            <Button
+                                variant="icon"
                                 aria-label={`Remove ${r.label || "role"}`}
                                 disabled={saving || roles.length === 1}
                                 onClick={() => removeRole(r.id)}
-                                className="inline-flex items-center justify-center w-11 h-11 shrink-0 rounded-lg opacity-60 hover:opacity-100 transition-opacity outline-none focus:ring-2 disabled:opacity-30"
+                                className="shrink-0"
                             >
-                                <X size={16} className="theme-subtext-color" />
-                            </button>
+                                <X size={16} />
+                            </Button>
                         </div>
                     ))}
                     {roles.length < MAX_ROLES && (
-                        <button type="button" onClick={addRole} disabled={saving} className={`${ghostButtonClass} self-start inline-flex items-center gap-1`}>
+                        <Button variant="text" className="self-start" onClick={addRole} disabled={saving}>
                             <Plus size={14} />
                             Add role
-                        </button>
+                        </Button>
                     )}
                 </fieldset>
             )}
 
             {hasHub && (
                 <div className="flex flex-col gap-1">
-                    <label htmlFor={`event-desc-${event.id}`} className="text-sm font-semibold theme-text">Overview text</label>
+                    <label htmlFor={`event-desc-${event.id}`} className={fieldLabelClass}>Overview text</label>
                     <textarea
                         id={`event-desc-${event.id}`}
                         value={description}
@@ -250,14 +236,14 @@ export default function EventScheduleEditor({ event: existing, onSaved, onCancel
                         placeholder="Introduce the event: what it is, who should come, what to bring…"
                         className={`${inputClass} resize-y`}
                     />
-                    <p className="text-xs theme-subtext-color">Shown at the top of the event's Overview page.</p>
+                    <p className={helperClass}>Shown at the top of the event's Overview page.</p>
                 </div>
             )}
 
             {hasHub && (
                 <fieldset className="flex flex-col gap-2">
-                    <legend className="text-sm font-semibold theme-text mb-1">Event pages</legend>
-                    <p className="text-xs theme-subtext-color -mt-1">Unchecked pages are hidden from this event. Overview shows whenever the event has a page.</p>
+                    <legend className={`${fieldLabelClass} mb-1`}>Event pages</legend>
+                    <p className={`${helperClass} -mt-1`}>Unchecked pages are hidden from this event. Overview shows whenever the event has a page.</p>
                     <div className="flex flex-wrap gap-x-5 gap-y-2">
                         {tabChoices.map(tab => (
                             <label key={tab} className="inline-flex items-center gap-2 min-h-11 text-sm theme-text cursor-pointer">
@@ -267,7 +253,7 @@ export default function EventScheduleEditor({ event: existing, onSaved, onCancel
                         ))}
                     </div>
                     {!willHavePage && (
-                        <p className="text-xs theme-subtext-color">
+                        <p className={helperClass}>
                             With no Overview text and every page unchecked, this event won't have a page.
                             {checkInOn && " Members can still check in from the dashboard."}
                         </p>
@@ -276,15 +262,17 @@ export default function EventScheduleEditor({ event: existing, onSaved, onCancel
             )}
 
             {/* Sticks to the bottom of the sheet so Save stays under the thumb
-                on a long form. */}
-            <div className="sticky bottom-0 -mx-4 px-4 py-3 -mb-4 flex items-center gap-3 border-t theme-border" style={{ background: "var(--theme-bg)" }}>
-                <button type="button" onClick={() => void handleSave()} disabled={saving} className={primaryButtonClass}>
-                    {saving ? "Saving…" : creating ? "Create event" : "Save"}
-                </button>
-                <button type="button" onClick={onCancel} disabled={saving} className={ghostButtonClass}>
+                on a long form. The negative margins cancel the padding of both
+                hosts (EventEditSheet's scroller and the inline card on
+                EventsPage), which share px-4 md:px-6 and no bottom padding. */}
+            <FormFooter className={`-mx-4 md:-mx-6 ${footerClassName}`.trim()}>
+                <Button variant="text" size="footer" className="ml-auto" onClick={() => void confirmDiscard().then(ok => { if (ok) onCancel() })} disabled={saving}>
                     Cancel
-                </button>
-            </div>
+                </Button>
+                <Button size="footer" onClick={() => void handleSave()} disabled={saving}>
+                    {saving ? "Saving…" : creating ? "Create event" : "Save"}
+                </Button>
+            </FormFooter>
         </div>
     )
 }
@@ -301,7 +289,7 @@ interface MomentFieldProps {
 function MomentField({ label, hint, value, onChange, disabled, clearable }: MomentFieldProps) {
     return (
         <div className="flex flex-col gap-1" role="group" aria-label={label}>
-            <span className="text-sm font-semibold theme-text">{label}</span>
+            <span className={fieldLabelClass}>{label}</span>
             <div className="flex flex-wrap items-center gap-2">
                 <input
                     type="date"
@@ -320,17 +308,12 @@ function MomentField({ label, hint, value, onChange, disabled, clearable }: Mome
                     className={inputClass}
                 />
                 {clearable && value.date && (
-                    <button
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => onChange({ date: "", time: "" })}
-                        className={ghostButtonClass}
-                    >
+                    <Button variant="text" disabled={disabled} onClick={() => onChange({ date: "", time: "" })}>
                         Clear
-                    </button>
+                    </Button>
                 )}
             </div>
-            <p className="text-xs theme-subtext-color">{hint ?? "Time is optional. Leave it empty for all day."}</p>
+            <p className={helperClass}>{hint ?? "Time is optional. Leave it empty for all day."}</p>
         </div>
     )
 }
@@ -348,7 +331,7 @@ function TextField({ label, value, onChange, disabled, placeholder, suggestions 
     const id = `event-field-${label.toLowerCase()}`
     return (
         <div className="flex flex-col gap-1">
-            <label htmlFor={id} className="text-sm font-semibold theme-text">{label}</label>
+            <label htmlFor={id} className={fieldLabelClass}>{label}</label>
             <input
                 id={id}
                 value={value}
@@ -357,8 +340,7 @@ function TextField({ label, value, onChange, disabled, placeholder, suggestions 
                 placeholder={placeholder}
                 list={suggestions ? `${id}-options` : undefined}
                 onChange={e => onChange(e.target.value)}
-                // 16px keeps iOS Safari from zooming the page when the field is focused.
-                className={`${inputClass} text-base sm:text-sm`}
+                className={inputClass}
             />
             {suggestions && (
                 <datalist id={`${id}-options`}>

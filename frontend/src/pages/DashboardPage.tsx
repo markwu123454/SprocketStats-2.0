@@ -4,6 +4,7 @@ import { useOnboardedUser } from "@/contexts/authContext"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
+import Skeleton from "@/components/ui/Skeleton"
 import ActiveEventCard from "@/components/events/ActiveEventCard"
 import { hubKeyOf, pickActiveEvent, type EventEntry } from "@/lib/events"
 import { fetchEvents, type EventInfo } from "@/lib/eventApi"
@@ -12,11 +13,6 @@ import type { TasksPageState } from "@/pages/TasksPageRouter"
 import { fetchTasks, PRIORITY_LABEL, STATUS_LABEL, type Task, type TaskPriority } from "@/lib/tasksApi"
 
 const API = import.meta.env.VITE_BACKEND_URL
-
-// The one hardcoded color on this page: High priority / overdue. The theme
-// has no "danger" token (see .design-sync/conventions.md) -- mirrors the
-// existing exception in TasksPage.tsx.
-const DANGER_RED = "#dc2626"
 
 interface MeetingHours {
     id: string
@@ -162,7 +158,10 @@ export default function DashboardPage() {
                     </div>
 
                     {meetings === null ? (
-                        <p className="text-sm theme-subtext-color">Loading…</p>
+                        <>
+                            <Skeleton className="h-6 w-2/3" />
+                            <Skeleton className="h-4 w-1/2" />
+                        </>
                     ) : current ? (
                         <>
                             <p className="text-lg font-semibold theme-text">Meeting in progress</p>
@@ -195,7 +194,11 @@ export default function DashboardPage() {
                         </div>
 
                         {tasks === null ? (
-                            <p className="text-sm theme-subtext-color">Loading…</p>
+                            <div className="flex flex-col gap-2.5">
+                                <Skeleton className="h-9 w-full" />
+                                <Skeleton className="h-9 w-full" />
+                                <Skeleton className="h-9 w-full" />
+                            </div>
                         ) : myTasks.length === 0 ? (
                             <>
                                 <p className="text-lg font-semibold theme-text">No tasks assigned</p>
@@ -211,14 +214,14 @@ export default function DashboardPage() {
                                             metaParts.push(<span key="contributing">Contributing</span>)
                                         }
                                         if (task.priority === "critical") {
-                                            metaParts.push(<span key="priority" style={{ color: DANGER_RED, fontWeight: 800, textTransform: "uppercase" }}>☠ {PRIORITY_LABEL.critical}</span>)
+                                            metaParts.push(<span key="priority" className="font-extrabold uppercase" style={{ color: "var(--theme-danger)" }}>☠ {PRIORITY_LABEL.critical}</span>)
                                         } else if (task.priority === "high") {
-                                            metaParts.push(<span key="priority" style={{ color: DANGER_RED }}>{PRIORITY_LABEL.high}</span>)
+                                            metaParts.push(<span key="priority" style={{ color: "var(--theme-danger)" }}>{PRIORITY_LABEL.high}</span>)
                                         }
                                         if (task.due_date) {
                                             metaParts.push(
                                                 overdue
-                                                    ? <span key="due" style={{ color: DANGER_RED }}>Overdue</span>
+                                                    ? <span key="due" style={{ color: "var(--theme-danger)" }}>Overdue</span>
                                                     : <span key="due">Due {formatDueDate(task.due_date)}</span>
                                             )
                                         }
@@ -227,7 +230,7 @@ export default function DashboardPage() {
                                                 key={task.id}
                                                 to="/tasks"
                                                 state={{ bucket: "all", who: "me", taskId: task.id } satisfies TasksPageState}
-                                                className="min-w-0 block rounded-md -mx-1.5 px-1.5 py-0.5 hover:bg-(--ag-grid-hover-bg)"
+                                                className="min-w-0 block rounded-lg -mx-1.5 px-1.5 py-0.5 hover:bg-(--ag-grid-hover-bg)"
                                             >
                                                 <p className="text-sm font-medium theme-text truncate">{task.title}</p>
                                                 <p className="text-xs theme-subtext-color flex items-center gap-1 flex-wrap">

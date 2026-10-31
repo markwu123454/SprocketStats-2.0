@@ -23,5 +23,7 @@ Material 3 is the reference for behavior. It does not replace the season palette
 border-first look: we borrow its component behavior, not its tonal color system or its
 elevation model.
 
-**Status:** these are the target rules. The app has not been migrated. Each file ends
-with its migration list, and those lists are the work remaining.
+**Status:** the app has been migrated to these rules through shared components (`Button`,
+`FormFooter`, `Sheet`, `ConfirmDialog`, `Notice`, `EmptyState`, `Skeleton`, `Toggle`, and
+the class strings in `src/lib/uiClasses.ts`). Each file ends with "Remaining debt": the
+items that need new behaviour or fixed pixel geometry, and so were left as they were.

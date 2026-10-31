@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { ChevronRight, ChevronDown, Check } from "lucide-react"
 import { GRADE_OPTIONS, STUDENT_EMAIL_DOMAIN, TEAM_YEAR_OPTIONS } from "@/lib/Roles"
 import { isPushSupported } from "@/lib/push"
 import type { OnboardingPageProps, SeasonInfo } from "@/pages/OnboardingPageRouter"
 import { SeasonWordmark, BrandLockup } from "./LoginShared"
+import Button from "@/components/ui/Button"
+import FormFooter from "@/components/ui/FormFooter"
+import Notice from "@/components/ui/Notice"
+import { fieldErrorClass, fieldLabelClass, focusRing, helperClass, inputClass } from "@/lib/uiClasses"
 
 /* ════════════════════════════════════════════════════════════════
    Shared onboarding building blocks
@@ -79,7 +83,7 @@ export function SimpleDropdown({
                 aria-haspopup="listbox"
                 aria-expanded={open}
                 className={[
-                    "w-full flex items-center justify-between rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-border",
+                    `w-full flex items-center justify-between rounded-lg border px-3 py-2.5 min-h-11 text-base md:text-sm transition theme-bg theme-outline ${focusRing}`,
                     selected ? "theme-text" : "theme-subtext-color",
                 ].join(" ")}
             >
@@ -94,10 +98,9 @@ export function SimpleDropdown({
             {open && (
                 <div
                     role="listbox"
-                    className="absolute left-0 right-0 z-50 rounded-lg border overflow-y-auto theme-bg theme-border theme-scrollbar"
+                    className="absolute left-0 right-0 z-40 rounded-xl border shadow-lg overflow-y-auto theme-bg theme-border theme-scrollbar"
                     style={{
                         maxHeight: MENU_MAX,
-                        boxShadow: "0 12px 32px -10px rgba(0,0,0,.45)",
                         ...(dropUp ? { bottom: "calc(100% + 8px)" } : { top: "calc(100% + 8px)" }),
                     }}
                 >
@@ -111,12 +114,12 @@ export function SimpleDropdown({
                                 aria-selected={active}
                                 onClick={() => { onChange(opt.value); setOpen(false) }}
                                 className={[
-                                    "w-full flex items-center justify-between px-3 py-2 text-sm text-left transition-colors theme-text",
+                                    `w-full flex items-center justify-between px-3 min-h-12 md:min-h-10 text-sm text-left transition-colors theme-text ${focusRing} focus-visible:ring-inset`,
                                     active ? "theme-button-hover" : "theme-bg hover:theme-button-hover",
                                 ].join(" ")}
                             >
                                 <span>{opt.label}</span>
-                                {active && <Check size={15} className="theme-text-contrast shrink-0" />}
+                                {active && <Check size={16} className="theme-text-contrast shrink-0" />}
                             </button>
                         )
                     })}
@@ -185,6 +188,7 @@ export function OnboardingForm({
                                    handleSubmit, handleSignOut,
                                }: Omit<OnboardingPageProps, "season">) {
     const roleOptions = roleCatalog.map(r => ({ value: r.value, label: r.label }))
+    const nameId = useId()
     return (
         <>
             <div className="mb-6">
@@ -198,21 +202,22 @@ export function OnboardingForm({
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-5">
                 <div className="flex flex-col gap-2">
-                    <label className="text-sm font-semibold theme-h1-color">
+                    <label htmlFor={nameId} className={fieldLabelClass}>
                         What should we call you?
                     </label>
                     <input
+                        id={nameId}
                         type="text"
                         value={displayName}
                         onChange={e => setDisplayName(e.target.value)}
                         placeholder="Your name"
                         maxLength={64}
-                        className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-border theme-text"
+                        className={`w-full ${inputClass}`}
                     />
                 </div>
 
                 <div className="flex flex-col gap-2">
-                    <label className="text-sm font-semibold theme-h1-color">
+                    <label className={fieldLabelClass}>
                         What's your role on Team Sprocket?
                     </label>
                     <SimpleDropdown
@@ -231,13 +236,13 @@ export function OnboardingForm({
                         }}
                     />
                     {studentEmailMismatch && (
-                        <p className="m-0 text-xs text-red-500">
+                        <p className={`m-0 ${fieldErrorClass}`}>
                             Student roles require a @{STUDENT_EMAIL_DOMAIN} account. Sign out and sign
                             in with your school email, or choose Mentor, Alumni, or Visitor.
                         </p>
                     )}
                     {!studentEmailMismatch && roleCatalog.find(r => r.value === selectedRole)?.requires_approval && (
-                        <p className="m-0 text-xs theme-subtext-color">
+                        <p className={`m-0 ${helperClass}`}>
                             This role must be approved before you can use the app.
                         </p>
                     )}
@@ -245,7 +250,7 @@ export function OnboardingForm({
 
                 {needsSchoolInfo && (
                     <div className="flex flex-col gap-2">
-                        <label className="text-sm font-semibold theme-h1-color">
+                        <label className={fieldLabelClass}>
                             What grade are you in?
                         </label>
                         <SimpleDropdown
@@ -259,7 +264,7 @@ export function OnboardingForm({
 
                 {needsSchoolInfo && (
                     <div className="flex flex-col gap-2">
-                        <label className="text-sm font-semibold theme-h1-color">
+                        <label className={fieldLabelClass}>
                             What year are you on Team Sprocket?
                         </label>
                         <SimpleDropdown
@@ -271,40 +276,37 @@ export function OnboardingForm({
                     </div>
                 )}
 
-                {error && (
-                    <p className="text-sm text-red-500 text-center -mt-1">{error}</p>
-                )}
-
-                <button
-                    type="submit"
-                    disabled={
-                        submitting ||
-                        !selectedRole ||
-                        studentEmailMismatch ||
-                        !displayName.trim() ||
-                        (needsSchoolInfo && (!selectedGrade || !selectedTeamYear))
-                    }
-                    className="w-full flex items-center justify-center gap-2 mt-1 h-[52px] rounded-xl border font-semibold text-sm transition-opacity disabled:opacity-40 theme-bg theme-border theme-text-contrast"
-                >
-                    {submitting ? "Saving…" : "Continue"}
-                    {!submitting && <ChevronRight size={16} />}
-                </button>
+                {error && <Notice>{error}</Notice>}
 
                 {isPushSupported() && (
-                    <p className="text-xs theme-subtext-color text-center -mt-2">
+                    <p className={`${helperClass} text-center`}>
                         We'll ask to send you notifications for task assignments, meetings and
                         events. You can change this anytime in Settings.
                     </p>
                 )}
+
+                <FormFooter safeArea>
+                    <Button
+                        type="submit"
+                        size="footer"
+                        disabled={
+                            submitting ||
+                            !selectedRole ||
+                            studentEmailMismatch ||
+                            !displayName.trim() ||
+                            (needsSchoolInfo && (!selectedGrade || !selectedTeamYear))
+                        }
+                        className="w-full"
+                    >
+                        {submitting ? "Saving…" : "Continue"}
+                        {!submitting && <ChevronRight size={16} />}
+                    </Button>
+                </FormFooter>
             </form>
 
-            <button
-                type="button"
-                onClick={handleSignOut}
-                className="w-full mt-4 text-sm theme-subtext-color hover:theme-text transition-colors text-center"
-            >
+            <Button variant="text" onClick={handleSignOut} className="w-full mt-4">
                 Sign out and go back
-            </button>
+            </Button>
         </>
     )
 }

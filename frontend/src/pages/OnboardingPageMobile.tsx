@@ -15,7 +15,7 @@ export default function OnboardingPageMobile(props: OnboardingPageProps) {
     useScrollLock()
 
     return (
-        <div className="fixed inset-0 flex flex-col h-dvh max-h-dvh overflow-hidden overscroll-none">
+        <main className="fixed inset-0 flex flex-col h-dvh max-h-dvh overflow-hidden overscroll-none">
             {/* ══ TOP 25% — condensed hero ══ */}
             <aside className="relative overflow-hidden theme-h1-color flex-[0_0_25%] min-h-0">
                 <div className="absolute inset-0 theme-bg-page bg-center z-0" />
@@ -43,6 +43,6 @@ export default function OnboardingPageMobile(props: OnboardingPageProps) {
                     <OnboardingForm {...props} />
                 </div>
             </section>
-        </div>
+        </main>
     )
 }

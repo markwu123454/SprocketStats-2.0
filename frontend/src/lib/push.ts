@@ -64,7 +64,7 @@ async function readyRegistration(): Promise<ServiceWorkerRegistration> {
 
 async function fetchApplicationServerKey(): Promise<Uint8Array> {
     const keyRes = await fetch(`${API}/push/public-key`, { credentials: "include" })
-    if (!keyRes.ok) throw new Error("Failed to reach the server")
+    if (!keyRes.ok) throw new Error("Couldn't reach the server")
     const { public_key: publicKey } = (await keyRes.json()) as { public_key: string | null }
     if (!publicKey) throw new Error("Push notifications aren't configured on the server yet")
     return urlBase64ToUint8Array(publicKey)
@@ -78,7 +78,7 @@ async function saveSubscription(subscription: PushSubscription): Promise<void> {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }),
     })
-    if (!res.ok) throw new Error("Failed to save your subscription")
+    if (!res.ok) throw new Error("Couldn't save your subscription")
 }
 
 export function isPushSupported(): boolean {
@@ -201,7 +201,7 @@ export type PushPreferences = Record<PushCategory, boolean>
 /** The signed-in user's per-category choices (account-wide, not per device). */
 export async function getPushPreferences(): Promise<PushPreferences> {
     const res = await fetch(`${API}/push/preferences`, { credentials: "include" })
-    if (!res.ok) throw new Error("Failed to load notification preferences")
+    if (!res.ok) throw new Error("Couldn't load notification preferences")
     return ((await res.json()) as { preferences: PushPreferences }).preferences
 }
 
@@ -213,7 +213,7 @@ export async function setPushPreferences(changes: Partial<PushPreferences>): Pro
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ preferences: changes }),
     })
-    if (!res.ok) throw new Error("Failed to save notification preferences")
+    if (!res.ok) throw new Error("Couldn't save notification preferences")
     return ((await res.json()) as { preferences: PushPreferences }).preferences
 }
 

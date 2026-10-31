@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { RefreshCw } from "lucide-react"
 import { useRegisterSW } from "virtual:pwa-register/react"
+import Button from "@/components/ui/Button"
 
 /**
  * Registers the service worker and shows a small, non-blocking banner when a
@@ -38,30 +39,22 @@ export default function UpdatePrompt() {
         >
             <div
                 role="status"
-                className="pointer-events-auto w-full max-w-md rounded-2xl border p-4 flex items-center gap-3 backdrop-blur-sm theme-bg theme-border shadow-lg"
+                className="pointer-events-auto w-full max-w-md rounded-2xl border p-4 flex items-center gap-3 theme-bg theme-border shadow-lg"
             >
                 <RefreshCw size={18} className="shrink-0 theme-text-contrast" />
                 <p className="flex-1 text-sm theme-text-contrast">A new version of SprocketStats is available.</p>
-                <button
-                    onClick={() => setNeedRefresh(false)}
-                    className="rounded-lg px-3 py-2 text-sm font-medium theme-subtext-color transition-opacity hover:opacity-70"
-                >
+                <Button variant="text" onClick={() => setNeedRefresh(false)}>
                     Later
-                </button>
-                <button
+                </Button>
+                <Button
                     onClick={() => {
                         setReloading(true)
                         void updateServiceWorker(true)
                     }}
                     disabled={reloading}
-                    className="rounded-lg border px-3 py-2 text-sm font-semibold transition-opacity theme-text-contrast theme-border"
-                    style={{
-                        background: "color-mix(in oklch, var(--theme-button-bg) 80%, transparent)",
-                        opacity: reloading ? 0.35 : 1,
-                    }}
                 >
                     {reloading ? "Reloading…" : "Reload"}
-                </button>
+                </Button>
             </div>
         </div>
     )

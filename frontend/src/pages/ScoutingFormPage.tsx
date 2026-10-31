@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom"
 import { ArrowLeft } from "lucide-react"
+import { buttonClass } from "@/lib/uiClasses"
 
 /**
  * Placeholder for the scouting page. Contents are still TBD — for now it just
@@ -11,7 +12,7 @@ export default function ScoutingFormPage() {
             <div className="flex items-center gap-3">
                 <Link
                     to="/scouting"
-                    className="rounded-lg border p-1.5 transition-opacity hover:opacity-70 theme-border theme-subtext-color"
+                    className={buttonClass({ variant: "icon", className: "border theme-border" })}
                     aria-label="Back to scouting"
                 >
                     <ArrowLeft size={18} />

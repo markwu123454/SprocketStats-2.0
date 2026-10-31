@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useTheme } from "@/contexts/themeContext";
 import type { LoginNotice } from "@/contexts/authContext";
 import type { SeasonInfo, TimeInfo } from "@/pages/LoginPageRouter";
+import Notice from "@/components/ui/Notice";
+import { focusRing } from "@/lib/uiClasses";
 
 /* ════════════════════════════════════════════════════════════════
    Shared login building blocks
@@ -55,7 +57,9 @@ export function GoogleG() {
     );
 }
 
-/* ── Google sign-in button ───────────────────────────────────── */
+/* ── Google sign-in button ─────────────────────────────────────
+   Brand-locked: Google's sign-in guidelines fix the white fill, dark label
+   and 4-colour G, so this button deliberately ignores the theme roles. */
 export function GoogleButton({
     loading,
     disabled = false,
@@ -70,7 +74,7 @@ export function GoogleButton({
             onClick={onClick}
             disabled={loading || disabled}
             type="button"
-            className="w-full grid items-center gap-3 px-[18px] h-[52px] rounded-xl font-sans font-semibold text-[15px] leading-none tracking-[0.005em] bg-white hover:bg-[#f7f7f7] active:translate-y-px text-[#1f1f1f] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-[background-color,transform,box-shadow] duration-150"
+            className={`w-full grid items-center gap-3 px-[18px] h-[52px] rounded-xl font-sans font-semibold text-[15px] leading-none tracking-[0.005em] bg-white hover:bg-[#f7f7f7] active:translate-y-px text-[#1f1f1f] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-[background-color,transform,box-shadow] duration-150 ${focusRing}`}
             style={{
                 gridTemplateColumns: "auto 1fr auto",
                 border: "1px solid color-mix(in oklch, #1a1a1a 12%, transparent)",
@@ -165,7 +169,7 @@ function FooterLink({ href, children }: { href: string; children: React.ReactNod
             href={href}
             target={opensNewTab ? "_blank" : undefined}
             rel={opensNewTab ? "noopener noreferrer" : undefined}
-            className="theme-h1-color font-medium hover:underline"
+            className={`theme-h1-color font-medium hover:underline rounded-lg ${focusRing}`}
         >
             {children}
         </a>
@@ -207,16 +211,7 @@ export function LegalFooterCompact() {
 /* ── Login error notice — banned account, unreachable backend, etc ── */
 function LoginErrorNotice({ children }: { children: React.ReactNode }) {
     return (
-        <p
-            className="m-0 mt-4 mb-3 px-3 py-2 rounded-lg border text-[13px] leading-snug"
-            style={{
-                color: "#dc2626",
-                borderColor: "color-mix(in oklch, #dc2626 40%, transparent)",
-                background: "color-mix(in oklch, #dc2626 10%, transparent)",
-            }}
-        >
-            {children}
-        </p>
+        <Notice className="mt-4 mb-3">{children}</Notice>
     );
 }
 

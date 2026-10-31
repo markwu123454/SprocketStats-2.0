@@ -2,6 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { ChevronLeft, Download, Plus, Search } from "lucide-react"
 import Checkbox from "@/components/ui/Checkbox"
+import Button from "@/components/ui/Button"
+import Notice from "@/components/ui/Notice"
+import Skeleton from "@/components/ui/Skeleton"
+import EmptyState from "@/components/ui/EmptyState"
+import { focusRing, typeBadge, typeH1, typeH2 } from "@/lib/uiClasses"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -94,7 +99,7 @@ export default function NotificationsPage() {
                 setRoleLabels(Object.fromEntries(catalog.map(c => [c.value, c.label])))
             }
         } catch {
-            setError("Failed to load notifications")
+            setError("Couldn't load notifications")
         } finally {
             setLoading(false)
         }
@@ -136,67 +141,66 @@ export default function NotificationsPage() {
     ]
 
     return (
-        <div className="px-4 py-6 flex flex-col gap-4 h-full">
-            <div className="flex items-center gap-2">
+        <div className="px-4 md:px-6 py-6 flex flex-col gap-4 h-full">
+            <div className="flex items-center gap-1.5 md:gap-2">
                 <Link
                     to="/control"
                     aria-label="Back to Control Panel"
-                    className="md:hidden flex items-center justify-center w-9 h-9 -ml-2 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity"
+                    className={`md:hidden flex items-center justify-center w-11 h-11 -ml-3 -mr-3 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity ${focusRing}`}
                 >
-                    <ChevronLeft size={22} />
+                    <ChevronLeft size={21} />
                 </Link>
-                <h1 className="text-2xl font-bold theme-h1-color">Notifications</h1>
-                <span className="text-sm theme-subtext-color">{rows.length} shown</span>
+                <h1 className={`${typeH1} theme-h1-color min-w-0 truncate`}>Notifications</h1>
+                <span className="text-xs md:text-sm theme-subtext-color whitespace-nowrap shrink-0">{rows.length} shown</span>
 
-                <button
+                <Button
+                    variant="outlined"
+                    className="ml-auto shrink-0 px-3 sm:px-4"
+                    aria-label="Export CSV"
                     onClick={() => exportCsv(rows, roleLabels)}
-                    className="ml-auto flex items-center gap-1.5 rounded-lg border px-4 py-1.5 text-sm font-medium theme-text theme-border transition-opacity hover:opacity-80"
                 >
                     <Download size={16} />
                     <span className="hidden sm:inline">Export CSV</span>
-                </button>
-                <button
-                    onClick={() => navigate("/control/notifications/new")}
-                    className="flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-semibold transition-opacity hover:opacity-90"
-                    style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
-                >
-                    <Plus size={16} />
-                    New Notice
-                </button>
+                </Button>
+                {/* Web: create action in the header. Mobile: the FAB below. */}
+                <div className="hidden md:block shrink-0">
+                    <Button onClick={() => navigate("/control/notifications/new")}>
+                        <Plus size={16} />
+                        New Notice
+                    </Button>
+                </div>
             </div>
 
-            {error && (
-                <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
-                   style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
-                    {error}
-                </p>
-            )}
+            <Button variant="fab" aria-label="New notice" onClick={() => navigate("/control/notifications/new")}>
+                <Plus size={21} />
+            </Button>
+
+            {error && <Notice>{error}</Notice>}
 
             <div className="flex flex-col md:flex-row gap-4 flex-1 min-h-0">
                 {/* Filter rail */}
-                <aside className="flex flex-col gap-5 md:w-56 md:shrink-0 rounded-xl border p-4 theme-border backdrop-blur-sm h-fit"
-                       style={{ background: "var(--theme-bg)" }}>
-                    <div className="flex items-center gap-2 rounded-lg border px-3 py-1.5 theme-border theme-bg">
-                        <Search size={15} className="theme-subtext-color shrink-0" />
+                <aside className="flex flex-col gap-5 md:w-56 md:shrink-0 rounded-xl border p-4 theme-border theme-bg backdrop-blur-sm h-fit">
+                    <div className="flex items-center gap-2 rounded-lg border px-3 min-h-11 theme-outline theme-bg focus-within:ring-2 focus-within:ring-[var(--theme-text-contrast)]">
+                        <Search size={16} className="theme-subtext-color shrink-0" />
                         <input
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                             placeholder="Search…"
-                            className="w-full bg-transparent text-sm theme-text outline-none"
+                            aria-label="Search notices"
+                            className="w-full bg-transparent text-base md:text-sm theme-text outline-none"
                         />
                     </div>
 
                     <div className="flex flex-col gap-2">
-                        <p className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">Status</p>
+                        <p className={`${typeH2} theme-subtext-color`}>Status</p>
                         <div className="flex flex-wrap md:flex-col gap-1.5">
                             {statusOpts.map(o => (
                                 <button
                                     key={o.key}
                                     onClick={() => setStatus(o.key)}
-                                    className="text-left text-sm transition-colors"
+                                    className={`text-left text-sm min-h-11 md:min-h-8 px-1 rounded-lg transition-colors ${status === o.key ? "font-semibold" : "font-normal"} ${focusRing}`}
                                     style={{
                                         color: status === o.key ? "var(--theme-text-contrast)" : "var(--theme-subtext-color)",
-                                        fontWeight: status === o.key ? 600 : 400,
                                     }}
                                 >
                                     {status === o.key ? "● " : "○ "}{o.label} <span className="opacity-60">{o.count}</span>
@@ -206,7 +210,7 @@ export default function NotificationsPage() {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                        <p className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">Type</p>
+                        <p className={`${typeH2} theme-subtext-color`}>Type</p>
                         <div className="flex flex-wrap md:flex-col gap-1.5">
                             {(["hard", "soft"] as const).map(t => (
                                 <label key={t} className="flex items-center gap-1.5 text-sm theme-subtext-color cursor-pointer">
@@ -222,7 +226,7 @@ export default function NotificationsPage() {
 
                     {roleOptions.length > 0 && (
                         <div className="flex flex-col gap-2">
-                            <p className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">Audience</p>
+                            <p className={`${typeH2} theme-subtext-color`}>Audience</p>
                             <div className="flex flex-wrap md:flex-col gap-1.5">
                                 {roleOptions.map(r => (
                                     <label key={r} className="flex items-center gap-1.5 text-sm theme-subtext-color cursor-pointer">
@@ -239,13 +243,14 @@ export default function NotificationsPage() {
                 </aside>
 
                 {/* Card gallery */}
-                <div className="flex-1 min-h-0 overflow-y-auto theme-scrollbar">
+                <div className="flex-1 min-h-0 overflow-y-auto theme-scrollbar pb-24 md:pb-0">
                     {loading ? (
-                        <p className="text-sm theme-subtext-color px-1">Loading…</p>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3" role="status" aria-label="Loading notifications">
+                            {Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-28 w-full" />)}
+                        </div>
                     ) : rows.length === 0 ? (
-                        <div className="rounded-xl border border-dashed p-10 text-center text-sm theme-subtext-color theme-border backdrop-blur-sm"
-                             style={{ background: "var(--theme-bg)" }}>
-                            No notices match these filters.
+                        <div className="rounded-xl border border-dashed p-6 theme-border theme-bg backdrop-blur-sm">
+                            <EmptyState>No notices match these filters.</EmptyState>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 auto-rows-min">
@@ -253,13 +258,13 @@ export default function NotificationsPage() {
                                 <button
                                     key={n.id}
                                     onClick={() => navigate(`/control/notifications/${n.id}`)}
-                                    className="text-left flex flex-col gap-2.5 rounded-xl border p-4 theme-border backdrop-blur-sm transition-opacity hover:opacity-90"
-                                    style={{ background: "var(--theme-bg)", opacity: n.active ? 1 : 0.6 }}
+                                    className={`text-left flex flex-col gap-2.5 rounded-xl border p-4 theme-border theme-bg backdrop-blur-sm transition-opacity hover:opacity-90 ${focusRing}`}
+                                    style={{ opacity: n.active ? 1 : 0.6 }}
                                 >
                                     <div className="flex items-start justify-between gap-2.5">
                                         <span className="text-sm font-semibold theme-h1-color leading-snug">{n.title}</span>
                                         <span
-                                            className="shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-bold tracking-wide"
+                                            className={`shrink-0 rounded-full border px-2 py-0.5 ${typeBadge}`}
                                             style={n.hard_block
                                                 ? { color: "var(--theme-text-contrast)", borderColor: "color-mix(in oklch, var(--theme-text-contrast) 55%, transparent)" }
                                                 : { color: "var(--theme-subtext-color)", borderColor: "var(--theme-border)" }}

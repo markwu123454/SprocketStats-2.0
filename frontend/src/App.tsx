@@ -10,6 +10,7 @@ import AuthWrapper from "@/components/wrappers/AuthWrapper.tsx"
 import ControlGuard from "@/components/wrappers/ControlGuard.tsx"
 import PermGuard from "@/components/wrappers/PermGuard.tsx"
 import UpdatePrompt from "@/components/UpdatePrompt.tsx"
+import ConfirmHost from "@/components/ui/ConfirmDialog"
 
 const LoginPageRouter      = lazy(() => import("@/pages/LoginPageRouter"))
 const OnboardingPageRouter = lazy(() => import("@/pages/OnboardingPageRouter.tsx"))
@@ -108,6 +109,7 @@ export default function App() {
                                 </Routes>
                             </Suspense>
                             <UpdatePrompt/>
+                            <ConfirmHost/>
                         </div>
                     </BrowserRouter>
                     </BootstrapProvider>

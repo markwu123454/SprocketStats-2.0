@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { ChevronLeft } from "lucide-react"
+import { focusRing, typeH1 } from "@/lib/uiClasses"
 
 /**
  * Shared frame for a Control Panel sub-page.
@@ -22,11 +23,11 @@ export default function ControlSectionLayout({
                 <Link
                     to="/control"
                     aria-label="Back to Control Panel"
-                    className="md:hidden flex items-center justify-center w-9 h-9 -ml-2 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity"
+                    className={`md:hidden flex items-center justify-center w-11 h-11 -ml-3 -mr-3 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity ${focusRing}`}
                 >
-                    <ChevronLeft size={22} />
+                    <ChevronLeft size={21} />
                 </Link>
-                <h1 className="text-2xl font-bold theme-h1-color">{title}</h1>
+                <h1 className={`${typeH1} theme-h1-color`}>{title}</h1>
             </div>
             {children}
         </div>

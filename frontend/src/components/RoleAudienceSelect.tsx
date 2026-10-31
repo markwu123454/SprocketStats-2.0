@@ -20,6 +20,8 @@
  * place instead of duplicated across callers.
  */
 
+import { focusRing, typeH2 } from "@/lib/uiClasses"
+
 export interface RoleMeta {
     value: string
     label: string
@@ -65,11 +67,10 @@ function TriBox({ state }: { state: TriState }) {
     return (
         <span
             aria-hidden
-            className="flex items-center justify-center shrink-0 rounded-[5px] text-[11px] font-extrabold"
+            // Checkbox-style box: `rounded` (4px) is the Checkbox radius exception.
+            className="flex items-center justify-center shrink-0 w-4 h-4 rounded text-xs font-bold"
             style={{
-                width: 17,
-                height: 17,
-                border: `1px solid ${state === "none" ? "var(--theme-border)" : "var(--theme-text-contrast)"}`,
+                border: `1px solid ${state === "none" ? "var(--theme-outline)" : "var(--theme-text-contrast)"}`,
                 background: filled ? "var(--theme-text-contrast)" : "transparent",
                 color: filled ? "var(--theme-bg)" : "var(--theme-text-contrast)",
             }}
@@ -85,12 +86,10 @@ function chipStyle(on: boolean): React.CSSProperties {
             border: "1px solid var(--theme-text-contrast)",
             background: "color-mix(in oklch, var(--theme-text-contrast) 12%, transparent)",
             color: "var(--theme-text-contrast)",
-            fontWeight: 600,
         }
         : {
-            border: "1px solid var(--theme-border)",
+            border: "1px solid var(--theme-outline)",
             color: "var(--theme-subtext-color)",
-            fontWeight: 500,
         }
 }
 
@@ -165,10 +164,10 @@ export default function RoleAudienceSelect(
                             key={q.label}
                             type="button"
                             onClick={() => onChange(q.label === "Everyone" ? [] : q.roles)}
-                            className="rounded-full border px-3 py-1 text-xs font-semibold transition-opacity hover:opacity-80"
+                            className={`rounded-full border px-4 min-h-11 text-xs font-semibold transition-opacity hover:opacity-80 ${focusRing}`}
                             style={on
                                 ? { background: "var(--theme-text-contrast)", color: "var(--theme-bg)", borderColor: "var(--theme-text-contrast)" }
-                                : { color: "var(--theme-subtext-color)", borderColor: "var(--theme-border)" }}
+                                : { color: "var(--theme-subtext-color)", borderColor: "var(--theme-outline)" }}
                         >
                             {q.label}
                         </button>
@@ -177,7 +176,7 @@ export default function RoleAudienceSelect(
                 <button
                     type="button"
                     onClick={() => onChange(allValues)}
-                    className="rounded-full border px-3 py-1 text-xs font-medium theme-subtext-color theme-border transition-opacity hover:opacity-80"
+                    className={`rounded-full border px-4 min-h-11 text-xs font-medium theme-subtext-color theme-outline transition-opacity hover:opacity-80 ${focusRing}`}
                     title="Deselect all roles"
                 >
                     Clear
@@ -189,37 +188,37 @@ export default function RoleAudienceSelect(
                 const secValues = sec.subteams.flatMap(s => (bySubteam.get(s) ?? []).map(r => r.value))
                 const secState = triState(secValues, checked)
                 return (
-                    <div key={sec.id} className="flex flex-col gap-2.5">
+                    <div key={sec.id} className="flex flex-col gap-3">
                         <button
                             type="button"
                             onClick={() => setRoles(secValues, secState !== "all")}
-                            className="flex w-fit items-center gap-2"
+                            className={`flex w-fit items-center gap-2 min-h-11 md:min-h-8 rounded-lg ${focusRing}`}
                         >
                             <TriBox state={secState} />
-                            <span className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">{sec.label}</span>
-                            <span className="text-xs theme-subtext-color opacity-60">
+                            <span className={`${typeH2} theme-subtext-color`}>{sec.label}</span>
+                            <span className="text-xs theme-subtext-color">
                                 {sec.subteams.length} subteam{sec.subteams.length === 1 ? "" : "s"}
                             </span>
                         </button>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {sec.subteams.map(s => {
                                 const tiers = bySubteam.get(s) ?? []
                                 const values = tiers.map(r => r.value)
                                 const state = triState(values, checked)
                                 const onCount = values.filter(v => checked.has(v)).length
                                 return (
-                                    <div key={s} className="flex flex-col gap-2.5 rounded-xl border p-3 theme-border" style={{ background: "var(--theme-bg)" }}>
+                                    <div key={s} className="flex flex-col gap-2 rounded-xl border p-3 theme-border theme-bg sm:[&:last-child:nth-child(odd)]:col-span-2">
                                         <button
                                             type="button"
                                             onClick={() => setRoles(values, state !== "all")}
-                                            className="flex items-center gap-2"
+                                            className={`flex items-center gap-2 min-h-11 md:min-h-8 rounded-lg ${focusRing}`}
                                         >
                                             <TriBox state={state} />
                                             <span className="flex-1 text-left text-sm font-semibold theme-text">{subteamLabel(tiers[0])}</span>
                                             <span className="text-xs theme-subtext-color">{onCount ? `${onCount}/${values.length}` : ""}</span>
                                         </button>
-                                        <div className="flex flex-wrap gap-1.5">
+                                        <div className="flex flex-wrap gap-2">
                                             {tiers.map(t => {
                                                 const on = checked.has(t.value)
                                                 return (
@@ -228,7 +227,7 @@ export default function RoleAudienceSelect(
                                                         type="button"
                                                         aria-pressed={on}
                                                         onClick={() => setRoles([t.value], !on)}
-                                                        className="rounded-full px-3 py-1 text-xs transition-opacity hover:opacity-80"
+                                                        className={`rounded-full px-3 min-h-11 md:min-h-8 text-xs transition-opacity hover:opacity-80 ${on ? "font-semibold" : "font-medium"} ${focusRing}`}
                                                         style={chipStyle(on)}
                                                     >
                                                         {tierLabel(t.level)}
@@ -246,9 +245,9 @@ export default function RoleAudienceSelect(
 
             {/* Team-wide roles with no subteam */}
             {noSubteam.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2.5 rounded-xl border p-3 theme-border" style={{ background: "var(--theme-bg)" }}>
+                <div className="flex flex-wrap items-center gap-3 rounded-xl border p-3 theme-border theme-bg">
                     <span className="text-sm font-semibold theme-text">Staff &amp; Others</span>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-2">
                         {noSubteam.map(r => {
                             const on = checked.has(r.value)
                             return (
@@ -257,7 +256,7 @@ export default function RoleAudienceSelect(
                                     type="button"
                                     aria-pressed={on}
                                     onClick={() => setRoles([r.value], !on)}
-                                    className="rounded-full px-3 py-1 text-xs transition-opacity hover:opacity-80"
+                                    className={`rounded-full px-3 min-h-11 md:min-h-8 text-xs transition-opacity hover:opacity-80 ${on ? "font-semibold" : "font-medium"} ${focusRing}`}
                                     style={chipStyle(on)}
                                 >
                                     {r.label || pretty(r.value)}

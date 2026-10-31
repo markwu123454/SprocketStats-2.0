@@ -5,6 +5,14 @@ import { Ban, Check, ChevronLeft, ChevronRight, Pencil, Plus, RotateCcw, Tag, X 
 import { useAuth } from "@/contexts/authContext"
 import { can, canModerate, getPerm, type RoleCatalogEntry } from "@/lib/permissions"
 import Dropdown from "@/components/ui/Dropdown"
+import Button from "@/components/ui/Button"
+import FormFooter from "@/components/ui/FormFooter"
+import Sheet from "@/components/ui/Sheet"
+import Notice from "@/components/ui/Notice"
+import EmptyState from "@/components/ui/EmptyState"
+import Skeleton from "@/components/ui/Skeleton"
+import { fieldErrorClass, fieldLabelClass, focusRing, helperClass, inputClass, typeH2 } from "@/lib/uiClasses"
+import { useDiscardGuard, useIsDirty } from "@/lib/useDiscardGuard"
 import { useIsMobile } from "@/lib/useIsMobile"
 
 const API = import.meta.env.VITE_BACKEND_URL
@@ -92,8 +100,8 @@ const BANNED_GROUP = "_banned"
 /** Shared column template for the header and every row. */
 const GRID_COLS = "minmax(0,1.5fr) minmax(0,1.6fr) minmax(0,1.3fr) minmax(0,1.1fr) 110px minmax(0,0.7fr) 40px"
 
-/** Text inputs stay at 16px on phones — iOS Safari zooms the page into anything smaller on focus. */
-const INPUT_TEXT = "text-base md:text-sm"
+/** Dropdown trigger styled as a form field (same box as inputClass; Dropdown supplies the focus ring). */
+const DROPDOWN_TRIGGER = "rounded-lg border px-3 py-2.5 min-h-11 text-base md:text-sm transition theme-bg theme-outline theme-text"
 
 const tagChip: CSSProperties = {
     background: "color-mix(in oklch, var(--theme-text-contrast) 18%, transparent)",
@@ -140,7 +148,7 @@ function Avatar({ name, size = 32 }: { name: string; size?: number }) {
 
 function LeadBadge() {
     return (
-        <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border shrink-0 theme-text-contrast"
+        <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full border shrink-0 theme-text-contrast"
               style={{ borderColor: "var(--theme-text-contrast)" }}>
             LEAD
         </span>
@@ -169,7 +177,7 @@ interface RowAction {
  *
  * Below the `md` breakpoint the wide grid is swapped for a stacked list: tapping
  * a member opens a bottom sheet holding every action (edit, tags, moderation),
- * and Save/Reset move to a bar pinned under the list while changes are staged.
+ * and Save/Reset sit in a footer bar under the list at every width (disabled until something is staged).
  */
 export default function MembersPage() {
     const { user } = useAuth()
@@ -231,7 +239,7 @@ export default function MembersPage() {
             if (rRes.ok) setCatalog(await rRes.json() as RoleCatalogEntry[])
             setRows(members.map(m => ({ ...m, tags: tagMap[m.id] ?? [], _orig: snapshot(m) })))
         } catch {
-            setError("Failed to load members")
+            setError("Couldn't load members")
         } finally {
             setLoading(false)
         }
@@ -252,6 +260,8 @@ export default function MembersPage() {
 
     const changes = useMemo(() => rows.filter(r => isDirty(r)).length, [rows])
     const hasChanges = changes > 0
+    // Staged edits are lost on a link click or tab close, and Reset throws them away on purpose.
+    const confirmDiscardStaged = useDiscardGuard(hasChanges)
 
     // Approve/ban only stage a local change — the actual API calls happen in
     // handleSave, alongside the rest of the pending edits, so Reset can still
@@ -324,7 +334,7 @@ export default function MembersPage() {
             // differ from what was staged here.
             await load()
         } catch {
-            setError("Failed to save changes")
+            setError("Couldn't save changes")
         } finally {
             setSaving(false)
         }
@@ -427,37 +437,32 @@ export default function MembersPage() {
     const sheetMember = sheetFor ? rows.find(r => r.id === sheetFor) : undefined
 
     const resetButton = (
-        <button
-            onClick={handleReset}
-            disabled={!hasChanges || saving}
-            className="rounded-lg border px-3.5 py-2 text-sm theme-text theme-border transition-opacity hover:opacity-80 disabled:cursor-not-allowed"
-        >
+        <Button variant="outlined" size="footer" className="ml-auto" onClick={() => void confirmDiscardStaged().then(ok => { if (ok) handleReset() })} disabled={!hasChanges || saving}>
             Reset
-        </button>
+        </Button>
     )
     const saveButton = (
-        <button
-            onClick={() => void handleSave()}
-            disabled={!hasChanges || saving}
-            className="rounded-lg px-[18px] py-[9px] text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-45 disabled:cursor-not-allowed"
-            style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
-        >
+        <Button size="footer" onClick={() => void handleSave()} disabled={!hasChanges || saving}>
             {saving ? "Saving…" : "Save"}
-        </button>
+        </Button>
     )
     const unsavedLabel = `${changes} unsaved change${changes > 1 ? "s" : ""}`
 
     /** Loading / empty states, else each group's sticky header followed by its rows. */
     const renderGroups = (renderRow: (m: MemberRowState) => ReactNode) =>
         loading ? (
-            <div className="px-6 py-10 text-center text-sm theme-subtext-color">Loading members…</div>
+            <div className="flex flex-col gap-3 px-4 md:px-6 py-4" role="status" aria-label="Loading members">
+                {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+            </div>
         ) : groups.length === 0 ? (
-            <div className="px-6 py-10 text-center text-sm theme-subtext-color">No members match these filters.</div>
+            <div className="px-4 md:px-6 py-6">
+                <EmptyState>No members match these filters.</EmptyState>
+            </div>
         ) : groups.map(g => (
             <div key={g.key} className="flex flex-col">
-                <div className="sticky top-0 z-[1] flex items-baseline gap-2.5 px-4 md:px-6 pt-3.5 pb-2 border-b theme-border theme-bg">
-                    <span className="text-[15px] font-semibold theme-h1-color">{g.name}</span>
-                    <span className="text-[13px] theme-subtext-color">{g.rows.length}</span>
+                <div className="sticky top-0 z-10 flex items-baseline gap-2.5 px-4 md:px-6 pt-3.5 pb-2 border-b theme-border theme-bg">
+                    <span className="text-sm font-semibold theme-h1-color">{g.name}</span>
+                    <span className="text-xs theme-subtext-color">{g.rows.length}</span>
                 </div>
                 {g.rows.map(renderRow)}
             </div>
@@ -467,38 +472,31 @@ export default function MembersPage() {
         // Desktop pins the card to the viewport and scrolls the grid inside it; on
         // mobile the whole page scrolls (overflow-clip, not hidden, so the group
         // headers and the save bar can still stick) to give the list the full screen.
-        <div className="px-2 py-3 md:px-4 md:py-6 flex flex-col gap-4 md:h-full">
-            <div className="rounded-[14px] border overflow-clip md:overflow-hidden theme-border theme-bg flex flex-col md:flex-1 md:min-h-0">
+        <div className="px-4 py-3 md:px-6 md:py-6 flex flex-col gap-4 md:h-full">
+            <div className="rounded-xl border overflow-clip md:overflow-hidden theme-border theme-bg flex flex-col md:flex-1 md:min-h-0">
                 <div className="flex flex-wrap items-center gap-4 px-4 py-4 md:px-6 md:py-5">
                     <Link
                         to="/control"
                         aria-label="Back to Control Panel"
-                        className="md:hidden flex items-center justify-center w-9 h-9 -ml-2 -mr-2 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity"
+                        className={`md:hidden flex items-center justify-center w-11 h-11 -ml-3 -mr-3 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity ${focusRing}`}
                     >
-                        <ChevronLeft size={22} />
+                        <ChevronLeft size={21} />
                     </Link>
                     <div className="flex flex-col gap-0.5 flex-1 min-w-0">
                         <h1 className="text-2xl font-bold theme-h1-color">Members</h1>
-                        <span className="text-[13px] theme-subtext-color">
+                        <span className="text-xs theme-subtext-color">
                             {counts.approved} approved · {counts.pending} pending · {counts.banned} banned
                         </span>
                     </div>
-                    {!isMobile && (
-                        <>
-                            {hasChanges && <span className="text-[13px] theme-text-contrast">{unsavedLabel}</span>}
-                            {resetButton}
-                            {saveButton}
-                        </>
-                    )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 px-4 md:px-6 pb-4 border-b theme-border">
-                    <div className="flex gap-1 p-1 rounded-[10px] max-w-full overflow-x-auto" style={{ background: "var(--ag-grid-chrome-bg)" }}>
+                    <div className="flex gap-1 p-1 rounded-xl max-w-full overflow-x-auto" style={{ background: "var(--ag-grid-chrome-bg)" }}>
                         {TABS.map(([k, label]) => (
                             <button
                                 key={k}
                                 onClick={() => setTab(k)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-[7px] text-[13px] whitespace-nowrap cursor-pointer"
+                                className={`flex items-center gap-1.5 px-3 min-h-11 md:min-h-9 rounded-lg text-sm whitespace-nowrap cursor-pointer ${focusRing}`}
                                 style={{
                                     background: tab === k ? "var(--theme-button-hover)" : "transparent",
                                     color: tab === k ? "var(--theme-h1-color)" : "var(--theme-subtext-color)",
@@ -517,7 +515,7 @@ export default function MembersPage() {
                             options={subteamOptions}
                             onChange={setSubteam}
                             label="Subteam"
-                            triggerClassName="rounded-lg border px-3 py-2 text-sm transition theme-bg theme-border theme-text"
+                            triggerClassName={DROPDOWN_TRIGGER}
                         />
                     </div>
                     <div className="hidden md:block flex-1" />
@@ -525,17 +523,11 @@ export default function MembersPage() {
                         value={query}
                         onChange={e => setQuery(e.target.value)}
                         placeholder="Search name, email, role…"
-                        className={`members-search w-full md:w-[280px] rounded-lg border px-3 py-2 outline-none theme-border theme-text ${INPUT_TEXT}`}
+                        className={`members-search w-full md:w-[280px] ${inputClass}`}
+                        aria-label="Search members"
                         style={{ background: "var(--ag-grid-chrome-bg)" }}
                     />
                 </div>
-
-                {error && (
-                    <p className="text-sm px-4 md:px-6 py-2 border-b theme-subtext-color theme-border"
-                       style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
-                        {error}
-                    </p>
-                )}
 
                 {isMobile ? (
                     <div className="flex flex-col">
@@ -553,7 +545,7 @@ export default function MembersPage() {
                     <div className="flex-1 min-h-0 overflow-x-auto theme-scrollbar">
                         <div className="min-w-[960px] h-full flex flex-col">
                             <div
-                                className="grid gap-4 px-6 py-2.5 text-xs font-semibold uppercase tracking-[.06em] theme-subtext-color"
+                                className={`grid gap-4 px-6 py-2.5 theme-subtext-color ${typeH2}`}
                                 style={{ gridTemplateColumns: GRID_COLS, background: "var(--ag-grid-header-bg)" }}
                             >
                                 <span>Member</span><span>Email</span><span>Role</span><span>Grade</span><span>Status</span><span>Tags</span><span />
@@ -574,14 +566,14 @@ export default function MembersPage() {
                     </div>
                 )}
 
-                {/* Mobile: Save/Reset live in a bar under the list, shown only while something is staged. */}
-                {isMobile && hasChanges && (
-                    <div className="sticky bottom-0 z-[2] flex items-center gap-2 px-4 py-3 border-t theme-border theme-bg">
-                        <span className="flex-1 min-w-0 text-[13px] theme-text-contrast">{unsavedLabel}</span>
-                        {resetButton}
-                        {saveButton}
-                    </div>
-                )}
+                {/* Staged edits: one footer at every width, always rendered; Save and Reset stay disabled until something is staged. */}
+                {error && <Notice className="mx-4 md:mx-6 my-2 shrink-0">{error}</Notice>}
+
+                <FormFooter className="shrink-0">
+                    <span className="min-w-0 text-xs theme-text-contrast" aria-live="polite">{hasChanges ? unsavedLabel : ""}</span>
+                    {resetButton}
+                    {saveButton}
+                </FormFooter>
             </div>
 
             {/* Hover-only affordances are gated on real hover so a tap on touch screens
@@ -670,7 +662,7 @@ function MemberGridRow({ member: m, role, action, onEdit, onEditTags }: MemberGr
                     {goesBy && <span className="text-xs truncate theme-subtext-color">{goesBy}</span>}
                 </span>
             </button>
-            <span className="text-[13px] truncate theme-subtext-color">{m.email ?? "Hidden"}</span>
+            <span className="text-xs truncate theme-subtext-color">{m.email ?? "Hidden"}</span>
             <div className="flex items-center gap-2 min-w-0">
                 <span className="text-sm truncate theme-text">{roleTextOf(m, role)}</span>
                 {role?.level === "lead" && <LeadBadge />}
@@ -679,15 +671,16 @@ function MemberGridRow({ member: m, role, action, onEdit, onEditTags }: MemberGr
             <span className={`text-sm theme-text ${statusDirty ? "italic" : ""}`}>{STATUS_LABEL[statusOf(m)]}</span>
             <div className="flex items-center gap-1 flex-wrap min-w-0">
                 {m.tags.map(t => (
-                    <span key={t} className="text-xs px-2 py-0.5 rounded truncate max-w-full" style={tagChip}>{t}</span>
+                    <span key={t} className="text-xs px-2 py-0.5 rounded-full truncate max-w-full" style={tagChip}>{t}</span>
                 ))}
                 {onEditTags && (
                     <button
                         onClick={onEditTags}
                         title="Edit tags"
-                        className="members-tag-edit rounded p-0.5 theme-subtext-color opacity-0 focus:opacity-100 hover:opacity-70 transition-opacity"
+                        className={`members-tag-edit rounded-lg p-0.5 theme-subtext-color opacity-0 focus:opacity-100 hover:opacity-70 transition-opacity ${focusRing}`}
+                        aria-label="Edit tags"
                     >
-                        <Tag size={13} />
+                        <Tag size={14} />
                     </button>
                 )}
             </div>
@@ -696,7 +689,7 @@ function MemberGridRow({ member: m, role, action, onEdit, onEditTags }: MemberGr
                 disabled={action.disabled}
                 title={action.reason ?? action.label}
                 aria-label={action.label}
-                className="members-action w-8 h-8 rounded-md border border-transparent grid place-items-center theme-subtext-color cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                className={`members-action w-8 h-8 rounded-lg border border-transparent grid place-items-center theme-subtext-color cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${focusRing}`}
             >
                 <Icon size={14} />
             </button>
@@ -708,7 +701,7 @@ function MemberGridRow({ member: m, role, action, onEdit, onEditTags }: MemberGr
 function StatusPill({ status, dirty }: { status: Status; dirty: boolean }) {
     return (
         <span
-            className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${dirty ? "italic" : ""}`}
+            className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${dirty ? "italic" : ""}`}
             style={status === "pending"
                 ? tagChip
                 : { background: "var(--theme-button-hover)", color: "var(--theme-subtext-color)" }}
@@ -735,20 +728,20 @@ function MemberListRow({ member: m, role, onOpen }: MemberListRowProps) {
         <button
             type="button"
             onClick={onOpen}
-            className="members-list-row w-full flex items-center gap-3 px-4 py-3 text-left cursor-pointer"
+            className={`members-list-row w-full flex items-center gap-3 px-4 py-3 text-left cursor-pointer ${focusRing}`}
             style={{ borderBottom: "1px solid var(--ag-grid-row-border)", opacity: m.banned_at ? 0.6 : 1 }}
         >
             <Avatar name={name} size={40} />
             <span className="flex flex-col gap-1 flex-1 min-w-0">
                 <span className="flex items-center gap-2 min-w-0">
-                    <span className={`text-[15px] font-medium truncate theme-h1-color ${isDirty(m, EDITABLE) ? "italic" : ""}`}>{name}</span>
+                    <span className={`text-base font-medium truncate theme-h1-color ${isDirty(m, EDITABLE) ? "italic" : ""}`}>{name}</span>
                     {role?.level === "lead" && <LeadBadge />}
                 </span>
-                <span className="text-[13px] truncate theme-subtext-color">{sub || goesByOf(m) || "No role"}</span>
+                <span className="text-xs truncate theme-subtext-color">{sub || goesByOf(m) || "No role"}</span>
                 {m.tags.length > 0 && (
                     <span className="flex flex-wrap gap-1">
                         {m.tags.map(t => (
-                            <span key={t} className="text-[11px] px-1.5 py-0.5 rounded" style={tagChip}>{t}</span>
+                            <span key={t} className="text-xs px-1.5 py-0.5 rounded-full" style={tagChip}>{t}</span>
                         ))}
                     </span>
                 )}
@@ -780,13 +773,6 @@ function MemberSheet({ member: m, role, action, onClose, onEdit, onEditTags }: M
     const statusDirty = isDirty(m, PENDING)
     const Icon = action.icon
 
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
-        document.addEventListener("keydown", onKey)
-        return () => document.removeEventListener("keydown", onKey)
-    }, [onClose])
-
-    const sheetButton = "w-full flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-[15px] font-medium theme-border theme-text transition-opacity active:opacity-70 disabled:opacity-45 disabled:cursor-not-allowed"
     const details: [string, ReactNode][] = [
         ["Email", m.email ?? "Hidden"],
         ["Role", (
@@ -804,31 +790,14 @@ function MemberSheet({ member: m, role, action, onClose, onEdit, onEditTags }: M
     ]
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-end justify-center"
-            style={{ background: "rgba(0,0,0,0.5)" }}
-            onClick={e => { if (e.target === e.currentTarget) onClose() }}
-        >
-            <div
-                role="dialog"
-                aria-modal="true"
-                aria-label={name}
-                className="w-full max-h-[85dvh] overflow-y-auto rounded-t-2xl border-t border-x px-5 pt-5 flex flex-col gap-4 theme-bg theme-border"
-                style={{ paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
-            >
+        <Sheet title={name} onClose={onClose}>
+            <div className="flex flex-col gap-4">
                 <div className="flex items-center gap-3">
                     <Avatar name={name} size={44} />
                     <div className="flex flex-col min-w-0 flex-1">
                         <span className={`text-base font-semibold truncate theme-h1-color ${isDirty(m, EDITABLE) ? "italic" : ""}`}>{name}</span>
-                        {goesBy && <span className="text-[13px] truncate theme-subtext-color">{goesBy}</span>}
+                        {goesBy && <span className="text-xs truncate theme-subtext-color">{goesBy}</span>}
                     </div>
-                    <button
-                        onClick={onClose}
-                        aria-label="Close"
-                        className="w-9 h-9 shrink-0 rounded-full border grid place-items-center theme-border theme-subtext-color"
-                    >
-                        <X size={16} />
-                    </button>
                 </div>
 
                 <dl className="flex flex-col rounded-xl border theme-border">
@@ -838,7 +807,7 @@ function MemberSheet({ member: m, role, action, onClose, onEdit, onEditTags }: M
                             className="flex items-center justify-between gap-4 px-4 py-2.5"
                             style={i ? { borderTop: "1px solid var(--ag-grid-row-border)" } : undefined}
                         >
-                            <dt className="text-[13px] shrink-0 theme-subtext-color">{label}</dt>
+                            <dt className="text-xs shrink-0 theme-subtext-color">{label}</dt>
                             <dd className="text-sm text-right min-w-0 truncate theme-text">{value}</dd>
                         </div>
                     ))}
@@ -846,11 +815,11 @@ function MemberSheet({ member: m, role, action, onClose, onEdit, onEditTags }: M
 
                 {(m.tags.length > 0 || onEditTags) && (
                     <div className="flex flex-col gap-2">
-                        <span className="text-[13px] theme-subtext-color">Tags</span>
+                        <span className="text-xs theme-subtext-color">Tags</span>
                         <div className="flex flex-wrap gap-1.5">
                             {m.tags.length === 0 && <span className="text-xs theme-subtext-color">No tags yet</span>}
                             {m.tags.map(t => (
-                                <span key={t} className="text-xs px-2 py-0.5 rounded" style={tagChip}>{t}</span>
+                                <span key={t} className="text-xs px-2 py-0.5 rounded-full" style={tagChip}>{t}</span>
                             ))}
                         </div>
                     </div>
@@ -858,36 +827,33 @@ function MemberSheet({ member: m, role, action, onClose, onEdit, onEditTags }: M
 
                 <div className="flex flex-col gap-2">
                     {onEdit && (
-                        <button
-                            onClick={onEdit}
-                            className={sheetButton}
-                            style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)", borderColor: "transparent" }}
-                        >
+                        <Button className="w-full" onClick={onEdit}>
                             <Pencil size={16} /> Edit profile &amp; role
-                        </button>
+                        </Button>
                     )}
                     {onEditTags && (
-                        <button onClick={onEditTags} className={sheetButton}>
+                        <Button variant="outlined" className="w-full" onClick={onEditTags}>
                             <Tag size={16} /> Edit tags
-                        </button>
+                        </Button>
                     )}
-                    <button
+                    <Button
+                        variant="outlined"
+                        className="w-full"
                         onClick={() => { action.onClick(); onClose() }}
                         disabled={action.disabled}
-                        className={sheetButton}
                     >
                         <Icon size={16} /> {action.label}
-                    </button>
+                    </Button>
                     {action.disabled && action.reason && (
-                        <p className="text-xs text-center theme-subtext-color">{action.reason}</p>
+                        <p className={`text-center ${helperClass}`}>{action.reason}</p>
                     )}
                 </div>
 
-                <p className="text-xs text-center theme-subtext-color">
+                <p className={`text-center ${helperClass}`}>
                     Profile and status changes are staged — press Save to keep them.
                 </p>
             </div>
-        </div>
+        </Sheet>
     )
 }
 
@@ -908,74 +874,64 @@ function EditMemberModal({ member, catalog, canChangeRole, onClose, onApply }: E
         grade: member.grade, team_year: member.team_year,
     })
     const set = (patch: Partial<typeof draft>) => setDraft(d => ({ ...d, ...patch }))
+    const dirty = useIsDirty(draft)
+    const confirmDiscard = useDiscardGuard(dirty)
 
-    const inputClass = `w-full rounded-lg border px-3 py-2 outline-none theme-border theme-text theme-bg ${INPUT_TEXT}`
-    const triggerClass = "rounded-lg border px-3 py-2 text-sm transition theme-bg theme-border theme-text"
+    const fieldClass = `w-full ${inputClass}`
+    const triggerClass = DROPDOWN_TRIGGER
     const roleOptions = catalog.map(c => ({ value: c.value, label: c.label }))
     const enumOptions = (vals: string[]) => vals.map(v => ({ value: v, label: v ? pretty(v) : "—" }))
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
-            style={{ background: "rgba(0,0,0,0.5)", paddingBottom: "max(1rem, env(safe-area-inset-bottom, 0px))" }}
-            onClick={e => { if (e.target === e.currentTarget) onClose() }}
+        <Sheet
+            title={`Edit — ${member.name ?? member.display_name ?? member.email}`}
+            onClose={onClose}
+            dirty={dirty}
+            footer={
+                <FormFooter safeArea>
+                    <Button variant="outlined" size="footer" className="ml-auto" onClick={() => void confirmDiscard().then(ok => { if (ok) onClose() })}>Cancel</Button>
+                    <Button
+                        size="footer"
+                        onClick={() => onApply({ ...draft, name: norm(draft.name), display_name: norm(draft.display_name) })}
+                    >
+                        Apply
+                    </Button>
+                </FormFooter>
+            }
         >
-            <div className="w-full max-w-sm max-h-full overflow-y-auto rounded-2xl border p-5 flex flex-col gap-4 theme-bg theme-border">
-                <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-semibold theme-text-contrast flex-1 truncate">
-                        Edit — {member.name ?? member.display_name ?? member.email}
-                    </h2>
-                    <button onClick={onClose} className="theme-subtext-color hover:opacity-70 transition-opacity">
-                        <X size={16} />
-                    </button>
-                </div>
-
-                <label className="flex flex-col gap-1.5 text-xs theme-subtext-color">
+            <div className="flex flex-col gap-4">
+                <label className={`flex flex-col gap-1.5 ${fieldLabelClass}`}>
                     Name
-                    <input className={inputClass} value={draft.name ?? ""} onChange={e => set({ name: e.target.value })} />
+                    <input className={fieldClass} value={draft.name ?? ""} onChange={e => set({ name: e.target.value })} />
                 </label>
-                <label className="flex flex-col gap-1.5 text-xs theme-subtext-color">
+                <label className={`flex flex-col gap-1.5 ${fieldLabelClass}`}>
                     Display name
-                    <input className={inputClass} value={draft.display_name ?? ""} onChange={e => set({ display_name: e.target.value })} />
+                    <input className={fieldClass} value={draft.display_name ?? ""} onChange={e => set({ display_name: e.target.value })} />
                 </label>
-                <div className="flex flex-col gap-1.5 text-xs theme-subtext-color">
+                <div className={`flex flex-col gap-1.5 ${fieldLabelClass}`}>
                     Role
                     <Dropdown value={draft.role ?? ""} options={roleOptions} onChange={v => set({ role: v })}
                               label="Role" placeholder="—" triggerClassName={triggerClass} disabled={!canChangeRole} />
-                    {!canChangeRole && <span>Only Captains, Mentors and the Scouting Lead can change roles.</span>}
+                    {!canChangeRole && <span className={`font-normal ${helperClass}`}>Only Captains, Mentors and the Scouting Lead can change roles.</span>}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                    <div className="flex flex-col gap-1.5 text-xs theme-subtext-color">
+                    <div className={`flex flex-col gap-1.5 ${fieldLabelClass}`}>
                         Grade
                         <Dropdown value={draft.grade ?? ""} options={enumOptions(GRADE_OPTIONS)} onChange={v => set({ grade: v })}
                                   label="Grade" triggerClassName={triggerClass} />
                     </div>
-                    <div className="flex flex-col gap-1.5 text-xs theme-subtext-color">
+                    <div className={`flex flex-col gap-1.5 ${fieldLabelClass}`}>
                         Year
                         <Dropdown value={draft.team_year ?? ""} options={enumOptions(YEAR_OPTIONS)} onChange={v => set({ team_year: v })}
                                   label="Year" triggerClassName={triggerClass} />
                     </div>
                 </div>
 
-                <div className="flex justify-end gap-2">
-                    <button onClick={onClose}
-                            className="rounded-lg border flex-1 md:flex-none px-3.5 py-2.5 md:py-1.5 text-sm theme-text theme-border hover:opacity-80 transition-opacity">
-                        Cancel
-                    </button>
-                    <button
-                        onClick={() => onApply({ ...draft, name: norm(draft.name), display_name: norm(draft.display_name) })}
-                        className="rounded-lg flex-1 md:flex-none px-4 py-2.5 md:py-1.5 text-sm font-semibold hover:opacity-90 transition-opacity"
-                        style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
-                    >
-                        Apply
-                    </button>
-                </div>
-
-                <p className="text-xs theme-subtext-color">
+                <p className={helperClass}>
                     Changes are staged — press Save on the roster to keep them.
                 </p>
             </div>
-        </div>
+        </Sheet>
     )
 }
 
@@ -1027,25 +983,9 @@ function TagsModal({ member, onClose, onAdd, onRemove }: TagsModalProps) {
     }
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
-            style={{ background: "rgba(0,0,0,0.5)", paddingBottom: "max(1rem, env(safe-area-inset-bottom, 0px))" }}
-            onClick={e => { if (e.target === e.currentTarget) onClose() }}
-        >
-            <div
-                className="w-full max-w-sm max-h-full overflow-y-auto rounded-2xl border p-5 flex flex-col gap-4 backdrop-blur-sm theme-bg theme-border"
-            >
-                <div className="flex items-center gap-2">
-                    <Tag size={16} className="theme-subtext-color" />
-                    <h2 className="text-sm font-semibold theme-text-contrast flex-1">
-                        Tags — {member.display_name ?? member.name}
-                    </h2>
-                    <button onClick={onClose} className="theme-subtext-color hover:opacity-70 transition-opacity">
-                        <X size={16} />
-                    </button>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5 min-h-[32px]">
+        <Sheet title={`Tags — ${member.display_name ?? member.name}`} onClose={onClose}>
+            <div className="flex flex-col gap-4">
+                <div className="flex flex-wrap gap-1.5 min-h-8">
                     {tags.length === 0 && (
                         <span className="text-xs theme-subtext-color">No tags yet</span>
                     )}
@@ -1059,9 +999,10 @@ function TagsModal({ member, onClose, onAdd, onRemove }: TagsModalProps) {
                             <button
                                 onClick={() => void handleRemove(t)}
                                 disabled={busy}
-                                className="hover:opacity-60 transition-opacity disabled:opacity-30"
+                                aria-label={`Remove tag ${t}`}
+                                className={`rounded-full hover:opacity-60 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed ${focusRing}`}
                             >
-                                <X size={11} />
+                                <X size={14} />
                             </button>
                         </span>
                     ))}
@@ -1074,29 +1015,24 @@ function TagsModal({ member, onClose, onAdd, onRemove }: TagsModalProps) {
                         onChange={e => { setInput(e.target.value); setTagError(null) }}
                         onKeyDown={e => { if (e.key === "Enter") void handleAdd() }}
                         placeholder="new_tag"
+                        aria-label="New tag"
                         disabled={busy}
-                        className={`flex-1 min-w-0 rounded-lg border px-3 py-1.5 theme-text theme-border theme-bg outline-none focus:ring-1 disabled:opacity-50 ${INPUT_TEXT}`}
-                        style={{ background: "color-mix(in oklch, var(--theme-border) 30%, var(--theme-bg))" }}
+                        className={`flex-1 min-w-0 ${inputClass}`}
                     />
-                    <button
-                        onClick={() => void handleAdd()}
-                        disabled={busy || !input.trim()}
-                        className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
-                        style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
-                    >
-                        <Plus size={14} />
+                    <Button onClick={() => void handleAdd()} disabled={busy || !input.trim()}>
+                        <Plus size={16} />
                         Add
-                    </button>
+                    </Button>
                 </div>
 
                 {tagError && (
-                    <p className="text-xs" style={{ color: "#dc2626" }}>{tagError}</p>
+                    <p className={fieldErrorClass}>{tagError}</p>
                 )}
 
-                <p className="text-xs theme-subtext-color">
+                <p className={helperClass}>
                     Tag changes save immediately and don't require pressing Save.
                 </p>
             </div>
-        </div>
+        </Sheet>
     )
 }

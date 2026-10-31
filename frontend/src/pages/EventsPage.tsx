@@ -10,7 +10,10 @@ import {useOnboardedUser} from "@/contexts/authContext"
 import {can} from "@/lib/permissions"
 import EventScheduleEditor from "@/components/events/EventScheduleEditor"
 import EventEditSheet from "@/components/events/EventEditSheet"
+import {confirmAnyDiscard} from "@/lib/useDiscardGuard"
 import {useIsMobile} from "@/lib/useIsMobile"
+import Button from "@/components/ui/Button"
+import {focusRing, typeH1, typeH2} from "@/lib/uiClasses"
 
 const API = import.meta.env.VITE_BACKEND_URL
 const cardStyle = {background: "var(--theme-bg)", borderColor: "var(--theme-border)"}
@@ -66,19 +69,14 @@ return (
     <div className="mx-auto px-4 py-8 flex flex-col gap-1">
         <div className="flex items-start justify-between gap-3 mb-6">
             <div>
-                <h1 className="text-2xl font-bold theme-h1-color">Events</h1>
+                <h1 className={`${typeH1} theme-h1-color`}>Events</h1>
                 <p className="text-sm theme-subtext-color">Season schedule</p>
             </div>
             {isEditor && (
-                <button
-                    type="button"
-                    onClick={() => { setEditingId(null); setCreating(true) }}
-                    className="shrink-0 h-11 px-4 inline-flex items-center gap-1.5 rounded-xl text-sm font-bold outline-none focus:ring-2"
-                    style={{background: VIEW_BG_ACTIVE, color: "var(--theme-bg)"}}
-                >
+                <Button className="shrink-0" onClick={() => void confirmAnyDiscard().then(ok => { if (ok) { setEditingId(null); setCreating(true) } })}>
                     <Plus size={16}/>
                     New event
-                </button>
+                </Button>
             )}
         </div>
 
@@ -107,8 +105,8 @@ return (
 
                 const cardContent = (
                     <>
-                        <div className="flex flex-col min-w-0 sm:min-w-[150px]">
-                            <span className="text-[11px] font-bold tracking-wider truncate"
+                        <div className="flex flex-col min-w-0 max-w-[45%] sm:max-w-none sm:min-w-[150px]">
+                            <span className={`${typeH2} truncate`}
                                   style={{color: meta.color}}>
                                 {meta.label.toUpperCase()}
                             </span>
@@ -116,7 +114,7 @@ return (
                                 className="text-xs sm:text-sm theme-subtext-color mt-0.5">{event.dateLabel}</span>
                             {event.status === "upcoming" && (
                                 <span
-                                    className="text-xs font-semibold tabular-nums mt-0.5 whitespace-nowrap"
+                                    className="text-xs font-semibold tabular-nums mt-0.5 sm:whitespace-nowrap"
                                     style={{color: "var(--theme-text-contrast)"}}
                                 >
                                     in {formatCountdown(event.startsAt - now)}
@@ -124,7 +122,7 @@ return (
                             )}
                             {checkInNote && (
                                 <span
-                                    className="text-xs mt-0.5 whitespace-nowrap"
+                                    className="text-xs mt-0.5 sm:whitespace-nowrap"
                                     style={{color: checkInOpensAt(event) <= now ? "var(--theme-text-contrast)" : "var(--theme-subtext-color)"}}
                                 >
                                     {checkInNote}
@@ -186,8 +184,8 @@ return (
                                             type="button"
                                             aria-label={`Edit ${event.name}`}
                                             aria-expanded={editing}
-                                            onClick={() => setEditingId(editing ? null : event.id!)}
-                                            className="shrink-0 w-11 flex items-center justify-center rounded-xl border opacity-60 hover:opacity-100 transition-opacity outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
+                                            onClick={() => void confirmAnyDiscard().then(ok => { if (ok) setEditingId(editing ? null : event.id!) })}
+                                            className={`shrink-0 w-11 flex items-center justify-center rounded-xl border opacity-60 hover:opacity-100 transition-opacity ${focusRing}`}
                                             style={cardStyle}
                                         >
                                             <Pencil size={15} className="theme-subtext-color"/>
@@ -195,11 +193,12 @@ return (
                                     )}
                                 </div>
                                 {editing && !isMobile && (
-                                    <div className="rounded-xl border p-4" style={cardStyle}>
+                                    <div className="rounded-xl border px-4 md:px-6 pt-4" style={cardStyle}>
                                         <EventScheduleEditor
                                             event={{...event, id: event.id!}}
                                             onSaved={applySaved}
                                             onCancel={() => setEditingId(null)}
+                                            footerClassName="rounded-b-xl"
                                         />
                                     </div>
                                 )}

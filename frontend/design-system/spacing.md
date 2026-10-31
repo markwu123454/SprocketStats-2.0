@@ -25,6 +25,8 @@ The base unit is Tailwind's 4px scale.
 
 ## Decisions
 
+- **Content never sits directly on the season background.** Only the `h1`, its subtitle and page tabs may; everything else is on a card (`rounded-xl border theme-border theme-bg`, `p-5`). Form pages are one centred `max-w-2xl` card with `gap-4`, an internal `border-t` between groups and the `FormFooter` as its flush last child.
+- **A page never scrolls sideways at any width.** Wide content (AG Grid, tables, tab strips) scrolls inside its own container; `html` and `body` use `overflow-x: clip` (not `hidden`, which would break sticky footers) and the app shell's content column is `min-w-0`. Below `md`, rows with several fixed controls wrap to a second line instead of squeezing the text.
 - **Add 16 and 24 as named steps.** The old scale jumped from 12 to 20, yet `gap-4` and
   `px-4` are common in the code and are what a form needs.
 - **Gutters follow Material 3's window sizes:** 16px on compact and 24px on expanded.
@@ -34,7 +36,6 @@ The base unit is Tailwind's 4px scale.
   leaves side gaps on landscape phones and small tablets, and no other sheet has it.
 - **Pixel-tuned values stay allowed only in auth hero layouts.**
 
-## Migration
+## Remaining debt
 
-- Bring the inline `gap` and `padding` values in the Tasks pages onto the scale.
-- Move the safe-area inset from `EventEditSheet.tsx:46` to the footer in `EventScheduleEditor.tsx:280`.
+- `TasksPageDesktop.tsx` `TaskRow` and its panels still use inline pixel `gap` and `padding` (3, 5, 6, 9, 10, 17, 24, 28px) that are off the 4px scale. They define the row's fixed geometry, so moving them changes the layout, not just the classes. `TasksPageMobile.tsx` has fewer, for the same reason.

@@ -36,8 +36,8 @@ same on web and mobile.
 - **Optimistic updates are not a default.** Changes here affect shared team data, so a failed
   write that appeared to work is worse than a brief wait.
 
-## Migration
+## Remaining debt
 
-- Add one `Skeleton` component.
-- Start with the highest-traffic lists: `TasksPageDesktop.tsx:269`, `TasksPageMobile.tsx:308`, `DashboardPage.tsx:165`, `EventTasksPage.tsx:146`.
-- Replace the empty title during load at `EventShell.tsx:112` with a skeleton line.
+`Skeleton` is in use on the lists and pages named here. What is left:
+
+- The 300ms delay before a skeleton appears (so fast loads never flash one) is not implemented; skeletons render as soon as `loading` is true. It needs a timer in each loading condition.

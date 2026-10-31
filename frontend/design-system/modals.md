@@ -32,7 +32,7 @@ Choose by the job, then let the breakpoint choose the form.
 | Otherwise | Settles back with `ease-sheet` |
 | Without a gesture | Close button, scrim, Esc, or activating the handle |
 | Keyboard | Height follows `--real-vh`; the footer stays above the keyboard |
-| Dirty form | Any dismissal stops and asks "Discard changes?" |
+| Dirty form | `dirty` prop (or a form calling `useDiscardGuard`): scrim, Esc, close button, handle and a drag past the threshold stop and ask "Discard changes?". Declining keeps the sheet open and a drag settles back with `ease-sheet`. One prompt at a time |
 | Background | Scroll locked with `useScrollLock` |
 | Focus | Trapped; moves to the sheet on open and back to the trigger on close |
 
@@ -79,9 +79,8 @@ never "Are you sure?" with OK.
 - **One shared sheet.** Extract it from `EventEditSheet.tsx`, which already switches between sheet
   and dialog at `md`, and add the drag behavior.
 
-## Migration
+## Remaining debt
 
-- Extract `Sheet` with real drag, then adopt it in `TasksPageMobile.tsx:943`, `MembersPage.tsx:808`, `:919`, `:1031`, `EventEditSheet.tsx`, and `Dropdown.tsx:272`.
-- Replace `window.confirm` at `ItineraryPage.tsx:124` and `PackingPage.tsx:77`, `:117` with the alert dialog.
-- Add dialog roles and labelling where missing: `TasksPageMobile.tsx:945`, `MembersPage.tsx:918`, `:1030`, `ScoutingPage.tsx:260`, `NotificationGate.tsx:76`.
-- Bring z-indexes onto the table, notably the sheet at `TasksPageMobile.tsx:955`.
+`Sheet` and `ConfirmDialog` are adopted everywhere a modal existed, with roles, labelling, focus trapping and the z-index table. What is left:
+
+- `OnboardingShared.tsx` `SimpleDropdown` is not a `Sheet`-backed menu on mobile (see forms.md).

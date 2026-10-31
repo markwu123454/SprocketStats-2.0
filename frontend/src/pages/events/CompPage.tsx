@@ -1,6 +1,19 @@
 import { useState } from "react"
 import { useEventContext } from "@/contexts/eventContext"
 import type { TBAMatch, TBARankEntry } from "@/lib/eventApi"
+import EmptyState from "@/components/ui/EmptyState"
+import Skeleton from "@/components/ui/Skeleton"
+import { tintColor } from "@/lib/taskFormat"
+import { typeH2 } from "@/lib/uiClasses"
+
+// Data-identity colours, deliberately not theme roles. FRC alliance red/blue are
+// fixed by the game; the status colours (good / warn / info) have no matching
+// role in the palette, and must read the same in every season.
+const ALLIANCE_RED  = "#ef4444"
+const ALLIANCE_BLUE = "#3b82f6"
+const STATUS_GOOD   = "#22c55e"
+const STATUS_WARN   = "#f59e0b"
+const STATUS_INFO   = "#3b82f6"
 
 const TEAM_KEY     = "frc3473"
 const TEAM_NUM     = "3473"
@@ -53,10 +66,10 @@ function bracketOrder(a: TBAMatch, b: TBAMatch): number {
 
 // Nexus maps team status strings to display labels + colors
 const NEXUS_STATUS_MAP: [RegExp, string, string][] = [
-    [/on.?field/i,      "In Match",       "#22c55e"],
-    [/queued|queueing/i,"Queueing",       "#f59e0b"],
-    [/on.?deck/i,       "On Deck",        "#f59e0b"],
-    [/practice/i,       "Practice Field", "#3b82f6"],
+    [/on.?field/i,      "In Match",       STATUS_GOOD],
+    [/queued|queueing/i,"Queueing",       STATUS_WARN],
+    [/on.?deck/i,       "On Deck",        STATUS_WARN],
+    [/practice/i,       "Practice Field", STATUS_INFO],
     [/pit/i,            "In Pit",         "var(--theme-subtext-color)"],
     [/build/i,          "Building Pit",   "var(--theme-subtext-color)"],
     [/pack/i,           "Packing Up",     "var(--theme-subtext-color)"],
@@ -97,7 +110,7 @@ export default function CompPage() {
         if (!nowQueuing) return false
         return matches.some(m => alliance(m, TEAM_KEY) !== null && !m.actual_time && matchLabel(m) === nowQueuing)
     })()
-    const displayStatus = isQueueing ? { label: "Queueing", color: "#f59e0b" } : robotStatus
+    const displayStatus = isQueueing ? { label: "Queueing", color: STATUS_WARN } : robotStatus
 
     // Next unplayed match for our team
     const nowSec    = Date.now() / 1000
@@ -137,7 +150,13 @@ export default function CompPage() {
         .sort((a, b) => a.rank - b.rank)
 
     if (loading && !info) {
-        return <PageState>Loading…</PageState>
+        return (
+            <div className="max-w-2xl mx-auto px-4 py-4 flex flex-col gap-6" role="status" aria-label="Loading">
+                <Skeleton className="h-24 w-full rounded-xl" />
+                <Skeleton className="h-40 w-full rounded-xl" />
+                <Skeleton className="h-32 w-full rounded-xl" />
+            </div>
+        )
     }
 
     return (
@@ -145,10 +164,7 @@ export default function CompPage() {
 
             {/* ── Robot Status (live only) ─────────────────────────── */}
             {!archived && <Section label="Robot">
-                <div
-                    className="rounded-xl border overflow-hidden"
-                    style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
-                >
+                <div>
                     {/* Status + inspection row */}
                     <div className="flex items-center gap-4 px-4 py-3 border-b" style={{ borderColor: "var(--theme-border)" }}>
                         <div className="flex items-center gap-2 flex-1">
@@ -159,10 +175,10 @@ export default function CompPage() {
                         </div>
                         {inspected !== undefined && (
                             <span
-                                className="text-xs font-medium px-2 py-0.5 rounded"
+                                className="text-xs font-medium px-2 py-0.5 rounded-full"
                                 style={{
-                                    background: inspected ? "#22c55e22" : "#ef444422",
-                                    color:      inspected ? "#22c55e"   : "#ef4444",
+                                    background: tintColor(inspected ? STATUS_GOOD : "var(--theme-danger)", 13),
+                                    color:      inspected ? STATUS_GOOD : "var(--theme-danger)",
                                 }}
                             >
                                 {inspected ? "✓ Inspected" : "✗ Not Inspected"}
@@ -179,8 +195,8 @@ export default function CompPage() {
                     {nextMatch ? (
                         <NextMatchRow match={nextMatch} />
                     ) : (
-                        <div className="px-4 py-3 text-sm" style={{ color: "var(--theme-subtext-color)" }}>
-                            No upcoming matches.
+                        <div className="px-4">
+                            <EmptyState>No upcoming matches.</EmptyState>
                         </div>
                     )}
                 </div>
@@ -188,13 +204,10 @@ export default function CompPage() {
 
             {/* ── Rankings ────────────────────────────────────────── */}
             <Section label={archived ? "Final Rankings" : "Rankings"}>
-                <div
-                    className="rounded-xl border overflow-hidden"
-                    style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
-                >
+                <div>
                     {/* Our team + EPA */}
                     {ourRank && (
-                        <div className="flex items-center gap-4 px-4 py-3 border-b" style={{ borderColor: "var(--theme-border)" }}>
+                        <div className="flex items-center gap-2 sm:gap-4 px-4 py-3 border-b" style={{ borderColor: "var(--theme-border)" }}>
                             <span className="text-sm font-bold w-8 shrink-0" style={{ color: "var(--theme-text-contrast)" }}>
                                 #{ourRank.rank}
                             </span>
@@ -209,7 +222,7 @@ export default function CompPage() {
                             </span>
                             {epa !== null && (
                                 <span
-                                    className="text-xs font-semibold tabular-nums px-2 py-0.5 rounded"
+                                    className="text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full"
                                     style={{
                                         background: "color-mix(in oklch, var(--theme-text-contrast) 12%, transparent)",
                                         color: "var(--theme-text-contrast)",
@@ -228,7 +241,7 @@ export default function CompPage() {
                             return (
                                 <div
                                     key={r.team_key}
-                                    className="flex items-center gap-4 px-4 py-2.5 border-b last:border-0 text-sm"
+                                    className="flex items-center gap-2 sm:gap-4 px-4 py-2.5 border-b last:border-0 text-sm"
                                     style={{ borderColor: "var(--theme-border)" }}
                                 >
                                     <span className="tabular-nums w-8 shrink-0" style={{ color: "var(--theme-subtext-color)" }}>
@@ -250,8 +263,8 @@ export default function CompPage() {
                             )
                         })
                     ) : !ourRank ? (
-                        <div className="px-4 py-3 text-sm" style={{ color: "var(--theme-subtext-color)" }}>
-                            {archived ? "No rankings were posted." : "Rankings not yet posted."}
+                        <div className="px-4">
+                            <EmptyState>{archived ? "No rankings were posted." : "Rankings not yet posted."}</EmptyState>
                         </div>
                     ) : null}
                 </div>
@@ -261,22 +274,18 @@ export default function CompPage() {
             {archived ? (
                 <Section label={playedMatches.length > 0 ? `Match Results · ${record.wins}–${record.losses}–${record.ties}` : "Match Results"}>
                     {playedMatches.length === 0 ? (
-                        <div className="text-sm text-center py-8" style={{ color: "var(--theme-subtext-color)" }}>
-                            No match results recorded.
-                        </div>
+                        <div className="px-4"><EmptyState>No match results recorded.</EmptyState></div>
                     ) : (
-                        <div className="flex flex-col gap-2">
+                        <div className="flex flex-col gap-2 p-3">
                             {playedMatches.map(m => <MatchCard key={m.key} match={m} isPast showDay />)}
                         </div>
                     )}
                 </Section>
             ) : <Section label="Matches">
                 {pastMatches.length === 0 && upcomingMatches.length === 0 ? (
-                    <div className="text-sm text-center py-8" style={{ color: "var(--theme-subtext-color)" }}>
-                        Schedule not yet posted.
-                    </div>
+                    <div className="px-4"><EmptyState>Schedule not yet posted.</EmptyState></div>
                 ) : (
-                    <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-2 p-3">
                         {pastMatches.map(m => <MatchCard key={m.key} match={m} isPast />)}
                         {upcomingMatches.map(m => <MatchCard key={m.key} match={m} isPast={false} isNext={m.key === nextMatch?.key} />)}
                     </div>
@@ -284,13 +293,9 @@ export default function CompPage() {
             </Section>}
 
             {/* ── Scouting Intel placeholder ───────────────────────── */}
-            <div className="pt-4 border-t" style={{ borderColor: "var(--theme-border)" }}>
-                <p className="text-[11px] font-bold tracking-wider uppercase mb-4" style={{ color: "var(--theme-subtext-color)" }}>
-                    Scouting Intel
-                </p>
-                <p className="text-sm text-center py-6" style={{ color: "var(--theme-subtext-color)" }}>
-                    Scouting pipeline coming soon.
-                </p>
+            <div className="rounded-xl border p-4" style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}>
+                <h2 className={`${typeH2} theme-subtext-color mb-2`}>Scouting Intel</h2>
+                <EmptyState>Scouting pipeline coming soon.</EmptyState>
             </div>
         </div>
     )
@@ -300,11 +305,9 @@ export default function CompPage() {
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
     return (
-        <section>
-            <p className="text-[11px] font-bold tracking-wider uppercase mb-3" style={{ color: "var(--theme-subtext-color)" }}>
-                {label}
-            </p>
-            {children}
+        <section className="rounded-xl border overflow-hidden" style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}>
+            <h2 className={`${typeH2} theme-subtext-color px-4 pt-3 pb-2`}>{label}</h2>
+            <div className="border-t" style={{ borderColor: "var(--theme-border)" }}>{children}</div>
         </section>
     )
 }
@@ -316,7 +319,7 @@ function NextMatchRow({ match }: { match: TBAMatch }) {
 
     return (
         <div className="flex items-center gap-3 px-4 py-3 text-sm">
-            <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: side === "red" ? "#ef4444" : "#3b82f6" }} />
+            <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: side === "red" ? ALLIANCE_RED : ALLIANCE_BLUE }} />
             <span className="font-semibold w-10 shrink-0" style={{ color: "var(--theme-text)" }}>
                 {matchLabel(match)}
             </span>
@@ -358,7 +361,7 @@ function MatchCard({ match, isPast, isNext, showDay }: { match: TBAMatch; isPast
             className="rounded-xl border overflow-hidden"
             style={{
                 background:  "var(--theme-bg)",
-                borderColor: isNext ? (ourSide === "red" ? "#ef4444" : "#3b82f6") : "var(--theme-border)",
+                borderColor: isNext ? (ourSide === "red" ? ALLIANCE_RED : ALLIANCE_BLUE) : "var(--theme-border)",
                 borderWidth:  isNext ? "2px" : "1px",
             }}
         >
@@ -375,10 +378,10 @@ function MatchCard({ match, isPast, isNext, showDay }: { match: TBAMatch; isPast
                         </span>
                         {ourSide && winner && (
                             <span
-                                className="font-bold px-1.5 py-0.5 rounded"
+                                className="font-bold px-1.5 py-0.5 rounded-full"
                                 style={{
-                                    background: winner === ourSide ? "#22c55e22" : "#ef444422",
-                                    color:      winner === ourSide ? "#22c55e"   : "#ef4444",
+                                    background: tintColor(winner === ourSide ? STATUS_GOOD : "var(--theme-danger)", 13),
+                                    color:      winner === ourSide ? STATUS_GOOD : "var(--theme-danger)",
                                 }}
                             >
                                 {winner === ourSide ? "W" : "L"}
@@ -422,13 +425,13 @@ function AllianceRow({
     won: boolean
     highlightKey: string | null
 }) {
-    const bg      = color === "red" ? "#ef444408" : "#3b82f608"
-    const accent  = color === "red" ? "#ef4444"   : "#3b82f6"
+    const accent  = color === "red" ? ALLIANCE_RED : ALLIANCE_BLUE
+    const bg      = tintColor(accent, 3)
 
     return (
         <div
             className="flex items-center gap-2 px-3 py-2 border-b last:border-0 text-sm"
-            style={{ background: won ? (color === "red" ? "#ef444414" : "#3b82f614") : bg, borderColor: "var(--theme-border)" }}
+            style={{ background: won ? tintColor(accent, 8) : bg, borderColor: "var(--theme-border)" }}
         >
             <div className="w-1 self-stretch rounded-full shrink-0" style={{ background: accent }} />
             <div className="flex gap-2 flex-1 flex-wrap">
@@ -449,14 +452,6 @@ function AllianceRow({
             ) : (
                 <span className="tabular-nums text-xs" style={{ color: "var(--theme-subtext-color)" }}>—</span>
             )}
-        </div>
-    )
-}
-
-function PageState({ children }: { children: string }) {
-    return (
-        <div className="flex items-center justify-center py-16">
-            <span className="text-sm" style={{ color: "var(--theme-subtext-color)" }}>{children}</span>
         </div>
     )
 }
