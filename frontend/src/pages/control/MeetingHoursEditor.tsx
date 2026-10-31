@@ -1,17 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { createPortal } from "react-dom"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
-    Calendar as CalendarIcon,
     Check,
-    ChevronDown,
-    ChevronLeft,
-    ChevronRight,
     ChevronsUpDown,
     Pencil,
     Plus,
     Trash2,
 } from "lucide-react"
 import { TimeWheel } from "@/components/ui/TimeWheel"
+import DatePicker from "@/components/ui/DatePicker"
 import Dropdown from "@/components/ui/Dropdown"
 import Checkbox from "@/components/ui/Checkbox"
 import Button from "@/components/ui/Button"
@@ -38,10 +34,6 @@ function localDateKey(d: Date): string {
 function dateKeyToDate(key: string): Date {
     const [y, m, d] = key.split("-").map(Number)
     return new Date(y, m - 1, d)
-}
-
-function formatDateLabel(key: string): string {
-    return dateKeyToDate(key).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })
 }
 
 function formatClockTime(iso: string): { label: string, period: "AM" | "PM" } {
@@ -86,21 +78,6 @@ function combineDateAndTime(date: Date, hhmm: string): Date {
     return combined
 }
 
-const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
-const DOW = ["S", "M", "T", "W", "T", "F", "S"]
-
-function buildWeeks(y: number, m: number): (number | null)[][] {
-    const startDow = new Date(y, m, 1).getDay()
-    const days = new Date(y, m + 1, 0).getDate()
-    const cells: (number | null)[] = []
-    for (let i = 0; i < startDow; i++) cells.push(null)
-    for (let d = 1; d <= days; d++) cells.push(d)
-    while (cells.length % 7) cells.push(null)
-    const weeks: (number | null)[][] = []
-    for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7))
-    return weeks
-}
-
 /** Dropdown trigger styled as a form field (same box as inputClass; Dropdown supplies the focus ring). */
 const DROPDOWN_TRIGGER = "rounded-lg border px-3 py-2.5 min-h-11 text-base md:text-sm transition theme-bg theme-outline theme-text"
 
@@ -135,12 +112,9 @@ const DEFAULT_END = "18:30"
  * caller already holds that capability, and the backend re-enforces it on
  * every request regardless).
  *
- * The date picker and start/end time inputs deliberately reuse the exact
- * same calendar-popover markup and `TimeWheel` widget as AttendancePage's
- * clock in/out form, so the two pages' scheduling UI stays visually and
- * behaviorally identical.
+ * Both dates use the shared Sprocket DatePicker; start/end use TimeWheel.
  */
-export default function MeetingHoursEditor() {
+export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => void }) {
     const [meetings, setMeetings] = useState<MeetingRow[]>([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
@@ -163,12 +137,6 @@ export default function MeetingHoursEditor() {
     }))
     const confirmDiscard = useDiscardGuard(isDirtyVs({ description, dateKey, startTime, endTime, repeat }, baseline))
 
-    const [calOpen, setCalOpen] = useState(false)
-    const calTriggerRef = useRef<HTMLDivElement>(null)
-    const [calPos, setCalPos] = useState<{ top: number, left: number } | null>(null)
-    const [viewY, setViewY] = useState(() => new Date().getFullYear())
-    const [viewM, setViewM] = useState(() => new Date().getMonth())
-
     const load = useCallback(async () => {
         setLoading(true)
         setError(null)
@@ -185,30 +153,6 @@ export default function MeetingHoursEditor() {
 
     useEffect(() => { void load() }, [load])
 
-    // Keep the calendar view centered on the selected date whenever it changes.
-    useEffect(() => {
-        const d = dateKeyToDate(dateKey)
-        setViewY(d.getFullYear())
-        setViewM(d.getMonth())
-    }, [dateKey])
-
-    // Position the portaled calendar popover under its trigger, and close it if the page scrolls/resizes.
-    useEffect(() => {
-        if (!calOpen) return
-        const el = calTriggerRef.current
-        if (!el) return
-        const r = el.getBoundingClientRect()
-        setCalPos({ top: r.bottom + 4, left: r.left + r.width / 2 })
-
-        const close = () => setCalOpen(false)
-        window.addEventListener("scroll", close, true)
-        window.addEventListener("resize", close)
-        return () => {
-            window.removeEventListener("scroll", close, true)
-            window.removeEventListener("resize", close)
-        }
-    }, [calOpen])
-
     const resetForm = useCallback(() => {
         setMode("add")
         setEditingId(null)
@@ -223,7 +167,7 @@ export default function MeetingHoursEditor() {
 
     const updateDescription = (v: string) => { setDescription(v); setJustAdded(false) }
     const selectDate = (key: string) => {
-        setDateKey(key); setCalOpen(false); setJustAdded(false)
+        setDateKey(key); setJustAdded(false)
         setRepeatUntil(prev => prev < key ? key : prev)
     }
     const updateStart = (v: string) => { setStartTime(v); setJustAdded(false) }
@@ -244,14 +188,6 @@ export default function MeetingHoursEditor() {
         () => [...meetings].sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()),
         [meetings],
     )
-
-    const weeks = useMemo(() => buildWeeks(viewY, viewM), [viewY, viewM])
-    const stepMonth = (delta: number) => {
-        let m = viewM + delta, y = viewY
-        if (m < 0) { m = 11; y-- }
-        if (m > 11) { m = 0; y++ }
-        setViewM(m); setViewY(y)
-    }
 
     const total = useMemo(() => diffHoursMinutes(startTime, endTime), [startTime, endTime])
     const rawMinutes = useMemo(() => rawMinutesDiff(startTime, endTime), [startTime, endTime])
@@ -286,6 +222,7 @@ export default function MeetingHoursEditor() {
                     })
                 }))
                 await load()
+                onChanged?.()
                 if (results.some(r => !r.ok)) throw new Error("save")
                 resetForm()
                 return
@@ -314,6 +251,7 @@ export default function MeetingHoursEditor() {
             })
             if (!res.ok) throw new Error("save")
             await load()
+            onChanged?.()
             resetForm()
             if (!isEdit) {
                 setJustAdded(true)
@@ -337,7 +275,6 @@ export default function MeetingHoursEditor() {
         setEndTime(toHHMM(end))
         setBaseline({ description: row.meeting_purpose ?? "", dateKey: localDateKey(start), startTime: toHHMM(start), endTime: toHHMM(end), repeat })
         setJustAdded(false)
-        setCalOpen(false)
     }
 
     function toggleSelected(id: string) {
@@ -364,7 +301,6 @@ export default function MeetingHoursEditor() {
         setEndTime(toHHMM(new Date(first.end_time)))
         setBaseline({ description: first.meeting_purpose ?? "", dateKey, startTime: toHHMM(new Date(first.start_time)), endTime: toHHMM(new Date(first.end_time)), repeat })
         setJustAdded(false)
-        setCalOpen(false)
     }
 
     async function handleDeleteSelected() {
@@ -375,6 +311,7 @@ export default function MeetingHoursEditor() {
             if (mode !== "add") resetForm()
             setSelected(new Set())
             await load()
+            onChanged?.()
             if (results.some(r => !r.ok)) throw new Error("delete")
         } catch {
             setError("Couldn't delete some meetings")
@@ -389,6 +326,7 @@ export default function MeetingHoursEditor() {
             if (editingId === id) resetForm()
             setSelected(prev => { const n = new Set(prev); n.delete(id); return n })
             await load()
+            onChanged?.()
         } catch {
             setError("Couldn't delete meeting")
         }
@@ -425,98 +363,30 @@ export default function MeetingHoursEditor() {
                         Each meeting keeps its own date — the description and times below are applied to all {selected.size} selected.
                     </p>
                 ) : (
-                <div className="relative" ref={calTriggerRef}>
-                    <button
-                        onClick={() => setCalOpen(o => !o)}
-                        className={`w-full flex items-center gap-2.5 text-left ${inputClass}`}
-                    >
-                        <CalendarIcon size={16} className="theme-subtext-color shrink-0" />
-                        <span className="theme-text truncate">{formatDateLabel(dateKey)}</span>
-                        <ChevronDown size={14} className="theme-subtext-color shrink-0 ml-auto" />
-                    </button>
-
-                    {calOpen && calPos && createPortal(
-                        <>
-                            <div className="fixed inset-0 z-40" onClick={() => setCalOpen(false)} />
-                            <div
-                                className="fixed z-40 -translate-x-1/2 rounded-xl border p-3 w-max shadow-lg theme-bg theme-border"
-                                style={{ top: calPos.top, left: calPos.left }}
-                            >
-                                <div className="flex items-center justify-between mb-2.5">
-                                    <button onClick={() => stepMonth(-1)} aria-label="Previous month" className={`w-11 h-11 rounded-lg border flex items-center justify-center theme-text theme-border ${focusRing}`}>
-                                        <ChevronLeft size={14} />
-                                    </button>
-                                    <span className="text-sm font-semibold theme-h1-color">{MONTHS[viewM]} {viewY}</span>
-                                    <button onClick={() => stepMonth(1)} aria-label="Next month" className={`w-11 h-11 rounded-lg border flex items-center justify-center theme-text theme-border ${focusRing}`}>
-                                        <ChevronRight size={14} />
-                                    </button>
-                                </div>
-                                <div className="grid grid-cols-7 gap-[3px] mb-1">
-                                    {DOW.map((d, i) => (
-                                        <div key={i} className="h-[22px] flex items-center justify-center font-mono text-xs theme-subtext-color">{d}</div>
-                                    ))}
-                                </div>
-                                <div className="flex flex-col gap-0.5">
-                                    {weeks.map((w, wi) => (
-                                        <div key={wi} className="grid grid-cols-7 gap-[3px]">
-                                            {w.map((d, di) => {
-                                                if (d == null) return <div key={di} className="w-[38px] h-[38px]" />
-                                                const key = `${viewY}-${String(viewM + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`
-                                                const scheduled = scheduledSet.has(key)
-                                                const isSel = key === dateKey
-                                                return (
-                                                    <button
-                                                        key={di}
-                                                        onClick={() => selectDate(key)}
-                                                        className={`w-[38px] h-[38px] rounded-lg font-mono text-sm flex items-center justify-center relative cursor-pointer ${focusRing}`}
-                                                        style={isSel
-                                                            ? { background: "var(--theme-text-contrast)", color: "var(--theme-bg)", fontWeight: 700 }
-                                                            : { color: "var(--theme-text)", fontWeight: 500 }}
-                                                    >
-                                                        {d}
-                                                        {scheduled && !isSel && (
-                                                            <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full" style={{ background: "var(--theme-text-contrast)" }} />
-                                                        )}
-                                                    </button>
-                                                )
-                                            })}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </>,
-                        document.body,
-                    )}
-                </div>
+                    <DatePicker label="Meeting date" value={dateKey} onChange={selectDate} markedDates={scheduledSet} disabled={saving} />
                 )}
 
                 {/* Recurrence (new meetings only) */}
                 {mode === "add" && (
-                    <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
                         <Dropdown
                             value={repeat}
                             onChange={(v) => { setRepeat(v as Repeat); setJustAdded(false) }}
                             options={REPEAT_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
-                            className="flex-1"
-                            triggerClassName={DROPDOWN_TRIGGER}
+                            label="Repeat"
+                            className="min-w-0"
+                            triggerClassName={`${DROPDOWN_TRIGGER} w-full h-11`}
                         />
                         {repeat !== "none" && (
-                            <label className={`flex-1 flex items-center gap-2 focus-within:ring-2 focus-within:ring-[var(--theme-text-contrast)] ${inputClass}`}>
-                                <span className="theme-subtext-color shrink-0">Until</span>
-                                <input
-                                    type="date"
-                                    value={repeatUntil}
-                                    min={dateKey}
-                                    onChange={(e) => { setRepeatUntil(e.target.value); setJustAdded(false) }}
-                                    className="flex-1 bg-transparent outline-none theme-text min-w-0 text-base md:text-sm"
-                                />
-                            </label>
+                            <DatePicker label="Repeat until" prefix="Until" value={repeatUntil} min={dateKey}
+                                markedDates={scheduledSet} disabled={saving}
+                                onChange={value => { setRepeatUntil(value); setJustAdded(false) }} />
                         )}
                     </div>
                 )}
 
                 {/* Start / end time wheels */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <TimeWheel label="Start" value={startTime} onChange={updateStart} />
                     <TimeWheel label="End" value={endTime} onChange={updateEnd} />
                 </div>
@@ -536,7 +406,7 @@ export default function MeetingHoursEditor() {
                     ) : (
                         <p className="text-sm theme-text">
                             Total <span className="font-mono font-bold theme-text-contrast">{total.h}h {String(total.m).padStart(2, "0")}m</span>
-                            {isRecurring && <span className="theme-subtext-color"> · {occurrences.length} meetings</span>}
+                            {isRecurring && <span className="theme-subtext-color"> · {occurrences.length} {occurrences.length === 1 ? "meeting" : "meetings"}</span>}
                         </p>
                     )}
 

@@ -5,16 +5,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 import db
-from core.security import require_access
+from core.security import require_access, require_active
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Read and write both require this capability (Captains, Mentors, and Scouting
-# leads/members today). The gate here is the real enforcement — any Meeting
-# page UI is purely cosmetic.
+# Scheduling and agenda editing are independently permission-gated.
 require_meeting_time = require_access(permissions="control_panel.meeting_time")
+require_meeting_agenda = require_access(permissions="control_panel.meeting_agenda")
 
 
 MAX_RECURRING_OCCURRENCES = 200
@@ -51,8 +50,8 @@ class MeetingHoursWrite(BaseModel):
 
 
 @router.get("")
-async def list_meetings(_: dict = Depends(require_meeting_time)):
-    """Every scheduled meeting, for the admin Meeting Hours editor."""
+async def list_meetings(_: dict = Depends(require_active)):
+    """Scheduled meetings and agendas, visible to active signed-in members."""
     rows = await db.list_all_meeting_hours()
     return [_row_to_meeting(r) for r in rows]
 
@@ -112,6 +111,20 @@ async def delete_meeting(meeting_id: str, _: dict = Depends(require_meeting_time
     return {"ok": True}
 
 
+class MeetingAgendaWrite(BaseModel):
+    agenda: str = Field(max_length=10000)
+
+
+@router.patch("/{meeting_id}/agenda")
+async def update_agenda(
+    meeting_id: str, body: MeetingAgendaWrite, _: dict = Depends(require_meeting_agenda)
+):
+    row = await db.update_meeting_agenda(meeting_id, body.agenda.strip())
+    if row is None:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    return _row_to_meeting(row)
+
+
 def _row_to_meeting(r) -> dict:
     return {
         "id": str(r["id"]),
@@ -119,4 +132,5 @@ def _row_to_meeting(r) -> dict:
         "start_time": r["start_time"],
         "end_time": r["end_time"],
         "meeting_purpose": r["meeting_purpose"],
+        "agenda": r["agenda"],
     }

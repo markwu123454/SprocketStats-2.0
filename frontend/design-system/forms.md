@@ -69,10 +69,20 @@ Staged list edits, like Members, do use the footer, scoped to the list container
 | Boolean setting | Toggle |
 | Item in a list | `Checkbox` with a 44px target |
 | Time | `TimeWheel` (6:00 AM to 11:55 PM only) |
+| Date | Shared `DatePicker` from `components/ui/DatePicker.tsx`; Sprocket calendar on every date field, including recurrence end dates |
 | Short choice set | Segmented buttons, 2 to 4 options |
 
 Validate a field on blur and on Save, never on each keystroke. Clear an error as soon as
 the input becomes valid.
+
+## Calendars and aligned date fields
+
+- Use `DatePicker` for new or updated date controls. Do not use native `input type="date"` or a browser/OS calendar. Meeting date and repeat-until fields must use the same calendar.
+- Keep the Sprocket month navigation, seven-column weekday grid, accent selection, and scheduled-date dots. Use semantic theme tokens and the shared focus ring.
+- On desktop, anchor the calendar to its field and keep it inside the viewport. On mobile, use the shared drag sheet. Escape and outside dismissal return focus to the trigger; every date has a full accessible date label.
+- Pass date-only values as local `YYYY-MM-DD` keys. Apply minimum dates in the picker, so a recurrence cannot end before its first meeting.
+- Date triggers are full-width, 44px tall, and use `inputClass`, a leading calendar icon, and a trailing chevron. Give every trigger an accessible field label.
+- Align related rows with the same equal-width two-column grid and `gap-4`; stack both rows below `sm`. Use `min-w-0` and truncate trigger text rather than letting long dates resize columns. Repeat/until fields and start/end time wheels share column edges and gutters.
 
 ## Decisions
 

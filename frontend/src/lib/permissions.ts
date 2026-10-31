@@ -61,7 +61,7 @@ export function getPerm(perms: PermPolicy | null | undefined, path: string): Per
         }
         node = node[key]
     }
-    return node
+    return node ?? undefined
 }
 
 /**
