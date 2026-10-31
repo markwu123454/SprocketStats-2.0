@@ -116,6 +116,10 @@ choosing an option, the close button, tapping the scrim, or `Escape`. This is
 automatic — no prop opts a `Dropdown` into it — and desktop/tablet rendering is
 completely unaffected.
 
+**This is changing.** `guidelines/design-system/navigation.md` makes every mobile menu a drag sheet.
+New designs should show a mobile `Dropdown` as a drag sheet, even though the shipped
+component still renders the bubble described here.
+
 ## Flip-up
 
 The anchored (desktop/non-modal) menu measures the trigger when it opens and, if
