@@ -5,6 +5,7 @@ import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
 import Skeleton from "@/components/ui/Skeleton"
+import { focusRing } from "@/lib/uiClasses"
 import ActiveEventCard from "@/components/events/ActiveEventCard"
 import { hubKeyOf, pickActiveEvent, type EventEntry } from "@/lib/events"
 import { fetchEvents, type EventInfo } from "@/lib/eventApi"
@@ -151,7 +152,7 @@ export default function DashboardPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* This week's meeting */}
-                <div className="rounded-xl border p-5 flex flex-col gap-3 backdrop-blur-sm" style={cardStyle}>
+                <Link to="/meetings" className={`rounded-xl border p-5 flex flex-col gap-3 backdrop-blur-sm transition-opacity hover:opacity-90 ${focusRing}`} style={cardStyle}>
                     <div className="flex items-center justify-between">
                         <span className="text-sm font-medium theme-text opacity-70">This week</span>
                         <Calendar size={18} className="theme-text-contrast opacity-80" />
@@ -183,7 +184,8 @@ export default function DashboardPage() {
                             <p className="text-sm theme-subtext-color">Nothing else scheduled this week.</p>
                         </>
                     )}
-                </div>
+                    <span className="mt-auto flex items-center gap-1 text-sm font-semibold theme-text-contrast">View meetings<ChevronRight size={16} aria-hidden="true" /></span>
+                </Link>
 
                 {/* Your tasks -- only for roles with tasks.view permission */}
                 {canViewTasks && (

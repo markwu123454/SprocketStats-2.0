@@ -34,7 +34,7 @@ interface NavTab {
 
 const CORE_TABS: NavTab[] = [
     { to: "/dashboard",   label: "Dashboard",   icon: LayoutDashboard },
-    { to: "/attendance",  label: "Attendance",  icon: CalendarCheck, visible: () => false },
+    { to: "/meetings",    label: "Meetings",    icon: CalendarCheck },
     { to: "/events", label: "Events", icon: Milestone          },
     { to: "/scouting",    label: "Scouting",    icon: ClipboardList   },
     { to: "/tasks",       label: "Tasks",       icon: ListChecks,     visible: p => can(p, "tasks.view") },

@@ -1,5 +1,5 @@
 import {lazy, type ReactNode, Suspense, useLayoutEffect} from "react"
-import {BrowserRouter, Routes, Route} from "react-router-dom"
+import {BrowserRouter, Navigate, Routes, Route} from "react-router-dom"
 import "./index.css"
 import ThemeProvider from "@/contexts/themeProvider.tsx"
 import {AuthProvider} from "@/contexts/AuthProvider"
@@ -8,7 +8,6 @@ import {BootstrapProvider} from "@/contexts/BootstrapProvider"
 
 import AuthWrapper from "@/components/wrappers/AuthWrapper.tsx"
 import ControlGuard from "@/components/wrappers/ControlGuard.tsx"
-import PermGuard from "@/components/wrappers/PermGuard.tsx"
 import UpdatePrompt from "@/components/UpdatePrompt.tsx"
 import ConfirmHost from "@/components/ui/ConfirmDialog"
 
@@ -16,7 +15,7 @@ const LoginPageRouter      = lazy(() => import("@/pages/LoginPageRouter"))
 const OnboardingPageRouter = lazy(() => import("@/pages/OnboardingPageRouter.tsx"))
 const AppShell       = lazy(() => import("@/layouts/AppShell.tsx"))
 const DashboardPage  = lazy(() => import("@/pages/DashboardPage.tsx"))
-const AttendancePage    = lazy(() => import("@/pages/AttendancePage"))
+const MeetingsPage    = lazy(() => import("@/pages/MeetingsPage"))
 const EventsPage         = lazy(() => import("@/pages/EventsPage"))
 const EventShell         = lazy(() => import("@/pages/events/EventShell"))
 const EventHubPage       = lazy(() => import("@/pages/events/EventHubPage"))
@@ -78,7 +77,8 @@ export default function App() {
                                         downstream of the signed-in + onboarded guarantee. */}
                                     <Route element={<Protected><AppShell/></Protected>}>
                                         <Route path="/dashboard"   element={<DashboardPage/>}/>
-                                        <Route path="/attendance"  element={<PermGuard perm="attendance.view"><AttendancePage/></PermGuard>}/>
+                                        <Route path="/meetings" element={<MeetingsPage/>}/>
+                                        <Route path="/attendance" element={<Navigate to="/meetings" replace/>}/>
                                         <Route path="/events" element={<EventsPage/>}/>
                                         <Route path="/events/:eventKey" element={<EventShell/>}>
                                             <Route index element={<EventHubPage/>}/>

@@ -798,6 +798,10 @@ async def _migration_0006_notification_responses_pk(conn) -> None:
         )
 
 
+async def _migration_0007_meeting_agenda(conn):
+    await conn.execute("ALTER TABLE meeting_hours ADD COLUMN IF NOT EXISTS agenda TEXT NOT NULL DEFAULT ''")
+
+
 # Append-only: never edit or renumber a migration that has shipped. Each must
 # be idempotent against init_db's current schema, because a fresh database
 # gets that schema first and then runs every migration.
@@ -808,6 +812,7 @@ _MIGRATIONS = [
     (4, _migration_0004_merge_hubs_into_events),
     (5, _migration_0005_event_roster_table),
     (6, _migration_0006_notification_responses_pk),
+    (7, _migration_0007_meeting_agenda),
 ]
 
 

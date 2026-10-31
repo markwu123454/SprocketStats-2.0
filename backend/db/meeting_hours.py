@@ -128,7 +128,21 @@ async def delete_meeting_hours(meeting_id: str) -> bool:
             raise HTTPException(status_code=500, detail="Failed to delete meeting")
 
 
+async def update_meeting_agenda(meeting_id: str, agenda: str) -> asyncpg.Record | None:
+    """Only update agenda content; scheduling fields are owned by a separate permission."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow(
+                "UPDATE meeting_hours SET agenda = $2 WHERE id = $1 RETURNING *",
+                meeting_id, agenda,
+            )
+        except Exception as e:
+            logger.error("update_meeting_agenda failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to save meeting agenda")
+
+
 __all__ = [
+    "update_meeting_agenda",
     "list_meeting_hours",
     "list_all_meeting_hours",
     "list_meetings_starting_between",
