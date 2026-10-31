@@ -52,10 +52,22 @@ family** — never hard-code a hex value, and never use Tailwind's own palette
 
 For values Tailwind can't express, use the custom properties directly:
 `--theme-bg`, `--theme-border`, `--theme-text`, `--theme-h1-color`,
-`--theme-subtext-color`, `--theme-text-contrast`, `--theme-button-bg`,
-`--theme-button-hover`, `--theme-bg-page`, plus `--scrollbar-track`,
+`--theme-subtext-color`, `--theme-text-contrast`, `--theme-outline`, `--theme-danger`,
+`--theme-button-bg`, `--theme-button-hover`, `--theme-bg-page`, plus `--scrollbar-track`,
 `--scrollbar-thumb`, `--scrollbar-thumb-hover`. Blending is idiomatic here, e.g.
 `color-mix(in oklch, var(--theme-button-bg) 60%, transparent)`.
+
+## Read the systems before composing a screen
+
+`guidelines/design-system/` holds eleven systems: color, typography, spacing, buttons, forms, navigation,
+modals, empty and error states, loading, motion and accessibility. Each `systems/<name>/`
+card shows the same rules visually. New designs follow these even where the shipped app
+hasn't caught up. The rules most often missed:
+
+- **Every form uses one sticky footer** on web and mobile, ordered Delete, Cancel, Save. Save is always visible.
+- **Every mobile menu is a drag sheet** with a handle and a close button. Web uses anchored menus.
+- **The main action is Filled:** accent fill, surface-colored label.
+- **Use `--theme-outline`** for control boundaries and **`--theme-danger`** for errors.
 
 ## Where the truth lives
 

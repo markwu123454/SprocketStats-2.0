@@ -4,11 +4,12 @@ A prescriptive system for building SprocketStats UI — not a record of what exi
 the rules for what to build next. Where current code deviates from a rule here, the
 rule wins for new work; existing screens migrate opportunistically (tracked in §8).
 
-The system is doc-only for now: no new token files or component library. Every token
-below maps onto a real CSS custom property or Tailwind class already in the codebase —
-this doc adds the *names* and *rules*, not new machinery. If the system later graduates
-to code (a token file, extracted components), that implementation must match this
-document exactly rather than the other way around.
+Color, typography, spacing, buttons, forms, navigation, modals, empty and error states,
+loading, motion and accessibility each have their own system in
+[`design-system/`](design-system/README.md). This doc holds what's left: principles,
+shape, elevation, icons, smaller components, layout, voice and contribution rules. If
+the system later graduates to code (extracted components), that implementation must
+match these documents rather than the other way around.
 
 ---
 
@@ -39,105 +40,28 @@ document exactly rather than the other way around.
 
 ### 2.1 Color
 
-Colors are consumed exclusively through **semantic roles**, never raw hex/Tailwind
-color classes. Each role resolves differently per season theme (`theme-2025`,
-`theme-2026`, `theme-2027`) via the CSS custom properties already defined in
-`index.css`; a new theme only has to define these properties to be visually complete.
-
-| Role | Token (CSS var / utility class) | Use for |
-|---|---|---|
-| Surface | `--theme-bg` / `.theme-bg` | Solid panel/header/sidebar/menu backgrounds |
-| Surface image | `--theme-bg-page` / `.theme-bg-page` | Full-bleed season hero background |
-| Accent fill | `--theme-button-bg` / `.theme-button-bg` | Primary button + hero panel fill |
-| Accent fill (hover) | `--theme-button-hover` / `.theme-button-hover` | Hover/active state of the above |
-| Border | `--theme-border` / `.theme-border` | All borders, dividers, rules |
-| Text — default | `--theme-text` / `.theme-text` | Body copy |
-| Text — emphasis | `--theme-h1-color` / `.theme-h1-color` | Headings, brand wordmark, high-emphasis labels |
-| Text — muted | `--theme-subtext-color` / `.theme-subtext-color` | Captions, helper text, timestamps |
-| Text — accent | `--theme-text-contrast` / `.theme-text-contrast` | Active nav state, links, badges, focus emphasis |
-| Scrollbar | `--scrollbar-thumb` / `.theme-scrollbar` | Any scrollable container |
-
-**Rule:** if a component needs a tinted version of a role (e.g. a soft highlight
-behind an active row), derive it with `color-mix(in oklch, var(--theme-x) N%, transparent)`
-rather than a fixed-opacity wrapper or a new rgba literal. This is what makes a tint
-correct across all three seasons without per-theme overrides.
-
-#### Danger role (semantic, season-invariant)
-
-Error/destructive states use a fixed role, independent of season, because a season
-palette should never make an error look like anything other than an error:
-
-- `--theme-danger`: `#dc2626`
-- `--theme-danger-border`: `color-mix(in oklch, #dc2626 40%, transparent)`
-- `--theme-danger-bg`: `color-mix(in oklch, #dc2626 10%, transparent)`
-
-Any error notice, inline validation message, or destructive-action affordance uses
-these three, always together (text = `--theme-danger`, border = `-border`, fill =
-`-bg`). Never use a bare Tailwind red (`text-red-500`, etc.) — that's a known debt
-item, see §8.
-
-#### Brand-locked exceptions
-
-A small, closed set of colors don't theme, because they're not SDS's to change:
-
-- Google button: fixed white surface / `#1f1f1f` text / official G mark colors
-  (required by Google's brand terms).
-- Any other third-party auth or brand mark added later follows the same rule:
-  render it in its native colors, never re-skin it into the season palette.
+See [design-system/color.md](design-system/color.md).
 
 ### 2.2 Typography
 
-No custom webfont — system font stack (`Segoe UI`, `system-ui`, sans-serif) via
-`font-sans`. Type is a named scale, not ad-hoc sizes:
-
-| Token | Size / weight / tracking | Use for |
-|---|---|---|
-| `display` | `text-[32px] font-semibold tracking-[-0.01em]` | Auth/onboarding hero headings only (Sign in, Welcome aboard) |
-| `h1` | `text-2xl font-bold` (24px) | Interior app screen titles (Dashboard, Settings) |
-| `h2` | `text-xs font-semibold uppercase tracking-widest` on `theme-subtext-color` | Section group labels within a screen |
-| `title` | `text-lg font-semibold` | Card/row primary label (user name, stat name) |
-| `body` | `text-sm` (14px) | Form labels, descriptions, default UI copy |
-| `caption` | `text-[12px]`, often `opacity-70` over `theme-subtext-color` | Legal text, footnotes, sponsor lines |
-| `micro` | `text-[11px]` | Smallest fine print (compact legal line) |
-| `badge` | `text-[10–11px] font-mono uppercase tracking-[0.14em]–[0.18em]` | Season phase badge, time badge, mono accents |
-
-**Rule:** `display` is reserved for the auth/onboarding hero surfaces — it must never
-appear on an interior app screen. `h1` is reserved for interior screens — it must
-never appear on the hero surfaces. This resolves what used to be two competing "H1"
-conventions: they're two different named tokens with disjoint contexts, not
-inconsistency.
+See [design-system/typography.md](design-system/typography.md).
 
 ### 2.3 Spacing
 
-Base unit is Tailwind's default 4px scale. Use Tailwind step utilities (`p-5`, `gap-2`,
-`mt-1.5`, …) for everything inside the app shell and interior screens — do not invent
-arbitrary pixel gaps there.
-
-| Alias | Tailwind step | px |
-|---|---|---|
-| `space-xs` | `1` | 4 |
-| `space-sm` | `2` | 8 |
-| `space-md` | `3` | 12 |
-| `space-lg` | `5` | 20 |
-| `space-xl` | `8` | 32 |
-
-**Exception:** the auth hero compositions (`HeroContent`, `OnboardingHero`,
-`LoginPageDesktop`/`Mobile`) are pixel-tuned marketing-style layouts and may use
-arbitrary values (`p-11`, `gap-[18px]`, sheet-height constants) to hit exact visual
-targets. This exception is scoped to those hero/sheet layouts only — a settings page
-or a card grid always uses the step scale.
+See [design-system/spacing.md](design-system/spacing.md).
 
 ### 2.4 Shape
 
-Three radii, each tied to a role, not a size preference:
+Four radii, each tied to a role, not a size preference:
 
 | Token | Class | px | Use for |
 |---|---|---|---|
 | `radius-control` | `rounded-lg` | 8 | Inputs, small/secondary buttons, menu option rows |
-| `radius-surface` | `rounded-xl` | 12 | Primary CTAs, cards, dropdown/menu/modal containers |
+| `radius-surface` | `rounded-xl` | 12 | Hero CTAs, cards, anchored menus |
+| `radius-sheet` | `rounded-2xl` | 16 | Sheets (top corners only) and dialogs |
 | `radius-pill` | `rounded-full` | — | Avatars, badges/pills, toggle track & thumb |
 
-Never use a radius outside this set (no `rounded-md`, `rounded-2xl`, custom radius).
+Never use a radius outside this set (no `rounded-md`, `rounded-3xl`, custom radius). The one exception is the `Checkbox` box, at `rounded` (4px).
 
 ### 2.5 Elevation
 
@@ -156,20 +80,7 @@ it's probably a modal and should dim the surface behind it instead of stacking s
 
 ### 2.6 Motion
 
-| Token | Value | Use for |
-|---|---|---|
-| `duration-fast` | ~150ms (Tailwind default) | Hover/opacity/icon micro-interactions |
-| `duration-base` | 200ms | Toggle thumb slide, small state changes |
-| `duration-moderate` | 220ms | Sidebar collapse/expand |
-| `duration-slow` | 340–380ms | Reveal/hide of secondary content, sheet drag settle |
-| `ease-standard` | `cubic-bezier(0.4, 0, 0.2, 1)` | Structural resize (sidebar width) |
-| `ease-sheet` | `cubic-bezier(0.32, 0.72, 0, 1)` | Sheet/drawer settle (mobile bottom sheet) |
-
-**Rule:** micro-interactions (hover, active-icon rotation) don't need an explicit
-easing — Tailwind's default `transition-opacity`/`transition-transform` is enough.
-Anything that moves a panel or resizes a container gets one of the two named curves
-above, chosen by whether it's a rigid resize (`ease-standard`) or a soft settle
-(`ease-sheet`). Never introduce a third curve without adding it here first.
+See [design-system/motion.md](design-system/motion.md).
 
 ### 2.7 Iconography
 
@@ -192,41 +103,15 @@ this section.
 
 ### 3.1 Button
 
-- **Anatomy:** container (radius-surface, 52px tall for primary CTAs) + optional
-  leading/trailing icon (`icon-sm`) + label (`body`, `font-semibold`).
-- **Variants:**
-  - *Primary* — `theme-bg` fill, `theme-border`, `theme-text-contrast` label. The only
-    filled button in the system.
-  - *Icon-only* — no fill/border, icon at `opacity-50 hover:opacity-100`, no visible
-    hit-box styling.
-  - *Brand-locked* (Google, and future third-party auth) — exempt from all of the
-    above, rendered per §2.1's brand-locked exceptions.
-- **States:** default / hover (`theme-button-hover` fill or opacity bump for icon
-  buttons) / disabled (`opacity-40`, `cursor-not-allowed`, never a separate disabled
-  color) / loading (label swaps to a present-tense string, e.g. "Signing in…", icon
-  stays put or is suppressed).
-- **Rules:** primary buttons are `radius-surface` at 52px; anything smaller (inline,
-  secondary actions) is `radius-control`. Never introduce a second filled-button color
-  — accent emphasis comes from `theme-text-contrast` label color on a neutral fill,
-  not from a saturated background.
+See [design-system/buttons.md](design-system/buttons.md).
 
 ### 3.2 Text input
 
-- **Anatomy:** `radius-control` container, `theme-border`, `px-3 py-2.5`, `body` text.
-- **States:** default / focus (`focus:ring-2`, ring color = accent) / filled
-  (`theme-text`) / empty (placeholder = `theme-subtext-color`) / error (border swaps
-  to `--theme-danger-border`, helper text below in `--theme-danger`).
-- **Rules:** always paired with a `body`-weight `font-semibold` label above it, never
-  a floating/inline label.
+See [design-system/forms.md](design-system/forms.md).
 
 ### 3.3 Select (custom listbox)
 
-- **Anatomy:** trigger button (same shape as text input) + `icon-sm` chevron that
-  rotates 180° on open + Level-1 floating panel (`radius-surface`, `role="listbox"`)
-  with option rows (`radius-control` hover state, `Check` icon on the selected row).
-- **Rules:** this is the only select pattern — never use a native `<select>` or a new
-  one-off dropdown. The panel flips above the trigger (`dropUp`) when there isn't room
-  below; that flip logic is required for any new instance, not optional polish.
+See [design-system/forms.md](design-system/forms.md) and [navigation](design-system/navigation.md). `Dropdown` is the only select: an anchored menu that flips upward on web, and a drag sheet on mobile.
 
 ### 3.4 Toggle switch
 
@@ -255,11 +140,7 @@ this section.
 
 ### 3.7 Notice / alert (danger only today)
 
-- **Anatomy:** `radius-control` container, `--theme-danger-border` border,
-  `--theme-danger-bg` fill, `--theme-danger` text, `caption`-scale copy.
-- **Rules:** reserved for error/destructive messaging. A success/info variant doesn't
-  exist yet — don't invent one ad hoc; propose it via §8 first (it needs its own
-  season-invariant-vs-themed decision, same as danger did).
+See [design-system/empty-error-states.md](design-system/empty-error-states.md).
 
 ### 3.8 Badge / pill
 
@@ -270,22 +151,11 @@ this section.
 
 ### 3.9 Navigation item (sidebar row / tab-bar item)
 
-- **Anatomy:** icon (`icon-md` sidebar / `icon-lg` tab bar) + optional label
-  (`body`, `font-medium`).
-- **States:** inactive = `theme-text opacity-55` (sidebar) or `opacity-45` (tab bar);
-  active = `theme-text-contrast` at full opacity, sidebar additionally gets a
-  `color-mix` background pill (§2.1) behind the row. Tab-bar active state also bumps
-  icon `strokeWidth` from 1.8 to 2.2 — no background pill on mobile (no room).
-- **Rules:** state is communicated by opacity + accent color per Principle 3 — never
-  swap the icon itself or add a bright fill as the *only* signal.
+See [design-system/navigation.md](design-system/navigation.md).
 
 ### 3.10 Menu / popover
 
-- **Anatomy:** Level-1 floating panel, `radius-surface`, header block (avatar + name +
-  email + role, when it's a user menu) separated by `theme-border`, then action rows
-  matching the icon-button pattern.
-- **Rules:** dismiss on outside click (required — implemented via a ref + document
-  listener pattern, reuse it rather than a new click-outside hook).
+See [design-system/navigation.md](design-system/navigation.md) and [modals](design-system/modals.md).
 
 ---
 
@@ -330,20 +200,7 @@ preferences/settings-shaped screen.
 
 ## 5. Accessibility
 
-- **Focus:** every interactive control gets a visible `focus:ring-2` — never remove
-  focus outlines without replacing them.
-- **Touch targets:** minimum 44px in the tappable dimension; primary CTAs are 52px.
-  Icon-only buttons get at least a 36px hit box even if the icon itself is smaller.
-- **Custom widgets get real ARIA:** the select pattern (§3.3) requires
-  `role="listbox"`/`role="option"`/`aria-selected`/`aria-expanded`/`aria-haspopup` —
-  any new custom interactive control (not a native form element) needs the equivalent
-  real ARIA roles/states, not just visual styling.
-- **Color is never the only signal.** Nav active state, form errors, and toggle state
-  all pair opacity/position/icon changes with color, per Principle 3 — don't add a
-  new state that's color-only.
-- **Motion:** none of the current transitions are purely decorative distance/duration
-  outliers, but there's no `prefers-reduced-motion` handling yet — treat that as an
-  open item (§8), not a green light to add more motion without it.
+See [design-system/accessibility.md](design-system/accessibility.md).
 
 ---
 
@@ -376,9 +233,5 @@ preferences/settings-shaped screen.
 
 ## 8. Known debt (rules this doc sets that current code doesn't yet follow)
 
-- `OnboardingForm`'s inline validation message uses Tailwind `text-red-500` instead
-  of the `--theme-danger` role (§2.1). Migrate to match `LoginErrorNotice`.
-- No `prefers-reduced-motion` handling anywhere motion tokens (§2.6) are used.
-- No success/info notice variant exists yet (§3.7) — don't add one ad hoc if a need
-  comes up; decide its season-invariance question deliberately, the way danger's was
-  decided, and add it here first.
+Each system in [`design-system/`](design-system/README.md) ends with its own migration list. Add new debt there.
+

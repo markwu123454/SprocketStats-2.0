@@ -12,6 +12,8 @@ export type { DropdownOption } from '../src/components/ui/Dropdown'
 
 export { TimeWheel } from '../src/components/ui/TimeWheel'
 
+export { default as Checkbox } from '../src/components/ui/Checkbox'
+
 /**
  * Season theme shell — the wrapper every SprocketStats component needs.
  *

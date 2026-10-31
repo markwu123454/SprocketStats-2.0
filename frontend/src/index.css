@@ -17,6 +17,8 @@
     --theme-button-bg: rgba(16, 43, 106, 0.95);
     --theme-button-hover: #1d3d7d;
     --theme-text-contrast: #93c5fd;
+    --theme-outline: #5b84d6;
+    --theme-danger: #fca5a5;
     --scrollbar-track: transparent;
     --scrollbar-thumb: #1b3d80;
     --scrollbar-thumb-hover: #2563eb;
@@ -43,6 +45,8 @@
     --theme-button-bg: #fff8e5;
     --theme-button-hover: #f7edcc;
     --theme-text-contrast: #7a651e;
+    --theme-outline: #94884f;
+    --theme-danger: #b91c1c;
     --scrollbar-track: transparent;
     --scrollbar-thumb: #bdaf67;
     --scrollbar-thumb-hover: #d6c98a;
@@ -69,6 +73,8 @@
     --theme-button-bg: rgba(15, 60, 61, 0.95);
     --theme-button-hover: #1a5556;
     --theme-text-contrast: #f5d547;
+    --theme-outline: #5f9c99;
+    --theme-danger: #fca5a5;
     --scrollbar-track: transparent;
     --scrollbar-thumb: #2d6160;
     --scrollbar-thumb-hover: #45908d;

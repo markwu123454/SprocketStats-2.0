@@ -8,12 +8,17 @@
   "buildCmd": "npx vite build -c .design-sync/vite.ds-css.config.ts",
   "componentSrcMap": {
     "Dropdown": "src/components/ui/Dropdown.tsx",
-    "TimeWheel": "src/components/ui/TimeWheel.tsx"
+    "TimeWheel": "src/components/ui/TimeWheel.tsx",
+    "Checkbox": "src/components/ui/Checkbox.tsx"
   },
   "docsDir": ".design-sync/docs",
+  "guidelinesGlob": [
+    "design-system/*.md"
+  ],
   "dtsPropsFor": {
     "Dropdown": "value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; disabled?: boolean; placeholder?: string; className?: string; triggerClassName?: string; menuAlign?: \"left\" | \"right\"; resizable?: boolean; initialMaxHeight?: number; searchable?: boolean; searchPlaceholder?: string; label?: string; defaultOpen?: boolean; onOpenChange?: (open: boolean) => void;",
-    "TimeWheel": "label: string; value: string; onChange: (v: string) => void;"
+    "TimeWheel": "label: string; value: string; onChange: (v: string) => void;",
+    "Checkbox": "checked: boolean; onChange: () => void; indeterminate?: boolean; \"aria-label\"?: string; className?: string;"
   },
   "cssEntry": ".design-sync/.cache/tw/ds.css",
   "readmeHeader": ".design-sync/conventions.md",
@@ -25,6 +30,9 @@
       "cardMode": "column"
     },
     "Dropdown": {
+      "cardMode": "column"
+    },
+    "Checkbox": {
       "cardMode": "column"
     }
   }
