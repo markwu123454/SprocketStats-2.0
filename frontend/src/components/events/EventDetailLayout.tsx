@@ -3,6 +3,7 @@ import {Link} from "react-router-dom"
 import {ArrowLeft, Calendar, MapPin} from "lucide-react"
 import type {ResolvedEvent} from "@/lib/events.ts"
 import {STATUS_META} from "@/lib/events.ts"
+import {typeH1, typeH2} from "@/lib/uiClasses"
 
 const cardStyle = {background: "var(--theme-bg)", borderColor: "var(--theme-border)"}
 
@@ -24,10 +25,10 @@ export default function EventDetailLayout({event, children}: { event: ResolvedEv
             </Link>
 
             <div className="flex flex-col gap-2">
-                <span className="text-[11px] font-bold tracking-wider" style={{color: meta.color}}>
+                <span className={typeH2} style={{color: meta.color}}>
                     {meta.label.toUpperCase()}
                 </span>
-                <h1 className="text-2xl sm:text-3xl font-bold theme-h1-color">{event.name}</h1>
+                <h1 className={`${typeH1} theme-h1-color`}>{event.name}</h1>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm theme-subtext-color">
                     <span className="inline-flex items-center gap-1.5">
                         <Calendar size={15}/>

@@ -6,6 +6,8 @@ import {
     LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Milestone, ListChecks,
 } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
+import Sheet from "@/components/ui/Sheet"
+import { focusRing, menuRowClass } from "@/lib/uiClasses"
 import NotificationGate from "@/components/NotificationGate.tsx"
 import { can, getPerm, type PermPolicy } from "@/lib/permissions"
 import { visibleSections, type ControlSection } from "@/lib/controlSections"
@@ -55,7 +57,6 @@ export default function AppShell() {
     const [menuOpen,       setMenuOpen]       = useState(false)
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
     const menuRef       = useRef<HTMLDivElement>(null)
-    const mobileMenuRef = useRef<HTMLDivElement>(null)
 
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
         localStorage.getItem("sidebar-collapsed") === "true"
@@ -83,7 +84,6 @@ export default function AppShell() {
     useEffect(() => {
         function onClickOutside(e: MouseEvent) {
             if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
-            if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) setMobileMenuOpen(false)
         }
         document.addEventListener("mousedown", onClickOutside)
         return () => document.removeEventListener("mousedown", onClickOutside)
@@ -134,12 +134,12 @@ export default function AppShell() {
                         <button
                             onClick={toggleSidebar}
                             aria-label="Toggle sidebar"
-                            className="hidden md:flex items-center justify-center w-9 h-9 rounded-lg theme-text opacity-50 hover:opacity-100 transition-opacity"
+                            className={`hidden md:flex items-center justify-center w-9 h-9 rounded-lg theme-text opacity-70 hover:opacity-100 transition-opacity ${focusRing}`}
                         >
                             {sidebarCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
                         </button>
 
-                        <Link to="/dashboard" className="flex items-center gap-2 select-none pl-1 md:pl-0">
+                        <Link to="/dashboard" className={`flex items-center gap-2 select-none pl-1 md:pl-0 rounded-lg ${focusRing}`}>
                             <div className="relative w-8 h-8 shrink-0">
                                 <div
                                     className="size-8 shrink-0 scale-125"
@@ -158,7 +158,9 @@ export default function AppShell() {
                     <div className="relative hidden md:block" ref={menuRef}>
                         <button
                             onClick={() => setMenuOpen(v => !v)}
-                            className="flex items-center gap-2 px-2 py-1 rounded-lg hover:opacity-80 transition-opacity"
+                            aria-haspopup="menu"
+                            aria-expanded={menuOpen}
+                            className={`flex items-center gap-2 px-2 py-1 rounded-lg hover:opacity-80 transition-opacity ${focusRing}`}
                         >
                             <Avatar name={user.name} picture={user.picture} size={28} />
                             <span className="text-sm font-medium theme-text">{user.display_name}</span>
@@ -166,68 +168,73 @@ export default function AppShell() {
                         </button>
 
                         {menuOpen && (
-                            <div className="absolute right-0 mt-1 w-52 rounded-xl border shadow-lg z-50 py-1 theme-bg theme-border">
-                                <div className="px-3 py-2.5 border-b theme-border">
+                            <div role="menu" className="absolute right-0 mt-1 w-52 rounded-xl border shadow-lg z-40 p-1 theme-bg theme-border">
+                                <div className="px-3 py-2.5 border-b theme-border mb-1">
                                     <p className="text-sm font-semibold theme-text truncate">{user.display_name}</p>
                                     <p className="text-xs theme-subtext-color truncate">{user.email}</p>
-                                    <p className="text-xs theme-text-contrast opacity-80 truncate mt-0.5">{roleLabel}</p>
+                                    <p className="text-xs theme-text-contrast truncate mt-0.5">{roleLabel}</p>
                                 </div>
                                 <Link
                                     to="/settings"
+                                    role="menuitem"
                                     onClick={() => setMenuOpen(false)}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
+                                    className={`${menuRowClass} justify-start theme-text hover:opacity-80 transition-opacity`}
                                 >
-                                    <Settings size={14} />
+                                    <Settings size={16} />
                                     Settings
                                 </Link>
+                                <div className="my-1 border-t theme-border" role="separator" />
                                 <button
+                                    role="menuitem"
                                     onClick={() => { setMenuOpen(false); void logout() }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
+                                    className={`${menuRowClass} justify-start theme-danger hover:opacity-80 transition-opacity`}
                                 >
-                                    <LogOut size={14} />
+                                    <LogOut size={16} />
                                     Sign out
                                 </button>
                             </div>
                         )}
                     </div>
 
-                    {/* Mobile profile dropdown */}
-                    <div className="relative md:hidden shrink-0" ref={mobileMenuRef}>
+                    {/* Mobile account menu: drag sheet */}
+                    <div className="md:hidden shrink-0">
                         <button
                             onClick={() => setMobileMenuOpen(v => !v)}
                             aria-label="Open profile menu"
+                            aria-haspopup="dialog"
                             aria-expanded={mobileMenuOpen}
-                            className="block rounded-full hover:opacity-80 transition-opacity"
+                            className={`flex items-center justify-center w-11 h-11 rounded-full hover:opacity-80 transition-opacity ${focusRing}`}
                         >
                             <Avatar name={user.name} picture={user.picture} size={32} />
                         </button>
 
                         {mobileMenuOpen && (
-                            <div className="absolute right-0 mt-2 w-56 rounded-xl border shadow-lg z-50 py-1 theme-bg theme-border">
-                                <div className="px-3 py-2.5 border-b theme-border flex items-center gap-2.5">
+                            <Sheet title="Account" kind="menu" onClose={() => setMobileMenuOpen(false)} className="px-2 pt-2 pb-2">
+                                <div className="px-3 py-2.5 border-b theme-border mb-1 flex items-center gap-3">
                                     <Avatar name={user.name} picture={user.picture} size={36} />
                                     <div className="min-w-0">
                                         <p className="text-sm font-semibold theme-text truncate">{user.display_name}</p>
                                         <p className="text-xs theme-subtext-color truncate">{user.email}</p>
-                                        <p className="text-xs theme-text-contrast opacity-80 truncate mt-0.5">{roleLabel}</p>
+                                        <p className="text-xs theme-text-contrast truncate mt-0.5">{roleLabel}</p>
                                     </div>
                                 </div>
                                 <Link
                                     to="/settings"
                                     onClick={() => setMobileMenuOpen(false)}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
+                                    className={`${menuRowClass} justify-start theme-text`}
                                 >
-                                    <Settings size={14} />
+                                    <Settings size={18} />
                                     Settings
                                 </Link>
+                                <div className="my-1 border-t theme-border" role="separator" />
                                 <button
                                     onClick={() => { setMobileMenuOpen(false); void logout() }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm theme-text hover:opacity-80 transition-opacity"
+                                    className={`${menuRowClass} justify-start theme-danger`}
                                 >
-                                    <LogOut size={14} />
+                                    <LogOut size={18} />
                                     Sign out
                                 </button>
-                            </div>
+                            </Sheet>
                         )}
                     </div>
                 </div>
@@ -238,13 +245,14 @@ export default function AppShell() {
 
                 {/* Desktop sidebar */}
                 <aside
+                    aria-label="Sidebar"
                     className="hidden md:flex flex-col shrink-0 border-r overflow-hidden theme-bg theme-border"
                     style={{
                         width: sidebarCollapsed ? "56px" : "196px",
                         transition: "width 0.22s cubic-bezier(0.4, 0, 0.2, 1)",
                     }}
                 >
-                    <nav className="flex flex-col gap-0.5 p-2 pt-3">
+                    <nav aria-label="Primary" className="flex flex-col gap-0.5 p-2 pt-3">
                         {coreTabs.map(({ to, label, icon: Icon }) => {
                             const active = isActive(to)
                             return (
@@ -252,9 +260,12 @@ export default function AppShell() {
                                     key={to}
                                     to={to}
                                     title={sidebarCollapsed ? label : undefined}
+                                    aria-current={active ? "page" : undefined}
+                                    aria-label={sidebarCollapsed ? label : undefined}
                                     className={[
                                         "flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm font-medium transition-all",
-                                        active ? "theme-text-contrast" : "theme-text opacity-55 hover:opacity-90",
+                                        focusRing,
+                                        active ? "theme-text-contrast" : "theme-text opacity-70 hover:opacity-100",
                                     ].join(" ")}
                                     style={active ? { background: "color-mix(in oklch, var(--theme-button-bg) 18%, transparent)" } : {}}
                                 >
@@ -283,29 +294,31 @@ export default function AppShell() {
                     </nav>
                 </aside>
 
-                <main className="flex-1 min-h-0 overflow-auto theme-scrollbar">
+                <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden theme-scrollbar">
                     <Outlet />
                 </main>
             </div>
 
             {/* ── Mobile bottom tab bar ───────────────────────────── */}
             <nav
+                aria-label="Primary"
                 className={`${isInsideEvent ? "hidden" : "md:hidden"} shrink-0 border-t z-30 theme-bg theme-border`}
                 style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
             >
-                <div className={showNavText ? "flex h-24" : "flex h-20"}>
+                <div className="flex h-16">
                     {navTabs.map(({ to, label, icon: Icon }) => {
                         const active = isActive(to)
                         return (
                             <Link
                                 key={to}
                                 to={to}
-                                className={`flex-1 flex flex-col items-center justify-start pt-4 gap-0.5 transition-opacity ${active ? "theme-text-contrast" : "theme-text"}`}
-                                style={{ opacity: active ? 1 : 0.45 }}
+                                aria-current={active ? "page" : undefined}
+                                aria-label={showNavText ? undefined : label}
+                                className={`flex-1 min-w-0 min-h-12 flex flex-col items-center justify-center gap-0.5 transition-opacity focus-visible:ring-inset ${focusRing} ${active ? "theme-text-contrast" : "theme-text opacity-70"}`}
                             >
-                                <Icon size={21} strokeWidth={active ? 2.2 : 1.8} />
+                                <Icon size={21} strokeWidth={active ? 2.4 : 1.8} />
                                 {showNavText && (
-                                    <span className="font-medium text-[10px] tracking-[0.01em]">
+                                    <span className="font-medium text-[11px] text-center leading-tight">
                                         {label}
                                     </span>
                                 )}
@@ -351,8 +364,8 @@ function ControlPanelNav({
     useEffect(() => { if (parentActive) setOpen(true) }, [parentActive])
 
     const rowClass = (active: boolean) => [
-        "flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm font-medium transition-all w-full",
-        active ? "theme-text-contrast" : "theme-text opacity-55 hover:opacity-90",
+        "flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm font-medium transition-all w-full " + focusRing,
+        active ? "theme-text-contrast" : "theme-text opacity-70 hover:opacity-100",
     ].join(" ")
     const activeStyle = (active: boolean) =>
         active ? { background: "color-mix(in oklch, var(--theme-button-bg) 18%, transparent)" } : {}
@@ -364,7 +377,7 @@ function ControlPanelNav({
                 <Link to="/control" title="Control Panel" className={rowClass(parentActive)} style={activeStyle(parentActive)}>
                     <SlidersHorizontal size={18} className="shrink-0" />
                 </Link>
-                <div className="absolute left-full top-0 ml-2 z-50 hidden group-hover:block min-w-44 rounded-xl border shadow-lg py-1 theme-bg theme-border">
+                <div className="absolute left-full top-0 ml-2 z-40 hidden group-hover:block group-focus-within:block min-w-44 rounded-xl border shadow-lg py-1 theme-bg theme-border">
                     <div className="px-3 py-1.5 text-xs font-semibold theme-subtext-color">Control Panel</div>
                     {sections.map(({ to, label, icon: Icon }) => {
                         const active = pathname === `/control/${to}`

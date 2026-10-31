@@ -16,6 +16,9 @@ import {
 } from "@/lib/eventContent"
 import ItineraryDayEditor from "@/components/events/ItineraryDayEditor"
 import { DANGER_RED, tintColor } from "@/lib/taskFormat"
+import Button from "@/components/ui/Button"
+import { confirmDialog } from "@/lib/confirmDialog"
+import { typeH2 } from "@/lib/uiClasses"
 
 // Sentinel `editingDay` value for "adding a brand-new day" (distinct from
 // `null`, which means nothing is being edited).
@@ -121,7 +124,7 @@ export default function ItineraryPage() {
     }
 
     async function handleDeleteDay(day: string) {
-        if (!window.confirm("Delete this day's itinerary? This can't be undone.")) return
+        if (!await confirmDialog({ title: "Delete this day's itinerary?", body: "This can't be undone.", confirmLabel: "Delete", danger: true })) return
         setSaving(true)
         setSaveError(null)
         try {
@@ -186,7 +189,7 @@ export default function ItineraryPage() {
     return (
         <div className="max-w-xl mx-auto px-4 py-6 flex flex-col gap-3">
             <div
-                className="rounded-xl border overflow-hidden"
+                className="rounded-xl border"
                 style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
             >
                 {rows.length > 0 ? (
@@ -199,19 +202,15 @@ export default function ItineraryPage() {
             </div>
 
             {isEditor && editingDay === null && (
-                <button
-                    type="button"
-                    onClick={() => startEdit(NEW_DAY)}
-                    className="inline-flex items-center gap-1.5 self-start rounded-lg border theme-border theme-bg theme-text-contrast text-sm font-semibold px-3 py-2 min-h-11 hover:opacity-90 transition-opacity outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
-                >
+                <Button variant="outlined" className="self-start" onClick={() => startEdit(NEW_DAY)}>
                     <Plus size={15} />
                     Add day
-                </button>
+                </Button>
             )}
 
             {isEditor && editingDay === NEW_DAY && (
                 <div
-                    className="rounded-xl border overflow-hidden"
+                    className="rounded-xl border"
                     style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
                 >
                     <ItineraryDayEditor
@@ -237,21 +236,18 @@ function DayHeader({ label, day, showPencil, onEdit }: { label: string; day: str
                 background: "color-mix(in oklch, var(--theme-bg) 60%, var(--theme-border))",
             }}
         >
-            <span
-                className="text-[11px] font-bold tracking-wider uppercase"
-                style={{ color: "var(--theme-subtext-color)" }}
-            >
+            <span className={`${typeH2} theme-subtext-color`}>
                 {label}
             </span>
             {showPencil && (
-                <button
-                    type="button"
+                <Button
+                    variant="icon"
                     aria-label={`Edit ${label}`}
                     onClick={() => onEdit(day)}
-                    className="inline-flex items-center justify-center w-9 h-9 -my-1.5 -mr-1.5 shrink-0 opacity-50 hover:opacity-100 transition-opacity rounded-lg outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
+                    className="-my-2 -mr-2.5 shrink-0"
                 >
-                    <Pencil size={14} className="theme-subtext-color" />
-                </button>
+                    <Pencil size={14} />
+                </Button>
             )}
         </div>
     )
@@ -287,7 +283,7 @@ const ItemRow = forwardRef<HTMLDivElement, { item: ItineraryItem; isPast: boolea
                 </div>
                 {isCurrent && (
                     <span
-                        className="ml-auto shrink-0 text-[10px] font-bold tracking-widest uppercase"
+                        className={`ml-auto shrink-0 ${typeH2}`}
                         style={{ color: DANGER_RED }}
                     >
                         Now

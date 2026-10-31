@@ -3,28 +3,24 @@ import { Link } from "react-router-dom"
 import { Link2, Plus, Unlink } from "lucide-react"
 import { useEventContext } from "@/contexts/eventContext"
 import { useOnboardedUser } from "@/contexts/authContext"
+import Button from "@/components/ui/Button"
 import Dropdown from "@/components/ui/Dropdown"
+import EmptyState from "@/components/ui/EmptyState"
+import Notice from "@/components/ui/Notice"
+import Skeleton from "@/components/ui/Skeleton"
+import { buttonClass, cardClass, fieldLabelClass, focusRing, inputClass, typeH2 } from "@/lib/uiClasses"
 import { can, getPerm } from "@/lib/permissions"
 import { BUCKET_OPTIONS, bucketLabel, isTaskBucket } from "@/lib/taskBuckets"
 import {
     createTask, fetchTasks, updateTask,
     PRIORITY_LABEL, STATUS_LABEL, type Task, type TaskPriority,
 } from "@/lib/tasksApi"
-import { DANGER_RED, PRIORITY_COLOR, formatDue, priorityChoices, tintColor } from "@/lib/taskFormat"
+import { PRIORITY_COLOR, formatDue, priorityChoices } from "@/lib/taskFormat"
+import { useDiscardGuard } from "@/lib/useDiscardGuard"
 import { saveErrorMessage } from "@/lib/eventContent"
 import type { TasksPageState } from "@/lib/taskFormat"
 
 const cardStyle = { background: "var(--theme-bg)", borderColor: "var(--theme-border)" }
-const addButtonClass = "inline-flex items-center gap-1.5 rounded-lg border theme-border theme-bg theme-text-contrast text-sm font-semibold px-3 py-2 min-h-11 hover:opacity-90 transition-opacity outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)] disabled:opacity-40"
-const primaryButtonClass =
-    "theme-bg border theme-border theme-text-contrast rounded-xl text-sm font-semibold h-11 px-4 " +
-    "inline-flex items-center justify-center gap-2 outline-none focus:ring-2 transition-opacity " +
-    "disabled:opacity-40 disabled:cursor-not-allowed"
-const ghostButtonClass =
-    "h-11 px-2 rounded-lg text-sm theme-subtext-color hover:underline outline-none focus:ring-2 " +
-    "disabled:opacity-40 disabled:cursor-not-allowed"
-const inputClass = "rounded-lg border theme-border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-text disabled:opacity-60"
-const dropdownTriggerClass = "rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-border theme-text"
 
 // Open work first (most actionable status first), finished work last.
 const STATUS_RANK: Record<Task["status"], number> = { review: 0, doing: 1, todo: 2, done: 3 }
@@ -47,6 +43,7 @@ export default function EventTasksPage() {
     const [bucket, setBucket] = useState<string>(defaultBucket)
     const [priority, setPriority] = useState<TaskPriority>("med")
     const [due, setDue] = useState("")
+    const confirmDiscard = useDiscardGuard(mode === "create" && (title !== "" || due !== "" || bucket !== defaultBucket || priority !== "med"))
 
     useEffect(() => {
         let cancelled = false
@@ -122,30 +119,30 @@ export default function EventTasksPage() {
     return (
         <div className="max-w-xl mx-auto px-4 py-6 flex flex-col gap-4">
             <div className="flex items-center justify-between gap-3">
-                <h2 className="text-[11px] font-bold tracking-wider uppercase" style={{ color: "var(--theme-subtext-color)" }}>
+                <h2 className={`${typeH2} theme-subtext-color min-w-0 truncate`}>
                     Tasks for {info?.event_name ?? "this event"}
                 </h2>
-                <Link to="/tasks" className="text-sm theme-text-contrast hover:underline min-h-11 inline-flex items-center">
+                <Link to="/tasks" className={buttonClass({ variant: "text" })}>
                     Task board
                 </Link>
             </div>
 
-            {error && (
-                <p
-                    role="alert"
-                    className="text-xs rounded-lg px-3 py-2"
-                    style={{ color: DANGER_RED, background: tintColor(DANGER_RED, 10), border: `1px solid ${tintColor(DANGER_RED, 40)}` }}
-                >
-                    {error}
-                </p>
-            )}
+            {error && <Notice>{error}</Notice>}
 
             {loadError ? (
-                <EmptyCard>Couldn't load tasks. Refresh to try again.</EmptyCard>
+                <Notice>Couldn't load tasks. Refresh to try again.</Notice>
             ) : tasks === null ? (
-                <EmptyCard>Loading tasks…</EmptyCard>
+                <div className="rounded-xl border overflow-hidden" style={cardStyle} role="status" aria-label="Loading tasks">
+                    {[0, 1, 2].map(i => (
+                        <div key={i} className="px-4 py-3 border-b last:border-0" style={{ borderColor: "var(--theme-border)" }}>
+                            <Skeleton className="h-10 w-full" />
+                        </div>
+                    ))}
+                </div>
             ) : sorted.length === 0 ? (
-                <EmptyCard>No tasks linked to this event yet.</EmptyCard>
+                <div className="rounded-xl border px-4 py-1" style={cardStyle}>
+                    <EmptyState>No tasks linked to this event yet.</EmptyState>
+                </div>
             ) : (
                 <div className="rounded-xl border overflow-hidden" style={cardStyle}>
                     {sorted.map(task => (
@@ -161,22 +158,22 @@ export default function EventTasksPage() {
 
             {mode === "idle" && (
                 <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={() => { setMode("create"); setError(null) }} className={addButtonClass}>
+                    <Button variant="outlined" onClick={() => { setMode("create"); setError(null) }}>
                         <Plus size={15} />
                         New task
-                    </button>
-                    <button type="button" onClick={() => { setMode("link"); setError(null) }} className={addButtonClass}>
+                    </Button>
+                    <Button variant="outlined" onClick={() => { setMode("link"); setError(null) }}>
                         <Link2 size={15} />
                         Link existing task
-                    </button>
+                    </Button>
                 </div>
             )}
 
             {mode === "create" && (
-                <div className="rounded-xl border p-4 flex flex-col gap-3" style={cardStyle}>
+                <div className={cardClass} style={cardStyle}>
                     <p className="text-sm font-semibold theme-text">New task</p>
                     <div className="flex flex-col gap-1">
-                        <label htmlFor="event-task-title" className="text-sm font-semibold theme-text">Title</label>
+                        <label htmlFor="event-task-title" className={fieldLabelClass}>Title</label>
                         <input
                             id="event-task-title"
                             value={title}
@@ -189,38 +186,38 @@ export default function EventTasksPage() {
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="flex flex-col gap-1" role="group" aria-labelledby="event-task-bucket">
-                            <span id="event-task-bucket" className="text-sm font-semibold theme-text">Subteam</span>
-                            <Dropdown value={bucket} options={BUCKET_OPTIONS} onChange={setBucket} disabled={busy} triggerClassName={dropdownTriggerClass} />
+                            <span id="event-task-bucket" className={fieldLabelClass}>Subteam</span>
+                            <Dropdown value={bucket} options={BUCKET_OPTIONS} onChange={setBucket} disabled={busy} triggerClassName={inputClass} />
                         </div>
                         <div className="flex flex-col gap-1" role="group" aria-labelledby="event-task-priority">
-                            <span id="event-task-priority" className="text-sm font-semibold theme-text">Priority</span>
+                            <span id="event-task-priority" className={fieldLabelClass}>Priority</span>
                             <Dropdown
                                 value={priority}
                                 options={priorityChoices(canAssign).map(p => ({ value: p, label: PRIORITY_LABEL[p] }))}
                                 onChange={v => setPriority(v as TaskPriority)}
                                 disabled={busy}
-                                triggerClassName={dropdownTriggerClass}
+                                triggerClassName={inputClass}
                             />
                         </div>
                         <div className="flex flex-col gap-1">
-                            <label htmlFor="event-task-due" className="text-sm font-semibold theme-text">Due (optional)</label>
+                            <label htmlFor="event-task-due" className={fieldLabelClass}>Due (optional)</label>
                             <input id="event-task-due" type="date" value={due} disabled={busy} onChange={e => setDue(e.target.value)} className={inputClass} />
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <button type="button" onClick={() => void handleCreate()} disabled={busy} className={primaryButtonClass}>
+                        <Button onClick={() => void handleCreate()} disabled={busy}>
                             {busy ? "Creating…" : "Create task"}
-                        </button>
-                        <button type="button" onClick={closeForm} disabled={busy} className={ghostButtonClass}>Cancel</button>
+                        </Button>
+                        <Button variant="text" onClick={() => void confirmDiscard().then(ok => { if (ok) closeForm() })} disabled={busy}>Cancel</Button>
                     </div>
                 </div>
             )}
 
             {mode === "link" && (
-                <div className="rounded-xl border p-4 flex flex-col gap-3" style={cardStyle}>
+                <div className={cardClass} style={cardStyle}>
                     <p className="text-sm font-semibold theme-text">Link an existing task</p>
                     {allTasks === null ? (
-                        <p className="text-sm theme-subtext-color">Loading tasks…</p>
+                        <Skeleton className="h-11 w-full" />
                     ) : linkable.length === 0 ? (
                         <p className="text-sm theme-subtext-color">
                             No open tasks to link. You can link tasks you created{canAssign ? " or any open task" : ""}.
@@ -238,22 +235,14 @@ export default function EventTasksPage() {
                             searchable
                             searchPlaceholder="Search tasks"
                             defaultOpen
-                            triggerClassName={dropdownTriggerClass}
+                            triggerClassName={inputClass}
                         />
                     )}
                     <div>
-                        <button type="button" onClick={closeForm} disabled={busy} className={ghostButtonClass}>Cancel</button>
+                        <Button variant="text" onClick={closeForm} disabled={busy}>Cancel</Button>
                     </div>
                 </div>
             )}
-        </div>
-    )
-}
-
-function EmptyCard({ children }: { children: string }) {
-    return (
-        <div className="rounded-xl border px-4 py-3 text-sm" style={{ ...cardStyle, color: "var(--theme-subtext-color)" }}>
-            {children}
         </div>
     )
 }
@@ -279,7 +268,7 @@ function TaskRow({ task, onUnlink, disabled }: { task: Task; onUnlink?: () => vo
             <Link
                 to="/tasks"
                 state={{ bucket: "all", who: "everyone", taskId: task.id } satisfies TasksPageState}
-                className="flex-1 min-w-0 rounded-md -mx-1.5 px-1.5 py-1 hover:bg-(--ag-grid-hover-bg) outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
+                className={`flex-1 min-w-0 rounded-lg -mx-1.5 px-1.5 py-1 hover:bg-(--ag-grid-hover-bg) ${focusRing}`}
             >
                 <p className="text-sm font-medium theme-text truncate" style={{ textDecoration: done ? "line-through" : "none" }}>
                     {task.title}
@@ -287,16 +276,16 @@ function TaskRow({ task, onUnlink, disabled }: { task: Task; onUnlink?: () => vo
                 <p className="text-xs theme-subtext-color truncate">{meta}</p>
             </Link>
             {onUnlink && (
-                <button
-                    type="button"
+                <Button
+                    variant="icon"
                     aria-label={`Unlink ${task.title} from this event`}
                     title="Unlink from this event"
                     onClick={onUnlink}
                     disabled={disabled}
-                    className="inline-flex items-center justify-center w-9 h-9 shrink-0 opacity-50 hover:opacity-100 transition-opacity rounded-lg outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)] disabled:opacity-30"
+                    className="shrink-0"
                 >
-                    <Unlink size={14} className="theme-subtext-color" />
-                </button>
+                    <Unlink size={14} />
+                </Button>
             )}
         </div>
     )

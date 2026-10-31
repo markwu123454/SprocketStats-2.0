@@ -17,7 +17,7 @@ export default function LoginPageDesktop({ season, timeInfo, loading, loginNotic
     useScrollLock();
 
     return (
-        <div
+        <main
             style={{
                 display: "grid",
                 gridTemplateColumns: "1.05fr 0.95fr",
@@ -69,6 +69,6 @@ export default function LoginPageDesktop({ season, timeInfo, loading, loginNotic
                     </span>
                 )}
             </section>
-        </div>
+        </main>
     );
 }

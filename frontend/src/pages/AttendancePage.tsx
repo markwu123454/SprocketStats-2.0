@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, Trophy } from "lucide-react"
 import { TimeWheel } from "@/components/ui/TimeWheel"
+import Button from "@/components/ui/Button"
+import Notice from "@/components/ui/Notice"
+import Skeleton from "@/components/ui/Skeleton"
+import { focusRing, typeH2, typeTitle } from "@/lib/uiClasses"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -112,7 +116,7 @@ function buildWeeks(y: number, m: number): (number | null)[][] {
 }
 
 const cardStyle = { background: "var(--theme-bg)", borderColor: "var(--theme-border)" }
-const fieldStyle = { background: "color-mix(in oklch, var(--theme-button-bg) 60%, transparent)", borderColor: "var(--theme-border)" }
+const fieldStyle = { background: "color-mix(in oklch, var(--theme-button-bg) 60%, transparent)", borderColor: "var(--theme-outline)" }
 
 export default function AttendancePage() {
     const [selectedDateKey, setSelectedDateKey] = useState("")
@@ -140,13 +144,13 @@ export default function AttendancePage() {
 
     const fetchMeetings = useCallback(async () => {
         const res = await fetch(`${API}/attendance/meetings`, { credentials: "include" })
-        if (!res.ok) throw new Error("Failed to load meetings")
+        if (!res.ok) throw new Error("Couldn't load meetings")
         setMeetings(await res.json())
     }, [])
 
     const fetchLeaderboard = useCallback(async () => {
         const res = await fetch(`${API}/attendance/leaderboard`, { credentials: "include" })
-        if (!res.ok) throw new Error("Failed to load leaderboard")
+        if (!res.ok) throw new Error("Couldn't load leaderboard")
         setLeaderboard(await res.json())
     }, [])
 
@@ -155,7 +159,7 @@ export default function AttendancePage() {
             try {
                 await Promise.all([fetchMeetings(), fetchLeaderboard()])
             } catch {
-                setLoadError("Failed to load attendance data")
+                setLoadError("Couldn't load attendance data")
             } finally {
                 setLoading(false)
             }
@@ -251,11 +255,11 @@ export default function AttendancePage() {
                     source: "normal",
                 }),
             })
-            if (!res.ok) throw new Error("Failed to submit hours")
+            if (!res.ok) throw new Error("Couldn't submit hours")
             setSubmitted(true)
             void fetchLeaderboard()
         } catch {
-            setSubmitError("Failed to submit hours")
+            setSubmitError("Couldn't submit hours")
         } finally {
             setSubmitting(false)
         }
@@ -268,23 +272,23 @@ export default function AttendancePage() {
             {/* Log hours */}
             <div className="rounded-xl border p-6 flex flex-col gap-4 backdrop-blur-sm" style={cardStyle}>
                 <div>
-                    <p className="text-xs font-semibold tracking-wider theme-subtext-color">LOG YOUR HOURS</p>
-                    <h2 className="text-lg font-bold theme-text">Enter your time</h2>
+                    <p className={`${typeH2} theme-subtext-color`}>Log your hours</p>
+                    <h2 className={`${typeTitle} theme-text`}>Enter your time</h2>
                 </div>
 
                 {/* Date picker (inline calendar) */}
                 <div className="relative" ref={calTriggerRef}>
                     <button
                         onClick={() => setCalOpen(o => !o)}
-                        className="w-full flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-left"
+                        className={`w-full flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 min-h-11 text-left ${focusRing}`}
                         style={fieldStyle}
                     >
                         <Calendar size={16} className="theme-subtext-color shrink-0" />
-                        <span className="text-sm theme-text">
+                        <span className="text-sm theme-text min-w-0 truncate">
                             {selectedDateKey ? formatDateLabel(selectedDateKey) : "No meetings scheduled"}
                         </span>
                         {selectedMeeting && (
-                            <span className="ml-auto text-sm theme-subtext-color">
+                            <span className="ml-auto text-sm theme-subtext-color shrink-0">
                                 {formatMeetingRange(selectedMeeting.start_time, selectedMeeting.end_time, false)}
                             </span>
                         )}
@@ -293,17 +297,17 @@ export default function AttendancePage() {
 
                     {calOpen && calPos && createPortal(
                         <>
-                            <div className="fixed inset-0 z-50" onClick={() => setCalOpen(false)} />
+                            <div className="fixed inset-0 z-40" onClick={() => setCalOpen(false)} />
                             <div
-                                className="fixed z-50 -translate-x-1/2 rounded-xl border p-3 w-max shadow-[0_20px_50px_-18px_rgba(0,0,0,0.6)]"
+                                className="fixed z-40 -translate-x-1/2 rounded-xl border p-3 w-max shadow-lg"
                                 style={{ ...cardStyle, top: calPos.top, left: calPos.left }}
                             >
                                 <div className="flex items-center justify-between mb-2.5">
-                                    <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg border flex items-center justify-center theme-text theme-border">
+                                    <button onClick={() => stepMonth(-1)} aria-label="Previous month" className={`w-11 h-11 md:w-8 md:h-8 rounded-lg border flex items-center justify-center theme-text theme-border ${focusRing}`}>
                                         <ChevronLeft size={14} />
                                     </button>
-                                    <span className="text-sm font-bold theme-h1-color">{MONTHS[viewM]} {viewY}</span>
-                                    <button onClick={() => stepMonth(1)} className="w-7 h-7 rounded-lg border flex items-center justify-center theme-text theme-border">
+                                    <span className="text-sm font-semibold theme-h1-color">{MONTHS[viewM]} {viewY}</span>
+                                    <button onClick={() => stepMonth(1)} aria-label="Next month" className={`w-11 h-11 md:w-8 md:h-8 rounded-lg border flex items-center justify-center theme-text theme-border ${focusRing}`}>
                                         <ChevronRight size={14} />
                                     </button>
                                 </div>
@@ -324,7 +328,7 @@ export default function AttendancePage() {
                                                     <button
                                                         key={di}
                                                         onClick={() => { setSelectedDateKey(key); setSubmitted(false); setCalOpen(false) }}
-                                                        className="w-[38px] h-[38px] rounded-[9px] font-mono text-[13px] flex items-center justify-center relative cursor-pointer"
+                                                        className="w-[38px] h-[38px] rounded-lg font-mono text-[13px] flex items-center justify-center relative cursor-pointer"
                                                         style={isSel
                                                             ? { background: "var(--theme-text-contrast)", color: "var(--theme-bg)", fontWeight: 700 }
                                                             : { color: "var(--theme-text)", fontWeight: 500 }}
@@ -352,34 +356,29 @@ export default function AttendancePage() {
                 </div>
 
                 <div className="flex items-center justify-center gap-1.5 -mt-1">
-                    <ChevronsUpDown size={12} className="theme-subtext-color opacity-60" />
+                    <ChevronsUpDown size={14} className="theme-subtext-color opacity-60" />
                     <span className="text-[11px] theme-subtext-color opacity-80">Drag to set · snaps to 5 min</span>
                 </div>
 
                 <div className="flex items-center justify-between gap-3">
                     {timeRangeInvalid ? (
-                        <p className="text-sm text-red-500">Clock out must be after clock in</p>
+                        <p className="text-sm theme-danger">Clock out must be after clock in</p>
                     ) : (
                         <p className="text-sm theme-text">
                             Total <span className="font-mono font-bold theme-text-contrast">{total.h}h {String(total.m).padStart(2, "0")}m</span>
                         </p>
                     )}
-                    <button
+                    <Button
                         onClick={() => void handleSubmit()}
                         disabled={submitting || !selectedDateKey || timeRangeInvalid}
-                        className="flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-sm transition-opacity hover:opacity-90 disabled:opacity-60"
-                        style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
                     >
                         <Check size={16} />
                         {submitting ? "Submitting…" : submitted ? "Submitted" : "Submit hours"}
-                    </button>
+                    </Button>
                 </div>
 
                 {submitError && (
-                    <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
-                       style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
-                        {submitError}
-                    </p>
+                    <Notice>{submitError}</Notice>
                 )}
             </div>
 
@@ -408,11 +407,15 @@ export default function AttendancePage() {
                     {/* Upcoming events */}
                     <div className="rounded-xl border p-5 flex flex-col backdrop-blur-sm" style={cardStyle}>
                         <div className="flex items-center justify-between mb-2">
-                            <h3 className="font-bold theme-text">Upcoming events</h3>
+                            <h3 className={`${typeTitle} theme-text`}>Upcoming events</h3>
                             <span className="text-xs theme-subtext-color">{weekRangeLabel()}</span>
                         </div>
                         {loading ? (
-                            <p className="text-sm theme-subtext-color py-2">Loading…</p>
+                            <div className="flex flex-col gap-2 py-2">
+                                <Skeleton className="h-5 w-full" />
+                                <Skeleton className="h-5 w-full" />
+                                <Skeleton className="h-5 w-full" />
+                            </div>
                         ) : meetings.length === 0 ? (
                             <p className="text-sm theme-subtext-color py-2">No meetings scheduled yet.</p>
                         ) : (
@@ -438,12 +441,16 @@ export default function AttendancePage() {
                     <div className="flex items-center justify-between gap-3 mb-2">
                         <div className="flex items-center gap-2">
                             <Trophy size={16} className="theme-text-contrast" />
-                            <h3 className="font-bold theme-text">Leaderboard</h3>
+                            <h3 className={`${typeTitle} theme-text`}>Leaderboard</h3>
                         </div>
                         <span className="text-xs font-semibold tracking-wider theme-subtext-color">TIME CLOCKED</span>
                     </div>
                     {loading ? (
-                        <p className="text-sm theme-subtext-color py-2">Loading…</p>
+                        <div className="flex flex-col gap-2 py-2">
+                            <Skeleton className="h-10 w-full" />
+                            <Skeleton className="h-10 w-full" />
+                            <Skeleton className="h-10 w-full" />
+                        </div>
                     ) : leaderboard.length === 0 ? (
                         <p className="text-sm theme-subtext-color py-2">No hours logged yet.</p>
                     ) : (
@@ -473,10 +480,7 @@ export default function AttendancePage() {
             </div>
 
             {loadError && (
-                <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
-                   style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
-                    {loadError}
-                </p>
+                <Notice>{loadError}</Notice>
             )}
         </div>
     )

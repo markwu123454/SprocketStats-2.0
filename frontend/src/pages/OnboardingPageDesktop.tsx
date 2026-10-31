@@ -14,7 +14,7 @@ export default function OnboardingPageDesktop(props: OnboardingPageProps) {
     useScrollLock()
 
     return (
-        <div
+        <main
             style={{
                 display: "grid",
                 gridTemplateColumns: "1.05fr 0.95fr",
@@ -43,6 +43,6 @@ export default function OnboardingPageDesktop(props: OnboardingPageProps) {
                     <OnboardingForm {...props} />
                 </div>
             </section>
-        </div>
+        </main>
     )
 }

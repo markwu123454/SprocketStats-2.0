@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { focusRing } from "@/lib/uiClasses"
 
 /**
  * Small "?" next to a form label. Hovering (desktop) or tapping (mobile)
@@ -39,12 +40,13 @@ export default function HelpTip({ text }: { text: string }) {
                 type="button"
                 aria-label="What is this?"
                 aria-expanded={open}
+                className={focusRing}
                 onClick={e => { e.preventDefault(); e.stopPropagation(); measure(); setPinned(v => !v) }}
                 style={{
                     font: "inherit", width: 15, height: 15, borderRadius: "50%", padding: 0, cursor: "help",
                     display: "grid", placeItems: "center", fontSize: 10, fontWeight: 700, lineHeight: 1,
                     letterSpacing: 0, textTransform: "none",
-                    border: "1px solid var(--theme-border)", background: "transparent",
+                    border: "1px solid var(--theme-outline)", background: "transparent",
                     color: open ? "var(--theme-text-contrast)" : "var(--theme-subtext-color)",
                 }}
             >
@@ -53,13 +55,10 @@ export default function HelpTip({ text }: { text: string }) {
             {open && (
                 <span
                     role="tooltip"
+                    className="absolute z-40 w-56 rounded-lg border theme-border theme-bg theme-text px-3 py-2 text-xs font-normal normal-case tracking-normal whitespace-normal shadow-lg"
                     style={{
-                        position: "absolute", top: "calc(100% + 6px)", zIndex: 50, width: 220,
+                        top: "calc(100% + 6px)",
                         ...(alignRight ? { right: -4 } : { left: -4 }),
-                        border: "1px solid var(--theme-border)", borderRadius: 8, background: "var(--theme-bg)",
-                        padding: "8px 10px", boxShadow: "0 12px 28px rgba(0,0,0,0.5)",
-                        fontSize: 12, fontWeight: 400, lineHeight: 1.45, letterSpacing: 0, textTransform: "none",
-                        color: "var(--theme-text)", whiteSpace: "normal",
                     }}
                 >
                     {text}

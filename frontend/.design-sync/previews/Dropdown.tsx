@@ -1,4 +1,6 @@
 import { useState } from 'react'
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-expect-error
 import { Dropdown } from 'frontend'
 
 // The app's own trigger idiom, taken from `SimpleDropdown` in

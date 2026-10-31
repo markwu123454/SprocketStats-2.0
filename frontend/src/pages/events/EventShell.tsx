@@ -4,6 +4,9 @@ import { Home, Calendar, Users, Package, Trophy, ArrowLeft, CalendarClock, ListT
 import { useBootstrapped, BootstrapContext } from "@/contexts/bootstrapContext"
 import { EventContext } from "@/contexts/eventContext"
 import { fetchEventInfo, fetchEventUpdate, fetchEvents, type EventInfo } from "@/lib/eventApi"
+import Skeleton from "@/components/ui/Skeleton"
+import EmptyState from "@/components/ui/EmptyState"
+import { buttonClass } from "@/lib/uiClasses"
 import { findByHubKey, hasEventPage, hiddenTabsOf, isTabHidden, resolveEvents, type EventEntry, type HubTab } from "@/lib/events"
 
 // `to` doubles as the HubTab id for every tab but Overview, which can't be hidden.
@@ -102,14 +105,14 @@ export default function EventShell() {
                             className="inline-flex items-center gap-1 text-xs font-medium shrink-0 transition-opacity hover:opacity-70"
                             style={{ color: "var(--theme-subtext-color)" }}
                         >
-                            <ArrowLeft size={13} />
+                            <ArrowLeft size={14} />
                             Events
                         </Link>
                         <h1
                             className="absolute left-1/2 -translate-x-1/2 text-base font-bold truncate max-w-[55%]"
                             style={{ color: "var(--theme-h1-color)" }}
                         >
-                            {isLoading ? "" : notFound ? "Event not found" : (info?.event_name ?? eventKey)}
+                            {isLoading ? <Skeleton className="h-5 w-36" /> : notFound ? "Event not found" : (info?.event_name ?? eventKey)}
                         </h1>
                     </div>
 
@@ -122,7 +125,7 @@ export default function EventShell() {
                                 to={to}
                                 end={end}
                                 className={({ isActive }) => [
-                                    "flex-1 flex flex-col items-center gap-0.5 px-1 pt-2 pb-2.5 text-[10px] font-medium whitespace-nowrap border-b-2 shrink-0 transition-colors",
+                                    "flex-1 flex flex-col items-center gap-0.5 px-1 pt-2 pb-2.5 text-[11px] font-medium whitespace-nowrap border-b-2 shrink-0 transition-colors",
                                     isActive ? "border-current" : "border-transparent",
                                 ].join(" ")}
                                 style={({ isActive }) => ({
@@ -138,20 +141,15 @@ export default function EventShell() {
 
                 <div className="flex-1 min-h-0 overflow-auto">
                     {notFound ? (
-                        <div className="h-full flex flex-col items-center justify-center gap-4 px-4 py-16 text-center">
-                            <div className="flex items-center justify-center w-16 h-16 rounded-full border theme-border theme-bg">
-                                <CalendarClock size={28} className="theme-text-contrast opacity-70" />
-                            </div>
-                            <p className="text-base font-medium theme-text">404 — event not found</p>
-                            <p className="text-sm theme-subtext-color max-w-xs">
-                                No event with key <code className="font-mono">{eventKey}</code> exists.
-                            </p>
-                            <Link
-                                to="/events"
-                                className="mt-2 inline-flex items-center theme-text-contrast theme-bg gap-1 font-bold rounded-lg px-4 py-2.5 text-sm transition-opacity hover:opacity-90"
+                        <div className="h-full flex items-center justify-center">
+                            <EmptyState
+                                variant="screen"
+                                icon={<CalendarClock size={21} />}
+                                title="404 — event not found"
+                                action={<Link to="/events" className={buttonClass()}>Back to events</Link>}
                             >
-                                Back to events
-                            </Link>
+                                No event with key <code className="font-mono">{eventKey}</code> exists.
+                            </EmptyState>
                         </div>
                     ) : noPage ? (
                         <Navigate to="/events" replace />

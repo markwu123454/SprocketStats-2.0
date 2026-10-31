@@ -74,12 +74,7 @@ export default function AreaInput({ value, onChange, suggestions, placeholder, c
             {open && (
                 <div
                     role="listbox"
-                    style={{
-                        position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 40,
-                        border: "1px solid var(--theme-border)", borderRadius: 9, background: "var(--theme-bg)",
-                        padding: 5, display: "flex", flexDirection: "column", maxHeight: 240, overflowY: "auto",
-                        boxShadow: "0 12px 28px rgba(0,0,0,0.5)",
-                    }}
+                    className="absolute inset-x-0 top-full mt-1 z-40 flex flex-col max-h-60 overflow-y-auto rounded-xl border theme-border theme-bg p-1 shadow-lg"
                 >
                     {matches.map((area, i) => (
                         <button
@@ -91,12 +86,8 @@ export default function AreaInput({ value, onChange, suggestions, placeholder, c
                             // closes the list, and preventDefault keeps focus.
                             onMouseDown={e => { e.preventDefault(); pick(area) }}
                             onMouseEnter={() => setHighlight(i)}
-                            style={{
-                                font: "inherit", border: "none", width: "100%", textAlign: "left", cursor: "pointer",
-                                padding: "8px 10px", borderRadius: 6, fontSize: 13.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                                background: i === highlight ? "var(--ag-grid-hover-bg)" : "transparent",
-                                color: "var(--theme-text)",
-                            }}
+                            className="w-full min-h-11 md:min-h-10 px-3 rounded-lg text-left text-sm theme-text truncate cursor-pointer"
+                            style={{ background: i === highlight ? "var(--ag-grid-hover-bg)" : "transparent" }}
                         >
                             {area}
                         </button>

@@ -4,6 +4,10 @@ import { LogOut, Mail, ShieldCheck, Palette, Navigation, Bell, ListChecks, Calen
 import { useEffect, useState } from "react"
 import { useTheme } from "@/contexts/themeContext"
 import Avatar from "@/components/Avatar.tsx"
+import Button from "@/components/ui/Button"
+import Toggle from "@/components/ui/Toggle"
+import { useDiscardGuard } from "@/lib/useDiscardGuard"
+import { fieldErrorClass, focusRing, helperClass, inputClass, typeH1, typeH2 } from "@/lib/uiClasses"
 import {
     getPushPreferences, getPushState, setPushPreferences, subscribeToPush, syncPushSubscription,
     unsubscribeFromPush, type PushCategory, type PushPreferences, type PushState,
@@ -19,36 +23,6 @@ const PUSH_CATEGORY_ROWS: { key: PushCategory; label: string; description: strin
     { key: "event_reminder",   label: "Competition events", description: "The evening before and morning of each event",      icon: Milestone },
 ]
 
-function Switch({ checked, disabled, onClick, label }: {
-    checked: boolean
-    disabled?: boolean
-    onClick: () => void
-    label?: string
-}) {
-    return (
-        <button
-            role="switch"
-            aria-checked={checked}
-            aria-label={label}
-            disabled={disabled}
-            onClick={onClick}
-            className="relative shrink-0 w-11 h-6 rounded-full transition-colors duration-200 disabled:opacity-40"
-            style={{
-                background: checked
-                    ? "var(--theme-button-bg, #3b82f6)"
-                    : "var(--theme-border)",
-            }}
-        >
-            <span
-                className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
-                style={{ transform: checked ? "translateX(20px)" : "translateX(0)" }}
-            />
-        </button>
-    )
-}
-
-const Divider = () => <div style={{ height: "1px", background: "var(--theme-border)" }} />
-
 function getNavTextPref(): boolean {
     const stored = localStorage.getItem(NAV_TEXT_KEY)
     return stored === null ? true : stored === "true"
@@ -61,6 +35,8 @@ export default function SettingPage() {
     const [nameDraft, setNameDraft] = useState("")
     const [nameSaving, setNameSaving] = useState(false)
     const [nameError, setNameError] = useState<string | null>(null)
+    // Dirty while the inline name field holds something other than the saved name.
+    const confirmDiscard = useDiscardGuard(editingName && nameDraft !== user.display_name)
     const { theme, setTheme } = useTheme()
     const [showNavText, setShowNavTextState] = useState<boolean>(getNavTextPref)
     const [pushState, setPushState] = useState<PushState>("unsubscribed")
@@ -85,7 +61,7 @@ export default function SettingPage() {
             setPrefs(await setPushPreferences({ [key]: !previous[key] }))
         } catch (e) {
             setPrefs(previous)
-            setPrefsError(e instanceof Error ? e.message : "Something went wrong")
+            setPrefsError(e instanceof Error ? e.message : "Couldn't save notification preferences")
         }
     }
 
@@ -118,12 +94,12 @@ export default function SettingPage() {
                 const data = await res.json().catch(() => ({}))
                 // Pydantic validation errors come back as a list of {msg}.
                 const detail = Array.isArray(data?.detail) ? data.detail[0]?.msg : data?.detail
-                throw new Error(detail ?? "Something went wrong")
+                throw new Error(detail ?? "Couldn't save your name")
             }
             await refreshUser()
             setEditingName(false)
         } catch (e) {
-            setNameError(e instanceof Error ? e.message : "Something went wrong")
+            setNameError(e instanceof Error ? e.message : "Couldn't save your name")
         } finally {
             setNameSaving(false)
         }
@@ -147,7 +123,7 @@ export default function SettingPage() {
                 setPushState("subscribed")
             }
         } catch (e) {
-            setPushError(e instanceof Error ? e.message : "Something went wrong")
+            setPushError(e instanceof Error ? e.message : "Couldn't change push notifications")
             setPushState(await getPushState())
         } finally {
             setPushBusy(false)
@@ -158,21 +134,20 @@ export default function SettingPage() {
 
     return (
         <div className="max-w-lg mx-auto px-4 py-8 flex flex-col gap-8">
-            <h1 className="text-xl font-bold theme-text">Settings</h1>
+            <h1 className={`${typeH1} theme-h1-color`}>Settings</h1>
 
             {/* Account Section */}
-            <section className="flex flex-col gap-3">
-                <h2 className="text-xs font-semibold uppercase tracking-widest theme-subtext-color px-1">Account</h2>
+            <section className="rounded-xl border theme-border theme-bg overflow-hidden divide-y divide-[var(--theme-border)]">
+                <h2 className={`${typeH2} theme-subtext-color px-4 py-3`}>Account</h2>
 
                 <div
-                    className="rounded-xl border p-5 flex items-center gap-4"
-                    style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
+                    className="p-5 flex items-center gap-4"
                 >
                     <Avatar name={user.name} picture={user.picture} size={64} />
                     <div className="min-w-0 flex-1">
                         {editingName ? (
                             <div className="flex flex-col gap-1.5">
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
                                     <input
                                         autoFocus
                                         value={nameDraft}
@@ -182,50 +157,51 @@ export default function SettingPage() {
                                         onChange={e => setNameDraft(e.target.value)}
                                         onKeyDown={e => {
                                             if (e.key === "Enter") void saveName()
-                                            if (e.key === "Escape") setEditingName(false)
+                                            if (e.key === "Escape") void confirmDiscard().then(ok => { if (ok) setEditingName(false) })
                                         }}
-                                        className="min-w-0 flex-1 rounded-lg border px-2.5 py-1 text-sm theme-border theme-bg theme-text"
+                                        className={`min-w-0 flex-1 ${inputClass}`}
                                     />
-                                    <button
+                                    <Button
                                         onClick={() => void saveName()}
                                         disabled={nameSaving}
-                                        className="rounded-lg border px-3 py-1 text-xs font-semibold theme-text-contrast theme-border transition-opacity hover:opacity-80 disabled:opacity-40"
-                                        style={{ background: "color-mix(in oklch, var(--theme-button-bg) 80%, transparent)" }}
+                                        className="px-3"
                                     >
                                         {nameSaving ? "Saving…" : "Save"}
-                                    </button>
-                                    <button
-                                        onClick={() => setEditingName(false)}
+                                    </Button>
+                                    <Button
+                                        variant="outlined"
+                                        onClick={() => void confirmDiscard().then(ok => { if (ok) setEditingName(false) })}
                                         disabled={nameSaving}
-                                        className="rounded-lg border px-3 py-1 text-xs font-medium theme-subtext-color theme-border transition-opacity hover:opacity-70"
+                                        className="px-3"
                                     >
                                         Cancel
-                                    </button>
+                                    </Button>
                                 </div>
-                                {nameError && <p className="text-xs text-red-500">{nameError}</p>}
+                                {nameError && <p className={fieldErrorClass}>{nameError}</p>}
                             </div>
                         ) : (
                             <div className="flex items-center gap-2 min-w-0">
                                 <p className="text-lg font-semibold theme-text truncate">{user.display_name}</p>
-                                <button
+                                <Button
+                                    variant="icon"
                                     onClick={startEditingName}
                                     aria-label="Edit display name"
                                     title="Edit display name"
-                                    className="shrink-0 theme-subtext-color hover:opacity-70 transition-opacity"
+                                    className="shrink-0 -my-2"
                                 >
                                     <Pencil size={14} />
-                                </button>
+                                </Button>
                             </div>
                         )}
                         {user.name !== user.display_name && (
                             <p className="text-xs theme-subtext-color truncate">{user.name}</p>
                         )}
                         <div className="flex items-center gap-1.5 mt-1">
-                            <Mail size={12} className="theme-subtext-color shrink-0" />
+                            <Mail size={14} className="theme-subtext-color shrink-0" />
                             <p className="text-sm theme-subtext-color truncate">{user.email}</p>
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
-                            <ShieldCheck size={12} className="theme-text-contrast shrink-0 opacity-80" />
+                            <ShieldCheck size={14} className="theme-text-contrast shrink-0 opacity-80" />
                             <p className="text-sm theme-text-contrast opacity-80 truncate">
                                 {(getPerm(user.permissions, "label") as string | undefined) ?? user.role}
                             </p>
@@ -233,30 +209,23 @@ export default function SettingPage() {
                     </div>
                 </div>
 
-                <div
-                    className="rounded-xl border overflow-hidden"
-                    style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
+                <Button
+                    variant="danger"
+                    onClick={() => void logout()}
+                    className="w-full justify-start gap-3 px-4 rounded-none"
                 >
-                    <button
-                        onClick={() => void logout()}
-                        className="w-full flex items-center gap-3 px-5 py-3.5 text-sm font-medium text-red-500 hover:opacity-80 transition-opacity"
-                    >
-                        <LogOut size={16} />
-                        Sign out
-                    </button>
-                </div>
+                    <LogOut size={16} />
+                    Sign out
+                </Button>
             </section>
 
             {/* Appearance Section */}
-            <section className="flex flex-col gap-3">
-                <h2 className="text-xs font-semibold uppercase tracking-widest theme-subtext-color px-1">Appearance</h2>
+            <section className="rounded-xl border theme-border theme-bg overflow-hidden divide-y divide-[var(--theme-border)]">
+                <h2 className={`${typeH2} theme-subtext-color px-4 py-3`}>Appearance</h2>
 
-                <div
-                    className="rounded-xl border overflow-hidden"
-                    style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
-                >
+                <div className="divide-y divide-[var(--theme-border)]">
                     {/* Theme Row */}
-                    <div className="flex items-center justify-between px-5 py-3.5 gap-4">
+                    <div className="flex flex-wrap items-center justify-between px-4 py-3 gap-x-4 gap-y-3">
                         <div className="flex items-center gap-3">
                             <Palette size={16} className="theme-subtext-color shrink-0" />
                             <div>
@@ -272,13 +241,14 @@ export default function SettingPage() {
                                 <button
                                     key={year}
                                     onClick={() => setTheme(`theme-${year}`)}
-                                    className="px-3 py-1 rounded-md text-xs font-medium transition-all"
+                                    aria-pressed={activeYear === year}
+                                    className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${focusRing}`}
                                     style={
                                         activeYear === year
                                             ? {
                                                 background: "var(--theme-bg)",
                                                 color: "var(--theme-text)",
-                                                boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
+                                                boxShadow: "0 0 0 1px var(--theme-outline)",
                                             }
                                             : { color: "var(--theme-text)", opacity: 0.5 }
                                     }
@@ -289,10 +259,8 @@ export default function SettingPage() {
                         </div>
                     </div>
 
-                    <Divider />
-
                     {/* Nav Labels Row */}
-                    <div className="flex items-center justify-between px-5 py-3.5 gap-4">
+                    <div className="flex items-center justify-between px-4 py-3 gap-4">
                         <div className="flex items-center gap-3">
                             <Navigation size={16} className="theme-subtext-color shrink-0" />
                             <div>
@@ -300,20 +268,17 @@ export default function SettingPage() {
                                 <p className="text-xs theme-subtext-color">Show text labels on mobile nav</p>
                             </div>
                         </div>
-                        <Switch label="Nav labels" checked={showNavText} onClick={() => setShowNavText(!showNavText)} />
+                        <Toggle aria-label="Nav labels" checked={showNavText} onChange={setShowNavText} />
                     </div>
                 </div>
             </section>
 
             {/* Notifications Section */}
-            <section className="flex flex-col gap-3">
-                <h2 className="text-xs font-semibold uppercase tracking-widest theme-subtext-color px-1">Notifications</h2>
+            <section className="rounded-xl border theme-border theme-bg overflow-hidden divide-y divide-[var(--theme-border)]">
+                <h2 className={`${typeH2} theme-subtext-color px-4 py-3`}>Notifications</h2>
 
-                <div
-                    className="rounded-xl border overflow-hidden"
-                    style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
-                >
-                    <div className="flex items-center justify-between px-5 py-3.5 gap-4">
+                <div className="divide-y divide-[var(--theme-border)]">
+                    <div className="flex items-center justify-between px-4 py-3 gap-4">
                         <div className="flex items-center gap-3">
                             <Bell size={16} className="theme-subtext-color shrink-0" />
                             <div>
@@ -327,22 +292,21 @@ export default function SettingPage() {
                                 </p>
                             </div>
                         </div>
-                        <Switch
-                            label="Push notifications"
+                        <Toggle
+                            aria-label="Push notifications"
                             checked={pushState === "subscribed"}
                             disabled={pushBusy || pushState === "unsupported" || pushState === "denied"}
-                            onClick={() => void togglePush()}
+                            onChange={() => void togglePush()}
                         />
                     </div>
 
                     {pushError && (
-                        <p className="px-5 pb-3.5 text-xs text-red-500">{pushError}</p>
+                        <p className={`px-4 py-3 ${fieldErrorClass}`}>{pushError}</p>
                     )}
 
                     {pushState === "subscribed" && (
                         <>
-                            <Divider />
-                            <div className="flex items-center gap-3 px-5 py-3.5">
+                            <div className="flex items-center gap-3 px-4 py-3">
                                 <Megaphone size={16} className="theme-subtext-color shrink-0" />
                                 <div>
                                     <p className="text-sm font-medium theme-text">Team announcements</p>
@@ -350,33 +314,30 @@ export default function SettingPage() {
                                 </div>
                             </div>
                             {PUSH_CATEGORY_ROWS.map(({ key, label, description, icon: Icon }) => (
-                                <div key={key}>
-                                    <Divider />
-                                    <div className="flex items-center justify-between px-5 py-3.5 gap-4">
-                                        <div className="flex items-center gap-3">
-                                            <Icon size={16} className="theme-subtext-color shrink-0" />
-                                            <div>
-                                                <p className="text-sm font-medium theme-text">{label}</p>
-                                                <p className="text-xs theme-subtext-color">{description}</p>
-                                            </div>
+                                <div key={key} className="flex items-center justify-between px-4 py-3 gap-4">
+                                    <div className="flex items-center gap-3">
+                                        <Icon size={16} className="theme-subtext-color shrink-0" />
+                                        <div>
+                                            <p className="text-sm font-medium theme-text">{label}</p>
+                                            <p className="text-xs theme-subtext-color">{description}</p>
                                         </div>
-                                        <Switch
-                                            label={label}
-                                            checked={prefs?.[key] ?? true}
-                                            disabled={!prefs}
-                                            onClick={() => void toggleCategory(key)}
-                                        />
                                     </div>
+                                    <Toggle
+                                        aria-label={label}
+                                        checked={prefs?.[key] ?? true}
+                                        disabled={!prefs}
+                                        onChange={() => void toggleCategory(key)}
+                                    />
                                 </div>
                             ))}
                             {prefsError && (
-                                <p className="px-5 pb-3.5 text-xs text-red-500">{prefsError}</p>
+                                <p className={`px-4 py-3 ${fieldErrorClass}`}>{prefsError}</p>
                             )}
                         </>
                     )}
                 </div>
                 {pushState === "subscribed" && (
-                    <p className="text-xs theme-subtext-color px-1">
+                    <p className={`${helperClass} px-4 py-3`}>
                         These choices apply to every device you've turned push on for.
                     </p>
                 )}

@@ -46,8 +46,25 @@ Bold values fail their target.
 - **We keep season palettes rather than adopting M3 tonal roles.** The seasons are the
   product's identity, and a full tonal scale would add dozens of unused tokens.
 
-## Migration
+## Data-identity colours (the one exception to "roles only")
 
-- Replace the two `DANGER_RED` constants: `src/lib/taskFormat.ts:8`, `src/pages/DashboardPage.tsx:19`.
-- Replace Tailwind palette reds and other palette classes (`rg "text-red-|bg-red-" src`).
-- Move input and checkbox boundaries from `theme-border` to `--theme-outline`.
+A few colours carry meaning that a season role cannot: swapping them per season would make
+the data lie. They stay literal, each with a comment at its definition, and are the only
+literal colours allowed in components:
+
+| Colour | Where | Why it is exempt |
+|---|---|---|
+| FRC alliance red `#ef4444` and blue `#3b82f6` | `CompPage.tsx`, `EventHubPage.tsx` | Red and blue alliances are the competition's own identity; the season palettes must not recolour them. |
+| Match and Nexus status (`#22c55e` good, `#f59e0b` warn, `#3b82f6` info) | `CompPage.tsx` | Mirror the status words of an external feed; no role means "good" or "warn". |
+| Push delivery status (`#16a34a`, `#d97706`) | `PushNotificationsPage.tsx` | Delivered / partial are data states with no matching role. |
+| Task priority `med` / `low`, avatar swatches and quick-filter dots | `taskFormat.ts`, `TasksPageDesktop.tsx` | Categorical colours that tell tasks and people apart; they must stay stable across seasons. `high` and `critical` use `--theme-danger`. |
+| Google brand button (white fill, `#1f1f1f` ink, four-colour G) | `LoginShared.tsx` | Google's sign-in branding rules require it. |
+
+Rules: never use a data-identity colour for chrome, text, or a state that a role can express;
+pair it with a label or icon (colour alone never carries meaning); and any new exemption is
+added to this table in the change that introduces it.
+
+## Remaining debt
+
+- `src/contexts/AuthProvider.ts` renders a hard-coded fatal-error screen (`#dc2626`, fixed greys) before the theme exists, so it cannot use roles.
+- `src/contexts/themeProvider.tsx` sets `<meta name="theme-color">` from literal hex per season; browser chrome cannot read CSS variables.

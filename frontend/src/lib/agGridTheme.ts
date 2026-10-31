@@ -45,7 +45,7 @@ const seasonalGridTheme = themeQuartz.withParams({
     // border, so the wrapper stays borderless & square to blend seamlessly.
     wrapperBorder:              false,
     wrapperBorderRadius:        0,
-    borderRadius:               6,
+    borderRadius:               8,
     fontFamily:                 "inherit",
     fontSize:                   13,
     headerFontSize:             13,

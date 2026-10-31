@@ -59,8 +59,8 @@ and snaps at once.
 - **No page transitions.** The shell stays still and only the outlet changes, which already reads
   as continuous. Transitions would slow a heavily used tab bar.
 
-## Migration
+## Remaining debt
 
-- Add the reduced-motion rule and the `TimeWheel` momentum check (`TimeWheel.tsx:131`).
-- Add enter and exit animation to `EventEditSheet.tsx`, `MembersPage.tsx:808` and `TasksPageMobile.tsx:943`, which appear instantly today.
-- Normalize the login sheet's 0.38s (`LoginPageMobile.tsx:263`) to 340ms.
+The reduced-motion rule is in `index.css`; sheets, dialogs and scrims animate in and out; the login sheet uses 340ms. What is left:
+
+- `TimeWheel.tsx` drives its momentum scroll in JavaScript, so the CSS reduced-motion rule does not reach it. It should snap without momentum under `prefers-reduced-motion`.

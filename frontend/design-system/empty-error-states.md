@@ -44,10 +44,10 @@ Danger notice: `rounded-lg border`, `--theme-danger` text and border,
   app needs a success message that stays.
 - **Icons accompany all error color,** because color alone fails WCAG 1.4.1.
 
-## Migration
+## Remaining debt
 
-- Standardize copy on "Couldn't…" (`AttendancePage.tsx:158`, `SettingPage.tsx:88`, `MeetingHoursEditor.tsx:167`, `NotificationDetailPage.tsx:127`, and the Tasks pages).
-- Stop showing `err.message` for network failures (`TasksPageMobile.tsx:829`).
-- Add retry: `EventTasksPage.tsx:144`.
-- Extract `EmptyState` and `Notice`, replacing `EmptyCard` (`EventTasksPage.tsx:253`) and `PageState` (`CompPage.tsx:456`).
-- Add a shared Snackbar. `UpdatePrompt.tsx:36` is the position reference.
+- Retry buttons: only `PushNotificationsPage.tsx` has one. `EventTasksPage.tsx` ("Refresh to try again"), `AttendancePage.tsx`, `ScoutingPage.tsx`, `MembersPage.tsx` and the Tasks pages show a notice with no retry. A retry is a new action, so it needs its own change.
+- Snackbar: there is no shared one. Success and failure of background actions still appear inline. `UpdatePrompt.tsx` (z-110) is the position reference.
+- Offline banner: nothing tells the user they are offline beyond failed requests. Not built.
+- Raw `err.message` where the thrown error carries no `.status`, so `failMessage` (`taskFormat.ts`) cannot tell a server detail from a network failure. The server's `detail` is shown correctly, but a network failure shows the browser's text ("Failed to fetch"): `OnboardingPageRouter.tsx` (profile save), `NotificationDetailPage.tsx` (save notice), `PushNotificationsPage.tsx` (send), `SettingPage.tsx` (three saves). Fix by attaching `.status` in those fetch paths, as `tasksApi.ts` and `eventApi.ts` do.
+- Internal `new Error("Couldn't ...")` messages in `AttendancePage.tsx` and `ScoutingPage.tsx` are swallowed by their `catch` blocks and never shown.

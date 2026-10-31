@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom"
 import { Compass } from "lucide-react"
+import { buttonClass } from "@/lib/uiClasses"
 import {useAppReady} from "@/contexts/appReadyContext";
 import {useEffect} from "react";
 
@@ -27,7 +28,7 @@ export default function NotFoundPage() {
 
             <Link
                 to="/dashboard"
-                className="mt-2 inline-flex items-center theme-text-contrast theme-bg gap-1 font-bold rounded-lg px-4 py-2.5 text-sm transition-opacity hover:opacity-90"
+                className={buttonClass({ className: "mt-2" })}
             >
                 Back to dashboard
             </Link>

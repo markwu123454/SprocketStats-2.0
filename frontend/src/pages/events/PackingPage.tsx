@@ -7,8 +7,11 @@ import { patchEventContent, type Instruction, type PackingCategory } from "@/lib
 import { cleanStrings, saveErrorMessage, validateInstruction, validatePackingCategory } from "@/lib/eventContent"
 import PackingCategoryEditor from "@/components/events/PackingCategoryEditor"
 import InstructionEditor from "@/components/events/InstructionEditor"
+import Button from "@/components/ui/Button"
+import Checkbox from "@/components/ui/Checkbox"
+import { confirmDialog } from "@/lib/confirmDialog"
+import { typeH2 } from "@/lib/uiClasses"
 
-const addButtonClass = "inline-flex items-center gap-1.5 self-start rounded-lg border theme-border theme-bg theme-text-contrast text-sm font-semibold px-3 py-2 min-h-11 hover:opacity-90 transition-opacity outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
 const cardStyle = { background: "var(--theme-bg)", borderColor: "var(--theme-border)" }
 
 // Only one thing on the page — a category or an instruction, existing or
@@ -74,7 +77,7 @@ export default function PackingPage() {
     }
 
     async function handleDeleteCategory(name: string) {
-        if (!window.confirm(`Delete the "${name}" category? This can't be undone.`)) return
+        if (!await confirmDialog({ title: "Delete this category?", body: `Delete the "${name}" category? This can't be undone.`, confirmLabel: "Delete", danger: true })) return
         setSaving(true)
         setSaveError(null)
         try {
@@ -114,7 +117,7 @@ export default function PackingPage() {
     }
 
     async function handleDeleteInstruction(index: number) {
-        if (!window.confirm("Delete this instruction? This can't be undone.")) return
+        if (!await confirmDialog({ title: "Delete this instruction?", body: "This can't be undone.", confirmLabel: "Delete", danger: true })) return
         setSaving(true)
         setSaveError(null)
         try {
@@ -134,21 +137,18 @@ export default function PackingPage() {
         <div className="max-w-xl mx-auto px-4 py-6 flex flex-col gap-8">
 
             {/* Packing list */}
-            <section className="flex flex-col gap-3">
-                <h2
-                    className="text-[11px] font-bold tracking-wider uppercase"
-                    style={{ color: "var(--theme-subtext-color)" }}
-                >
+            <section className="flex flex-col rounded-xl border" style={cardStyle}>
+                <h2 className={`${typeH2} theme-subtext-color px-4 pt-3 pb-2`}>
                     Packing List
                 </h2>
                 {hasPacking ? (
-                    <div className="flex flex-col gap-3">
+                    <div className="flex flex-col">
                         {info!.packing_list!.map(({ category, items }) => {
                             const isEditingThis = editing?.kind === "category" && editing.name === category
                             return (
                                 <div
                                     key={category}
-                                    className="rounded-xl border px-4 py-3"
+                                    className="border-t px-4 py-3"
                                     style={cardStyle}
                                 >
                                     {isEditingThis ? (
@@ -168,14 +168,14 @@ export default function PackingPage() {
                                                     {category}
                                                 </h3>
                                                 {isEditor && editing === null && (
-                                                    <button
-                                                        type="button"
+                                                    <Button
+                                                        variant="icon"
                                                         aria-label={`Edit ${category}`}
                                                         onClick={() => setEditing({ kind: "category", name: category })}
-                                                        className="inline-flex items-center justify-center w-9 h-9 -my-1.5 -mr-1.5 shrink-0 opacity-50 hover:opacity-100 transition-opacity rounded-lg outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
+                                                        className="-my-2 -mr-2.5 shrink-0"
                                                     >
-                                                        <Pencil size={14} className="theme-subtext-color" />
-                                                    </button>
+                                                        <Pencil size={14} />
+                                                    </Button>
                                                 )}
                                             </div>
                                             <div className="flex flex-col gap-2">
@@ -184,20 +184,7 @@ export default function PackingPage() {
                                                     const done = checked.has(id)
                                                     return (
                                                         <label key={id} className="flex items-center gap-2.5 cursor-pointer">
-                                                            <input type="checkbox" checked={done} onChange={() => toggle(id)} className="sr-only" />
-                                                            <div
-                                                                className="w-4 h-4 rounded border shrink-0 flex items-center justify-center transition-colors"
-                                                                style={{
-                                                                    background:  done ? "var(--theme-text-contrast)" : "var(--theme-bg)",
-                                                                    borderColor: done ? "var(--theme-text-contrast)" : "var(--theme-border)",
-                                                                }}
-                                                            >
-                                                                {done && (
-                                                                    <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                                                                        <path d="M1 4l2.5 2.5L9 1" stroke="var(--theme-bg)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                                    </svg>
-                                                                )}
-                                                            </div>
+                                                            <Checkbox checked={done} onChange={() => toggle(id)} />
                                                             <span
                                                                 className="text-sm transition-opacity"
                                                                 style={{
@@ -220,7 +207,7 @@ export default function PackingPage() {
                     </div>
                 ) : (
                     <div
-                        className="rounded-xl border px-4 py-3 text-sm"
+                        className="border-t px-4 py-3 text-sm"
                         style={{ ...cardStyle, color: "var(--theme-subtext-color)" }}
                     >
                         Packing list not yet posted.
@@ -228,14 +215,14 @@ export default function PackingPage() {
                 )}
 
                 {isEditor && editing === null && (
-                    <button type="button" onClick={() => setEditing({ kind: "category", name: null })} className={addButtonClass}>
+                    <Button variant="outlined" className="self-start mx-4 mb-4 mt-3" onClick={() => setEditing({ kind: "category", name: null })}>
                         <Plus size={15} />
                         Add category
-                    </button>
+                    </Button>
                 )}
 
                 {isEditor && editing?.kind === "category" && editing.name === null && (
-                    <div className="rounded-xl border px-4 py-3" style={cardStyle}>
+                    <div className="border-t px-4 py-3" style={cardStyle}>
                         <PackingCategoryEditor
                             category=""
                             items={[]}
@@ -249,19 +236,16 @@ export default function PackingPage() {
             </section>
 
             {/* Instructions */}
-            <section className="flex flex-col gap-3">
-                <h2
-                    className="text-[11px] font-bold tracking-wider uppercase"
-                    style={{ color: "var(--theme-subtext-color)" }}
-                >
+            <section className="flex flex-col rounded-xl border" style={cardStyle}>
+                <h2 className={`${typeH2} theme-subtext-color px-4 pt-3 pb-2`}>
                     Instructions
                 </h2>
                 {hasInstructions ? (
-                    <div className="flex flex-col gap-4">
+                    <div className="flex flex-col">
                         {info!.instructions!.map((instr, idx) => {
                             const isEditingThis = editing?.kind === "instruction" && editing.index === idx
                             return (
-                                <div key={idx}>
+                                <div key={idx} className="border-t px-4 py-3" style={cardStyle}>
                                     {isEditingThis ? (
                                         <InstructionEditor
                                             heading={instr.heading}
@@ -279,14 +263,14 @@ export default function PackingPage() {
                                                     {instr.heading}
                                                 </h3>
                                                 {isEditor && editing === null && (
-                                                    <button
-                                                        type="button"
+                                                    <Button
+                                                        variant="icon"
                                                         aria-label={`Edit ${instr.heading}`}
                                                         onClick={() => setEditing({ kind: "instruction", index: idx })}
-                                                        className="inline-flex items-center justify-center w-9 h-9 -my-1.5 -mr-1.5 shrink-0 opacity-50 hover:opacity-100 transition-opacity rounded-lg outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
+                                                        className="-my-2 -mr-2.5 shrink-0"
                                                     >
-                                                        <Pencil size={14} className="theme-subtext-color" />
-                                                    </button>
+                                                        <Pencil size={14} />
+                                                    </Button>
                                                 )}
                                             </div>
                                             <p className="text-sm leading-relaxed" style={{ color: "var(--theme-subtext-color)" }}>
@@ -300,7 +284,7 @@ export default function PackingPage() {
                     </div>
                 ) : (
                     <div
-                        className="rounded-xl border px-4 py-3 text-sm"
+                        className="border-t px-4 py-3 text-sm"
                         style={{ ...cardStyle, color: "var(--theme-subtext-color)" }}
                     >
                         Instructions not yet posted.
@@ -308,21 +292,23 @@ export default function PackingPage() {
                 )}
 
                 {isEditor && editing === null && (
-                    <button type="button" onClick={() => setEditing({ kind: "instruction", index: null })} className={addButtonClass}>
+                    <Button variant="outlined" className="self-start mx-4 mb-4 mt-3" onClick={() => setEditing({ kind: "instruction", index: null })}>
                         <Plus size={15} />
                         Add instruction
-                    </button>
+                    </Button>
                 )}
 
                 {isEditor && editing?.kind === "instruction" && editing.index === null && (
-                    <InstructionEditor
-                        heading=""
-                        body=""
-                        saving={saving}
-                        error={saveError}
-                        onCancel={stopEditing}
-                        onSave={(h, b) => void handleSaveInstruction(null, h, b)}
-                    />
+                    <div className="border-t px-4 py-3" style={cardStyle}>
+                        <InstructionEditor
+                            heading=""
+                            body=""
+                            saving={saving}
+                            error={saveError}
+                            onCancel={stopEditing}
+                            onSave={(h, b) => void handleSaveInstruction(null, h, b)}
+                        />
+                    </div>
                 )}
             </section>
         </div>

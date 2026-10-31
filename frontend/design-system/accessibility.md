@@ -50,14 +50,10 @@ The target is WCAG 2.2 AA in all three seasons, on web and mobile.
 Before merging UI work: tab through it, test at 360px and at 200% zoom, check all three seasons,
 run VoiceOver or TalkBack on sheets, and test with reduced motion on.
 
-## Migration
+## Remaining debt
 
-Priority order:
+The app has been migrated to this system (16px inputs and the zoom lock removed, 44px `Checkbox` target, `Toggle` with `role="switch"`, focus trapping in `Sheet` and `ConfirmDialog`, `--theme-outline` on control boundaries). What is left:
 
-1. `index.html:5`: remove `maximum-scale=1.0, user-scalable=no`, after 16px inputs land.
-2. `Checkbox.tsx:22`: the hit area is 16px; extend the input to 44px.
-3. `TimeWheel.tsx`: add keyboard support and `spinbutton` semantics; it has neither today.
-4. `TasksPageMobile.tsx:1123`: the toggle has no `role="switch"`, `aria-checked` or label.
-5. `TasksPageMobile.tsx:964`, `MembersPage.tsx:828`: 36px close buttons rise to 44px; `MembersPage.tsx:928` is smaller and has no `aria-label`.
-6. Add focus trapping to all modals. None has it today.
-7. Move control boundaries to `--theme-outline`.
+- `TimeWheel.tsx` has no keyboard support and no `spinbutton` semantics. Adding them changes its interaction model, which a styling pass may not do.
+- Tabs (`NotificationDetailPage.tsx`, `PushNotificationsPage.tsx` tab rows, `EventShell.tsx` tab links) have no arrow-key navigation or roving tabindex. Adding it is new behaviour.
+- `MembersPage.tsx` dense desktop grid buttons (`members-action`, 32px) and the `MeetingHoursEditor.tsx` / `AttendancePage.tsx` calendar day cells (38px) are below the 44px target. Growing them changes the fixed row and grid geometry; they are pointer-first desktop surfaces.

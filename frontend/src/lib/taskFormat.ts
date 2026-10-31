@@ -1,16 +1,16 @@
 import type { Person, Task, TaskPriority, TaskStatus } from "@/lib/tasksApi"
 
-// The one hardcoded color on this page: High priority / destructive actions.
-// The theme has no "danger" token (see .design-sync/conventions.md); the
-// design mockup's own reds (#f87171/#fca5a5) are tuned for the dark teal
-// season and fail contrast on the light 2026 cream, so every "danger" use
-// in the mockup is routed through this instead (see SPEC "Colors").
-export const DANGER_RED = "#dc2626"
-// A handful of hover accents below use "#dc2626"/"rgba(248,113,113,0.12)"
-// as literal strings inside Tailwind arbitrary-value classes (e.g.
-// `hover:text-[#dc2626]`) rather than interpolating DANGER_RED — Tailwind's
-// class scanner only sees literal text in source, not runtime template
-// values, so the class name has to be spelled out. Keep them in sync by hand.
+// Danger (High / Critical priority, overdue, destructive actions) is the
+// theme's `--theme-danger` role, so it follows the season. It's a CSS `var()`
+// string: fine as a style value and inside `color-mix` (see `tintColor`), but
+// never append an alpha suffix to it -- use `tintColor(DANGER_RED, pct)`.
+export const DANGER_RED = "var(--theme-danger)"
+
+/** Server detail written for people (a 4xx `detail`) is shown as-is; network failures and bare "HTTP n" fall back to our own copy. */
+export function failMessage(err: unknown, fallback: string): string {
+    if (err instanceof Error && typeof (err as Error & { status?: number }).status === "number" && !err.message.startsWith("HTTP ")) return err.message
+    return fallback
+}
 
 /** `color-mix(in oklch, var(--token) pct%, transparent)` — the design's own
  *  tint helper, used anywhere a themed color needs partial opacity without
@@ -26,10 +26,9 @@ export function tintColor(color: string, pct: number): string {
 }
 
 export const PRIORITY_ORDER: TaskPriority[] = ["critical", "high", "med", "low"]
-// Priority stripe / label colors. Medium and low are fixed pastel accents
-// (SPEC "Colors": "deliberate, theme-independent accents") — kept literal in
-// every season. High is folded into DANGER_RED rather than the mockup's own
-// #f87171 ("one red, not two").
+// Priority stripe / label colors. Medium and low are data-identity accents
+// with no matching theme role, so they stay literal in every season. High and
+// critical use the danger role.
 // Critical shares the danger red, but is drawn louder everywhere it appears
 // (filled badge, tinted row) -- see `CRITICAL_BADGE_STYLE`.
 export const PRIORITY_COLOR: Record<TaskPriority, string> = { critical: DANGER_RED, high: DANGER_RED, med: "#f5d547", low: "#45908d" }
@@ -38,7 +37,7 @@ export const PRIORITY_COLOR: Record<TaskPriority, string> = { critical: DANGER_R
 export const CRITICAL_BADGE_STYLE = {
     display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap",
     fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase",
-    background: DANGER_RED, color: "#fff", boxShadow: `0 0 0 3px ${tintColor(DANGER_RED, 22)}`,
+    background: DANGER_RED, color: "var(--theme-bg)", boxShadow: `0 0 0 3px ${tintColor(DANGER_RED, 22)}`,
 } as const
 
 /** Priorities a viewer may pick in a form. "critical" is leads-only; a

@@ -1,8 +1,11 @@
 import { useState } from "react"
-import { DANGER_RED, tintColor } from "@/lib/taskFormat"
+import Button from "@/components/ui/Button"
+import FormFooter from "@/components/ui/FormFooter"
+import Notice from "@/components/ui/Notice"
+import { useDiscardGuard, useIsDirty } from "@/lib/useDiscardGuard"
+import { fieldLabelClass, inputClass } from "@/lib/uiClasses"
 import { MAX_LONG_TEXT, MAX_SHORT_TEXT } from "@/lib/eventContent"
 
-const inputClass = "rounded-lg border theme-border theme-bg theme-text px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
 
 interface Props {
     /** The heading being edited, or "" for a brand-new instruction not yet saved. */
@@ -24,11 +27,12 @@ interface Props {
 export default function InstructionEditor({ heading, body, saving, error, onCancel, onSave, onDelete }: Props) {
     const [headingValue, setHeadingValue] = useState(heading)
     const [bodyValue, setBodyValue] = useState(body)
+    const confirmDiscard = useDiscardGuard(useIsDirty({ headingValue, bodyValue }))
 
     return (
         <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1">
-                <label htmlFor={`instruction-heading-${heading || "new"}`} className="text-sm font-semibold theme-text">Heading</label>
+                <label htmlFor={`instruction-heading-${heading || "new"}`} className={fieldLabelClass}>Heading</label>
                 <input
                     id={`instruction-heading-${heading || "new"}`}
                     type="text"
@@ -40,7 +44,7 @@ export default function InstructionEditor({ heading, body, saving, error, onCanc
             </div>
 
             <div className="flex flex-col gap-1">
-                <label htmlFor={`instruction-body-${heading || "new"}`} className="text-sm font-semibold theme-text">Body</label>
+                <label htmlFor={`instruction-body-${heading || "new"}`} className={fieldLabelClass}>Body</label>
                 <textarea
                     id={`instruction-body-${heading || "new"}`}
                     value={bodyValue}
@@ -51,48 +55,21 @@ export default function InstructionEditor({ heading, body, saving, error, onCanc
                 />
             </div>
 
-            {error && (
-                <p
-                    role="alert"
-                    className="text-sm rounded-lg border px-3 py-2"
-                    style={{ color: DANGER_RED, borderColor: tintColor(DANGER_RED, 40), background: tintColor(DANGER_RED, 10) }}
-                >
-                    {error}
-                </p>
-            )}
+            {error && <Notice>{error}</Notice>}
 
-            <div className="flex items-center justify-between gap-3">
-                {onDelete ? (
-                    <button
-                        type="button"
-                        onClick={onDelete}
-                        disabled={saving}
-                        className="text-sm font-semibold px-3 py-2 min-h-11 rounded-lg hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
-                        style={{ color: DANGER_RED }}
-                    >
+            <FormFooter className="-mx-4 -mb-3 rounded-b-xl">
+                {onDelete && (
+                    <Button variant="danger" size="footer" className="mr-auto" onClick={onDelete} disabled={saving}>
                         Delete
-                    </button>
-                ) : <span />}
-
-                <div className="flex items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={onCancel}
-                        disabled={saving}
-                        className="text-sm font-semibold theme-subtext-color px-3 py-2 min-h-11 rounded-lg hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => onSave(headingValue, bodyValue)}
-                        disabled={saving}
-                        className="rounded-lg border theme-bg theme-border theme-text-contrast text-sm font-semibold px-4 py-2 min-h-11 disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
-                    >
-                        {saving ? "Saving…" : "Save"}
-                    </button>
-                </div>
-            </div>
+                    </Button>
+                )}
+                <Button variant="text" size="footer" className="ml-auto" onClick={() => void confirmDiscard().then(ok => { if (ok) onCancel() })} disabled={saving}>
+                    Cancel
+                </Button>
+                <Button size="footer" onClick={() => onSave(headingValue, bodyValue)} disabled={saving}>
+                    {saving ? "Saving…" : "Save"}
+                </Button>
+            </FormFooter>
         </div>
     )
 }

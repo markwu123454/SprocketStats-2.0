@@ -3,6 +3,8 @@ import { ChevronRight, ShieldAlert } from "lucide-react"
 import { useOnboardedUser } from "@/contexts/authContext"
 import { visibleSections } from "@/lib/controlSections"
 import { useIsMobile } from "@/lib/useIsMobile"
+import EmptyState from "@/components/ui/EmptyState"
+import { focusRing } from "@/lib/uiClasses"
 
 /**
  * Control Panel landing (`/control`).
@@ -26,15 +28,14 @@ export default function ControlPanelHub() {
         return (
             <div className="max-w-4xl mx-auto px-4 py-6 flex flex-col gap-6">
                 <h1 className="text-2xl font-bold theme-h1-color">Control Panel</h1>
-                <div
-                    className="rounded-xl border p-8 flex flex-col items-center justify-center gap-3 min-h-48 text-center backdrop-blur-sm"
-                    style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
-                >
-                    <ShieldAlert size={32} className="theme-text-contrast opacity-60" />
-                    <p className="text-base font-medium theme-text">Nothing here yet</p>
-                    <p className="text-sm theme-subtext-color max-w-xs">
+                <div className="rounded-xl border min-h-48 flex flex-col justify-center backdrop-blur-sm theme-bg theme-border">
+                    <EmptyState
+                        variant="screen"
+                        icon={<ShieldAlert size={21} />}
+                        title="Nothing here yet"
+                    >
                         Your role doesn't have access to any Control Panel sections.
-                    </p>
+                    </EmptyState>
                 </div>
             </div>
         )
@@ -51,12 +52,11 @@ export default function ControlPanelHub() {
                     <Link
                         key={to}
                         to={to}
-                        className="flex items-center gap-4 rounded-xl border p-4 backdrop-blur-sm hover:opacity-90 transition-opacity"
-                        style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}
+                        className={`flex items-center gap-4 rounded-xl border p-4 backdrop-blur-sm hover:opacity-90 transition-opacity theme-bg theme-border ${focusRing}`}
                     >
                         <div className="flex items-center justify-center w-10 h-10 rounded-lg shrink-0"
                              style={{ background: "color-mix(in oklch, var(--theme-button-bg) 18%, transparent)" }}>
-                            <Icon size={20} className="theme-text-contrast" />
+                            <Icon size={21} className="theme-text-contrast" />
                         </div>
                         <span className="flex-1 text-base font-medium theme-text">{label}</span>
                         <ChevronRight size={18} className="theme-text opacity-40" />

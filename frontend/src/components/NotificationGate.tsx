@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react"
 import { ExternalLink } from "lucide-react"
 import { useAuth, useOnboardedUser } from "@/contexts/authContext"
+import Button from "@/components/ui/Button"
+import Notice from "@/components/ui/Notice"
+import { buttonClass, focusRing, typeTitle } from "@/lib/uiClasses"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -66,20 +69,29 @@ export default function NotificationGate() {
             if (!res.ok) throw new Error("respond")
             await refreshUser()
         } catch {
-            setError("Failed to submit your response. Please try again.")
+            setError("Couldn't submit your response. Please try again.")
         } finally {
             setSubmitting(false)
         }
     }
 
+    const titleId = "notification-gate-title"
+    const bodyId = "notification-gate-body"
+
     return (
+        // Required notice (modals.md): centred, z-100, deliberately not a Sheet so it can't be dismissed.
         <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-            style={{ background: "rgba(0,0,0,0.6)" }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
         >
-            <div className="w-full max-w-md rounded-2xl border p-6 flex flex-col gap-4 backdrop-blur-sm theme-bg theme-border">
-                <h2 className="text-lg font-semibold theme-text-contrast">{current.title}</h2>
-                <p className="text-sm theme-subtext-color leading-relaxed whitespace-pre-wrap">{current.body}</p>
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                aria-describedby={bodyId}
+                className="w-full max-w-md rounded-2xl border p-6 flex flex-col gap-4 theme-bg theme-border shadow-lg"
+            >
+                <h2 id={titleId} className={`${typeTitle} theme-h1-color`}>{current.title}</h2>
+                <p id={bodyId} className="text-sm theme-subtext-color leading-relaxed whitespace-pre-wrap">{current.body}</p>
 
                 {current.link && (
                     <a
@@ -87,8 +99,7 @@ export default function NotificationGate() {
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={() => setLinkOpened(true)}
-                        className="flex items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold theme-text-contrast theme-border transition-opacity hover:opacity-80"
-                        style={{ background: "color-mix(in oklch, var(--theme-button-bg) 80%, transparent)" }}
+                        className={buttonClass({ variant: "outlined" })}
                     >
                         <ExternalLink size={16} />
                         Open Link
@@ -96,21 +107,19 @@ export default function NotificationGate() {
                 )}
 
                 {hasOptions && (
-                    <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-2" role={current.response_mode === "multi" ? "group" : "radiogroup"} aria-labelledby={titleId}>
                         {current.response_options.map(option => {
                             const active = selected.includes(option)
                             return (
                                 <button
                                     key={option}
+                                    type="button"
                                     disabled={gated}
                                     onClick={() => toggleOption(option)}
-                                    className="rounded-lg border px-4 py-2 text-sm font-medium text-left transition-opacity theme-border"
-                                    style={{
-                                        opacity: gated ? 0.4 : 1,
-                                        cursor: gated ? "not-allowed" : "pointer",
-                                        background: active ? "color-mix(in oklch, var(--theme-button-bg) 80%, transparent)" : "transparent",
-                                        color: active ? "var(--theme-text-contrast)" : "var(--theme-text)",
-                                    }}
+                                    role={current.response_mode === "multi" ? undefined : "radio"}
+                                    aria-checked={current.response_mode === "multi" ? undefined : active}
+                                    aria-pressed={current.response_mode === "multi" ? active : undefined}
+                                    className={`rounded-lg border px-4 min-h-12 md:min-h-10 text-sm font-medium text-left transition-opacity disabled:opacity-40 disabled:cursor-not-allowed ${focusRing} ${active ? "theme-accent-fill theme-border" : "bg-transparent theme-text theme-outline"}`}
                                 >
                                     {option}
                                 </button>
@@ -119,34 +128,27 @@ export default function NotificationGate() {
                     </div>
                 )}
 
-                {error && (
-                    <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
-                       style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
-                        {error}
-                    </p>
-                )}
+                {error && <Notice>{error}</Notice>}
 
-                <div className="flex gap-2 pt-1">
+                <div className="flex items-center gap-2 pt-1">
                     {!current.hard_block && (
-                        <button
+                        <Button
+                            variant="text"
+                            size="footer"
                             onClick={() => current && setSkippedIds(prev => new Set(prev).add(current.id))}
-                            className="mr-auto rounded-lg px-4 py-2 text-sm font-medium theme-subtext-color transition-opacity hover:opacity-70"
+                            className="mr-auto"
                         >
                             Later
-                        </button>
+                        </Button>
                     )}
-                    <button
+                    <Button
+                        size="footer"
                         onClick={() => void submit(hasOptions ? selected : [])}
                         disabled={!canSubmit || submitting}
-                        className="rounded-lg border px-4 py-2 text-sm font-semibold transition-opacity theme-text-contrast theme-border"
-                        style={{
-                            background: "color-mix(in oklch, var(--theme-button-bg) 80%, transparent)",
-                            opacity: canSubmit && !submitting ? 1 : 0.35,
-                            cursor: canSubmit && !submitting ? "pointer" : "not-allowed",
-                        }}
+                        className="ml-auto"
                     >
                         {submitting ? "Submitting…" : hasOptions ? "Submit" : "Got it"}
-                    </button>
+                    </Button>
                 </div>
             </div>
         </div>

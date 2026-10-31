@@ -13,21 +13,12 @@ import {
 } from "@/lib/eventApi"
 import { formatUnix, getAlliance, matchLabel, nextMatchFor, TEAM_KEY } from "@/lib/eventMatches"
 import { validatePhone } from "@/lib/rosterRoles"
-import { DANGER_RED, tintColor } from "@/lib/taskFormat"
+import { useDiscardGuard } from "@/lib/useDiscardGuard"
+import Button from "@/components/ui/Button"
+import Notice from "@/components/ui/Notice"
+import { buttonClass, fieldErrorClass, fieldLabelClass, helperClass, inputClass, typeH2, typeTitle } from "@/lib/uiClasses"
 
 const cardStyle = { background: "var(--theme-bg)", borderColor: "var(--theme-border)" }
-
-// Primary CTA per DESIGN_SYSTEM.md §3.1: `theme-bg` fill (not the
-// accent-filled `theme-text-contrast` background some older pages use),
-// `theme-border`, `theme-text-contrast` label, radius-surface, >=44px tall.
-const primaryButtonClass =
-    "theme-bg border theme-border theme-text-contrast rounded-xl text-sm font-semibold h-11 px-4 " +
-    "inline-flex items-center justify-center gap-2 outline-none focus:ring-2 transition-opacity " +
-    "disabled:opacity-40 disabled:cursor-not-allowed"
-
-const ghostButtonClass =
-    "h-11 px-2 rounded-lg text-sm theme-subtext-color hover:underline outline-none focus:ring-2 " +
-    "disabled:opacity-40 disabled:cursor-not-allowed"
 
 interface ActiveEventCardProps {
     active: ResolvedEvent
@@ -57,6 +48,8 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
     const [phoneError, setPhoneError] = useState<string | null>(null)
     const [checkingIn, setCheckingIn] = useState(false)
     const [checkInError, setCheckInError] = useState<string | null>(null)
+    // Only the typed phone number counts as an edit; role and days start from sensible defaults.
+    const confirmDiscard = useDiscardGuard(showForm && phone !== "")
 
     const eventDayList = eventDays(active)
 
@@ -163,17 +156,17 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div className="min-w-0">
                     <span
-                        className="text-[10px] font-bold tracking-wider uppercase block mb-0.5"
+                        className={`${typeH2} block mb-0.5`}
                         style={{ color: STATUS_META.current.color }}
                     >
                         {headerLabel}
                     </span>
-                    <p className="text-base font-bold theme-text truncate">{active.name}</p>
+                    <p className={`${typeTitle} theme-text truncate`}>{active.name}</p>
                     <p className="text-sm theme-subtext-color mt-0.5">{active.dateLabel} · {active.location}</p>
                 </div>
 
                 {hasHub && !showForm && (
-                    <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex flex-wrap items-center gap-3 sm:shrink-0">
                         {checkedIn || !promptOn ? (
                             <>
                                 {checkInOn && checkedIn && (
@@ -183,33 +176,23 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                                     </span>
                                 )}
                                 {showMatches ? (
-                                    <Link to={`/events/${eventKey}/comp`} className={primaryButtonClass}>
+                                    <Link to={`/events/${eventKey}/comp`} className={buttonClass()}>
                                         Go to matches
                                     </Link>
                                 ) : hasPage ? (
-                                    <Link to={`/events/${eventKey}`} className={primaryButtonClass}>
+                                    <Link to={`/events/${eventKey}`} className={buttonClass()}>
                                         View event
                                     </Link>
                                 ) : null}
                             </>
                         ) : (
                             <>
-                                <button
-                                    type="button"
-                                    onClick={() => changeDismissed(true)}
-                                    disabled={checkedIn === null}
-                                    className={ghostButtonClass}
-                                >
+                                <Button variant="text" onClick={() => changeDismissed(true)} disabled={checkedIn === null}>
                                     Dismiss
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowForm(true)}
-                                    disabled={checkedIn === null}
-                                    className={primaryButtonClass}
-                                >
+                                </Button>
+                                <Button onClick={() => setShowForm(true)} disabled={checkedIn === null}>
                                     Check in
-                                </button>
+                                </Button>
                             </>
                         )}
                     </div>
@@ -222,13 +205,13 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                         (see Dropdown.d.ts) -- role="group" + aria-labelledby is
                         the documented way to associate a label with it instead. */}
                     <div className="flex flex-col gap-1" role="group" aria-labelledby="checkin-role-label">
-                        <label id="checkin-role-label" className="text-sm font-semibold theme-text">Role</label>
+                        <label id="checkin-role-label" className={fieldLabelClass}>Role</label>
                         <Dropdown
                             value={role}
                             options={roleOptions}
                             onChange={setRole}
                             disabled={checkingIn}
-                            triggerClassName="rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-border theme-text"
+                            triggerClassName={inputClass}
                         />
                     </div>
 
@@ -242,7 +225,7 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                     />
 
                     <div className="flex flex-col gap-1">
-                        <label htmlFor="checkin-phone" className="text-sm font-semibold theme-text">
+                        <label htmlFor="checkin-phone" className={fieldLabelClass}>
                             Phone number (optional)
                         </label>
                         <input
@@ -253,23 +236,30 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                             value={phone}
                             disabled={checkingIn}
                             onChange={e => { setPhone(e.target.value); setPhoneError(null) }}
-                            className="rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-text disabled:opacity-60"
-                            style={{ borderColor: phoneError ? DANGER_RED : "var(--theme-border)" }}
+                            className={`${inputClass} ${phoneError ? "theme-border-danger" : ""}`}
                         />
                         {phoneError ? (
-                            <p role="alert" className="text-xs" style={{ color: DANGER_RED }}>{phoneError}</p>
+                            <p role="alert" className={fieldErrorClass}>{phoneError}</p>
                         ) : (
-                            <p className="text-xs theme-subtext-color">Shown to the team on this event's roster.</p>
+                            <p className={helperClass}>Shown to the team on this event's roster.</p>
                         )}
                     </div>
 
-                    <div className="flex items-center gap-3">
-                        <button type="button" onClick={handleCheckIn} disabled={checkingIn} className={primaryButtonClass}>
-                            {checkingIn ? "Checking in…" : "Check in"}
-                        </button>
-                        <button type="button" onClick={handleCancel} disabled={checkingIn} className={ghostButtonClass}>
+                    <div className="flex items-center justify-end gap-3">
+                        <Button
+                            variant="text"
+                            onClick={() => void confirmDiscard().then(ok => {
+                                if (!ok) return
+                                setPhone("") // discarding drops the typed number too
+                                handleCancel()
+                            })}
+                            disabled={checkingIn}
+                        >
                             Cancel
-                        </button>
+                        </Button>
+                        <Button onClick={handleCheckIn} disabled={checkingIn}>
+                            {checkingIn ? "Checking in…" : "Check in"}
+                        </Button>
                     </div>
                 </div>
             )}
@@ -285,33 +275,19 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
             )}
 
             {hasHub && checkInError && (
-                <p
-                    role="alert"
-                    className="text-xs rounded-lg px-3 py-2"
-                    style={{
-                        color: DANGER_RED,
-                        background: tintColor(DANGER_RED, 10),
-                        border: `1px solid ${tintColor(DANGER_RED, 40)}`,
-                    }}
-                >
-                    {checkInError}
-                </p>
+                <Notice>{checkInError}</Notice>
             )}
 
             {hasHub && checkInOn && dismissed && !checkedIn && (
-                <button
-                    type="button"
-                    onClick={() => changeDismissed(false)}
-                    className="inline-flex items-center min-h-11 self-start rounded-lg text-sm theme-text-contrast hover:underline outline-none focus:ring-2"
-                >
+                <Button variant="text" className="self-start" onClick={() => changeDismissed(false)}>
                     Check in after all
-                </button>
+                </Button>
             )}
 
             {hasHub && hasPage && promptOn && checkedIn === false && (
                 <Link
                     to={`/events/${eventKey}`}
-                    className="inline-flex items-center min-h-11 self-start rounded-lg text-sm theme-text-contrast hover:underline outline-none focus:ring-2"
+                    className={buttonClass({ variant: "text", className: "self-start" })}
                 >
                     View event
                 </Link>

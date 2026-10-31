@@ -1,7 +1,7 @@
 import { useId } from "react"
 import { Check } from "lucide-react"
 import { eventDayLabel } from "@/lib/events"
-import { DANGER_RED } from "@/lib/taskFormat"
+import { fieldErrorClass, fieldLabelClass, focusRing } from "@/lib/uiClasses"
 
 interface DayChipsProps {
     /** Field label, e.g. "Days you'll be there" or "Your days". */
@@ -23,7 +23,7 @@ export default function DayChips({ label, days, selected, onToggle, disabled, er
 
     return (
         <div className="flex flex-col gap-1" role="group" aria-labelledby={labelId}>
-            <label id={labelId} className="text-sm font-semibold theme-text">{label}</label>
+            <label id={labelId} className={fieldLabelClass}>{label}</label>
             <div className="flex flex-wrap gap-2">
                 {days.map(day => {
                     const isSelected = selected.includes(day)
@@ -34,9 +34,9 @@ export default function DayChips({ label, days, selected, onToggle, disabled, er
                             aria-pressed={isSelected}
                             disabled={disabled}
                             onClick={() => onToggle(day)}
-                            className="inline-flex items-center gap-1.5 rounded-full border text-sm min-h-11 px-3.5 outline-none focus:ring-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            className={`inline-flex items-center gap-1.5 rounded-full border text-sm min-h-11 px-3.5 transition-colors ${focusRing} disabled:opacity-40 disabled:cursor-not-allowed`}
                             style={{
-                                borderColor: isSelected ? "var(--theme-text-contrast)" : "var(--theme-border)",
+                                borderColor: isSelected ? "var(--theme-text-contrast)" : "var(--theme-outline)",
                                 color: isSelected ? "var(--theme-text-contrast)" : "var(--theme-subtext-color)",
                                 background: isSelected
                                     ? "color-mix(in oklch, var(--theme-text-contrast) 12%, transparent)"
@@ -50,7 +50,7 @@ export default function DayChips({ label, days, selected, onToggle, disabled, er
                 })}
             </div>
             {error && (
-                <p role="alert" className="text-xs" style={{ color: DANGER_RED }}>{error}</p>
+                <p role="alert" className={fieldErrorClass}>{error}</p>
             )}
         </div>
     )

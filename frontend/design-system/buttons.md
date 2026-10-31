@@ -56,8 +56,9 @@ action never sits mid-content or scrolls away. See [forms](forms.md).
 - **Disabled is 40% everywhere.** The code has 40, 45 and 50.
 - **Save is not disabled for validation.** See [forms](forms.md).
 
-## Migration
+## Remaining debt
 
-- Extract one `Button`, replacing `primaryButtonClass` and `ghostButtonClass` in `ActiveEventCard.tsx:23`, `RosterPage.tsx:131`, `EventScheduleEditor.tsx:10` and `EventTasksPage.tsx:19`.
-- Convert neutral "primary" buttons to Filled.
-- Swap the order in `EventScheduleEditor.tsx:281-286`.
+All buttons use the shared `Button` / `buttonClass`, in the documented order. What is left:
+
+- `MembersPage.tsx` desktop grid action buttons (32px) and the `MeetingHoursEditor.tsx` / `AttendancePage.tsx` calendar day cells (38px) keep their dense sizes, because the grid and calendar geometry is fixed. They are `default`-size violations on purpose; revisit with the grid.
+- `TasksPageDesktop.tsx` `TaskRow` keeps its hand-built chips and icon buttons (inline styles at 17/24/28px). They are part of the row's fixed geometry.

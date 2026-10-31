@@ -127,12 +127,12 @@ export default function OnboardingPageRouter() {
             })
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}))
-                throw new Error(data?.detail ?? "Something went wrong")
+                throw new Error(data?.detail ?? "Couldn't save your profile. Try again.")
             }
             await refreshUser()
             navigate("/dashboard", { replace: true })
         } catch (err: unknown) {
-            setError(err instanceof Error ? err.message : "Something went wrong")
+            setError(err instanceof Error ? err.message : "Couldn't save your profile. Try again.")
         } finally {
             setSubmitting(false)
         }

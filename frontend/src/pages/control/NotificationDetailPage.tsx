@@ -5,6 +5,12 @@ import { AgGridReact } from "ag-grid-react"
 import type { ColDef, ValueFormatterParams } from "ag-grid-community"
 import RoleAudienceSelect, { type RoleMeta } from "@/components/RoleAudienceSelect"
 import Checkbox from "@/components/ui/Checkbox"
+import Button from "@/components/ui/Button"
+import FormFooter from "@/components/ui/FormFooter"
+import Notice from "@/components/ui/Notice"
+import Skeleton from "@/components/ui/Skeleton"
+import { isDirtyVs, useDiscardGuard } from "@/lib/useDiscardGuard"
+import { fieldLabelClass, focusRing, inputClass, typeBadge, typeH1, typeH2 } from "@/lib/uiClasses"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -58,6 +64,19 @@ const EMPTY_FORM: FormState = {
     title: "", body: "", link: "", hard_block: false, target_roles: [], response_options: [], response_mode: "single",
 }
 
+/** The form values a saved notice opens with. */
+function formFromNotification(n: NotificationFull): FormState {
+    return {
+        title: n.title,
+        body: n.body,
+        link: n.link ?? "",
+        hard_block: n.hard_block,
+        target_roles: n.target_roles,
+        response_options: n.response_options,
+        response_mode: n.response_mode,
+    }
+}
+
 type Tab = "overview" | "responses" | "settings"
 
 /** "scouting_lead" → "Scouting Lead" */
@@ -93,6 +112,13 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
     const [optionDraft, setOptionDraft] = useState("")
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    // Dirty = the form differs from what it opened with (empty for a new notice, the saved notice otherwise).
+    // A save reloads `detail`, so the snapshot catches up and the guard releases itself.
+    const initialForm = useMemo<FormState | null>(
+        () => (isNew ? EMPTY_FORM : detail ? formFromNotification(detail.notification) : null),
+        [isNew, detail],
+    )
+    const confirmDiscard = useDiscardGuard(initialForm !== null && isDirtyVs(form, initialForm))
     const [gridSearch, setGridSearch] = useState("")
 
     useEffect(() => {
@@ -114,17 +140,9 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
             if (!res.ok) throw new Error("detail")
             const data = await res.json() as NotificationDetail
             setDetail(data)
-            setForm({
-                title: data.notification.title,
-                body: data.notification.body,
-                link: data.notification.link ?? "",
-                hard_block: data.notification.hard_block,
-                target_roles: data.notification.target_roles,
-                response_options: data.notification.response_options,
-                response_mode: data.notification.response_mode,
-            })
+            setForm(formFromNotification(data.notification))
         } catch {
-            setError("Failed to load notice")
+            setError("Couldn't load notice")
         } finally {
             setDetailLoading(false)
         }
@@ -167,7 +185,7 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
             )
             if (!res.ok) {
                 const data = await res.json().catch(() => null) as { detail?: string } | null
-                throw new Error(data?.detail ?? "Failed to save notice")
+                throw new Error(data?.detail ?? "Couldn't save notice")
             }
             if (isNew) {
                 const created = await res.json() as NotificationFull
@@ -177,7 +195,7 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
                 setTab("overview")
             }
         } catch (e) {
-            setError(e instanceof Error ? e.message : "Failed to save notice")
+            setError(e instanceof Error ? e.message : "Couldn't save notice")
         } finally {
             setSaving(false)
         }
@@ -191,7 +209,7 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
             if (!res.ok) throw new Error("deactivate")
             await loadDetail()
         } catch {
-            setError("Failed to deactivate notice")
+            setError("Couldn't deactivate notice")
         } finally {
             setSaving(false)
         }
@@ -226,22 +244,20 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
     // ---------- New notice: form only ----------
     if (isNew) {
         return (
-            <div className="px-4 py-6 flex flex-col gap-4 h-full">
+            <div className="px-4 md:px-6 py-6 flex flex-col gap-4 h-full mx-auto w-full max-w-2xl">
                 <div className="flex items-center gap-2">
                     <Link to="/control/notifications" aria-label="Back to Notifications"
-                          className="flex items-center justify-center w-9 h-9 -ml-2 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity">
-                        <ChevronLeft size={22} />
+                          className={`flex items-center justify-center w-11 h-11 -ml-3 -mr-3 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity ${focusRing}`}>
+                        <ChevronLeft size={21} />
                     </Link>
-                    <h1 className="text-2xl font-bold theme-h1-color">New Notice</h1>
+                    <h1 className={`${typeH1} theme-h1-color`}>New Notice</h1>
                 </div>
-                {error && (
-                    <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
-                       style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>{error}</p>
-                )}
+                {error && <Notice>{error}</Notice>}
                 <NoticeForm
                     isNew form={form} setForm={setForm} catalog={catalog} optionDraft={optionDraft}
                     setOptionDraft={setOptionDraft} addOption={addOption} removeOption={removeOption}
-                    saving={saving} onSave={handleSave} onCancel={() => navigate("/control/notifications")}
+                    saving={saving} onSave={handleSave}
+                    onCancel={() => void confirmDiscard().then(ok => { if (ok) navigate("/control/notifications") })}
                 />
             </div>
         )
@@ -254,17 +270,17 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
     const canEdit = !!n?.can_edit
 
     return (
-        <div className="px-4 py-6 flex flex-col gap-4 h-full">
+        <div className="px-4 md:px-6 py-6 flex flex-col gap-4 h-full">
             {/* Header */}
             <div className="flex items-center gap-2 flex-wrap">
                 <Link to="/control/notifications" aria-label="Back to Notifications"
-                      className="flex items-center justify-center w-9 h-9 -ml-2 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity">
-                    <ChevronLeft size={22} />
+                      className={`flex items-center justify-center w-11 h-11 -ml-3 -mr-3 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity ${focusRing}`}>
+                    <ChevronLeft size={21} />
                 </Link>
-                <h1 className="text-2xl font-bold theme-h1-color">{n?.title ?? "Notice"}</h1>
+                <h1 className={`${typeH1} theme-h1-color`}>{n?.title ?? "Notice"}</h1>
                 {n && (
                     <span
-                        className="rounded-full border px-2.5 py-0.5 text-[11px] font-bold tracking-wide"
+                        className={`rounded-full border px-2.5 py-0.5 theme-bg ${typeBadge}`}
                         style={n.active
                             ? { color: "var(--theme-text-contrast)", borderColor: "color-mix(in oklch, var(--theme-text-contrast) 50%, transparent)" }
                             : { color: "var(--theme-subtext-color)", borderColor: "var(--theme-border)" }}
@@ -274,34 +290,36 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
                 )}
                 {n && (
                     <div className="ml-auto flex items-center gap-2">
-                        <button
+                        <Button
+                            variant="outlined"
+                            aria-label="Export CSV"
                             onClick={() => gridRef.current?.api.exportDataAsCsv({
                                 fileName: `${n.title.replace(/[^a-z0-9]+/gi, "-")}-responses.csv`,
                             })}
-                            className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium theme-text theme-border transition-opacity hover:opacity-80"
                         >
-                            <Download size={14} /> <span className="hidden sm:inline">Export CSV</span>
-                        </button>
+                            <Download size={16} /> <span className="hidden sm:inline">Export CSV</span>
+                        </Button>
                         {canEdit && n.active && (
-                            <button
+                            <Button
+                                variant="dangerOutlined"
                                 onClick={() => void handleDeactivate()}
                                 disabled={saving}
-                                className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-opacity hover:opacity-80 disabled:opacity-40"
-                                style={{ color: "#dc2626", borderColor: "color-mix(in oklch, #dc2626 50%, transparent)" }}
                             >
                                 Deactivate
-                            </button>
+                            </Button>
                         )}
                     </div>
                 )}
             </div>
 
-            {error && (
-                <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
-                   style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>{error}</p>
-            )}
+            {error && <Notice>{error}</Notice>}
 
-            {detailLoading && <p className="text-sm theme-subtext-color">Loading…</p>}
+            {detailLoading && (
+                <div className="flex flex-col gap-3" role="status" aria-label="Loading notice">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-32 w-full" />
+                </div>
+            )}
 
             {detail && n && (
                 <>
@@ -317,8 +335,7 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
                     {tab === "overview" && (
                         <div className="flex flex-col lg:flex-row gap-5 flex-1 min-h-0 overflow-y-auto theme-scrollbar">
                             <div className="flex flex-col gap-4 flex-1 min-w-0">
-                                <div className="rounded-xl border p-4 theme-border backdrop-blur-sm"
-                                     style={{ background: "var(--theme-bg)" }}>
+                                <div className="rounded-xl border p-4 theme-border theme-bg backdrop-blur-sm">
                                     <p className="text-sm theme-text whitespace-pre-wrap">{n.body}</p>
                                     {n.link && (
                                         <a href={n.link} target="_blank" rel="noopener noreferrer"
@@ -327,7 +344,7 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
                                         </a>
                                     )}
                                 </div>
-                                <div className="flex flex-wrap gap-2">
+                                <div className="flex flex-wrap gap-2 rounded-xl border p-4 theme-border theme-bg backdrop-blur-sm">
                                     {[
                                         n.hard_block ? "Hard block · must respond" : "Soft",
                                         formatRoles(n.target_roles, roleLabels),
@@ -337,8 +354,8 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
                                         <span key={i} className="rounded-full border px-3 py-1 text-xs theme-border theme-subtext-color">{m}</span>
                                     ))}
                                 </div>
-                                <div className="rounded-xl border p-4 flex flex-col gap-3 theme-border backdrop-blur-sm" style={{ background: "var(--theme-bg)" }}>
-                                    <p className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">
+                                <div className="rounded-xl border p-4 flex flex-col gap-3 theme-border theme-bg backdrop-blur-sm">
+                                    <p className={`${typeH2} theme-subtext-color`}>
                                         {n.response_options.length > 0 ? "Answer breakdown" : "Acknowledgements"}
                                     </p>
                                     {n.response_options.length > 0 ? (
@@ -364,9 +381,8 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
                             </div>
 
                             <div className="flex flex-col gap-3 lg:w-72 lg:shrink-0">
-                                <div className="rounded-xl border p-5 flex flex-col items-center gap-2 text-center theme-border backdrop-blur-sm"
-                                     style={{ background: "var(--theme-bg)" }}>
-                                    <span className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">Response rate</span>
+                                <div className="rounded-xl border p-5 flex flex-col items-center gap-2 text-center theme-border theme-bg backdrop-blur-sm">
+                                    <span className={`${typeH2} theme-subtext-color`}>Response rate</span>
                                     <span className="text-5xl font-extrabold leading-none theme-text-contrast">{ratePct}%</span>
                                     <span className="text-sm theme-subtext-color">{responded} of {eligible} eligible</span>
                                     <div className="w-full rounded-full overflow-hidden h-2 mt-1"
@@ -374,18 +390,14 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
                                         <div className="h-full rounded-full" style={{ width: `${ratePct}%`, background: "var(--theme-text-contrast)" }} />
                                     </div>
                                 </div>
-                                <div className="rounded-xl border p-4 flex items-center justify-between theme-border backdrop-blur-sm" style={{ background: "var(--theme-bg)" }}>
+                                <div className="rounded-xl border p-4 flex items-center justify-between theme-border theme-bg backdrop-blur-sm">
                                     <span className="text-sm theme-text">Awaiting response</span>
                                     <span className="text-xl font-bold theme-h1-color">{Math.max(0, eligible - responded)}</span>
                                 </div>
                                 {canEdit && (
-                                    <button
-                                        onClick={() => setTab("settings")}
-                                        className="rounded-xl border px-4 py-3 text-sm font-medium theme-text theme-border backdrop-blur-sm transition-opacity hover:opacity-80"
-                                        style={{ background: "var(--theme-bg)" }}
-                                    >
+                                    <Button variant="outlined" onClick={() => setTab("settings")}>
                                         Edit notice
-                                    </button>
+                                    </Button>
                                 )}
                             </div>
                         </div>
@@ -398,7 +410,8 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
                                 value={gridSearch}
                                 onChange={e => setGridSearch(e.target.value)}
                                 placeholder="Search by name or email…"
-                                className="max-w-xs rounded-lg border px-3 py-1.5 text-sm theme-border theme-bg theme-text"
+                                aria-label="Search responses"
+                                className={`w-full max-w-xs ${inputClass}`}
                             />
                             <div className="rounded-xl border overflow-hidden theme-border flex-1 min-h-0">
                                 <AgGridReact<ResponseRow>
@@ -419,7 +432,13 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
                             <NoticeForm
                                 isNew={false} form={form} setForm={setForm} catalog={catalog} optionDraft={optionDraft}
                                 setOptionDraft={setOptionDraft} addOption={addOption} removeOption={removeOption}
-                                saving={saving} onSave={handleSave} onCancel={() => setTab("overview")}
+                                saving={saving} onSave={handleSave}
+                                onCancel={() => void confirmDiscard().then(ok => {
+                                    if (!ok) return
+                                    // Discarding means the edits are gone, not just hidden behind another tab.
+                                    if (initialForm) setForm(initialForm)
+                                    setTab("overview")
+                                })}
                             />
                         </div>
                     )}
@@ -433,10 +452,8 @@ function TabButton({ active, label, onClick }: { active: boolean, label: string,
     return (
         <button
             onClick={onClick}
-            className="pb-2.5 text-sm transition-colors"
+            className={`min-h-11 flex items-end pb-2.5 text-sm transition-colors ${active ? "font-bold theme-h1-color" : "font-medium theme-h1-color opacity-70 hover:opacity-100"} ${focusRing}`}
             style={{
-                fontWeight: active ? 700 : 500,
-                color: active ? "var(--theme-text-contrast)" : "var(--theme-subtext-color)",
                 borderBottom: active ? "2px solid var(--theme-text-contrast)" : "2px solid transparent",
                 marginBottom: -1,
             }}
@@ -466,31 +483,31 @@ function NoticeForm(props: {
         optionDraft, setOptionDraft, addOption, removeOption, saving, onSave, onCancel,
     } = props
     return (
-        <div className="flex flex-col gap-3 max-w-2xl">
-            <label className="flex flex-col gap-1 text-sm theme-text">
+        <div className="flex flex-col gap-4 rounded-xl border p-5 max-w-2xl w-full theme-border theme-bg">
+            <label className={`flex flex-col gap-1 ${fieldLabelClass}`}>
                 Title
                 <input
                     value={form.title}
                     onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}
-                    className="rounded-lg border px-3 py-2 text-sm theme-border theme-bg theme-text"
+                    className={`w-full ${inputClass}`}
                 />
             </label>
-            <label className="flex flex-col gap-1 text-sm theme-text">
+            <label className={`flex flex-col gap-1 ${fieldLabelClass}`}>
                 Body
                 <textarea
                     value={form.body}
                     onChange={e => setForm(prev => ({ ...prev, body: e.target.value }))}
                     rows={3}
-                    className="rounded-lg border px-3 py-2 text-sm theme-border theme-bg theme-text resize-none"
+                    className={`w-full resize-none ${inputClass}`}
                 />
             </label>
-            <label className="flex flex-col gap-1 text-sm theme-text">
+            <label className={`flex flex-col gap-1 ${fieldLabelClass}`}>
                 Link (optional, e.g. a Google Form)
                 <input
                     value={form.link}
                     onChange={e => setForm(prev => ({ ...prev, link: e.target.value }))}
                     placeholder="https://forms.gle/…"
-                    className="rounded-lg border px-3 py-2 text-sm theme-border theme-bg theme-text"
+                    className={`w-full ${inputClass}`}
                 />
             </label>
 
@@ -502,8 +519,10 @@ function NoticeForm(props: {
                 Hard block (must respond to dismiss, no "Later")
             </label>
 
-            <div className="flex flex-col gap-1.5">
-                <p className="text-sm theme-text">Applies to</p>
+            <div className="border-t theme-border" />
+
+            <div className="flex flex-col gap-2">
+                <p className={fieldLabelClass}>Applies to</p>
                 <RoleAudienceSelect
                     catalog={catalog}
                     selected={form.target_roles}
@@ -511,14 +530,16 @@ function NoticeForm(props: {
                 />
             </div>
 
-            <div className="flex flex-col gap-1.5">
-                <p className="text-sm theme-text">Response options (leave empty for a plain "Got it")</p>
+            <div className="border-t theme-border" />
+
+            <div className="flex flex-col gap-2">
+                <p className={fieldLabelClass}>Response options (leave empty for a plain "Got it")</p>
                 <div className="flex flex-wrap gap-2">
                     {form.response_options.map(o => (
                         <span key={o} className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs theme-border theme-text">
                             {o}
-                            <button onClick={() => removeOption(o)} className="theme-subtext-color hover:opacity-70">
-                                <X size={12} />
+                            <button onClick={() => removeOption(o)} aria-label={`Remove option ${o}`} className={`rounded-full theme-subtext-color hover:opacity-70 ${focusRing}`}>
+                                <X size={14} />
                             </button>
                         </span>
                     ))}
@@ -529,14 +550,14 @@ function NoticeForm(props: {
                         onChange={e => setOptionDraft(e.target.value)}
                         onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addOption() } }}
                         placeholder="Add an option, e.g. Coming"
-                        className="flex-1 rounded-lg border px-3 py-1.5 text-sm theme-border theme-bg theme-text"
+                        className={`flex-1 min-w-0 ${inputClass}`}
                     />
-                    <button onClick={addOption} className="rounded-lg border px-3 py-1.5 text-sm theme-border theme-text hover:opacity-80">
+                    <Button variant="outlined" onClick={addOption}>
                         Add
-                    </button>
+                    </Button>
                 </div>
                 {form.response_options.length > 0 && (
-                    <label className="flex items-center gap-2 text-xs theme-subtext-color cursor-pointer mt-1">
+                    <label className="flex items-center gap-2 text-sm theme-subtext-color cursor-pointer mt-1">
                         <Checkbox
                             checked={form.response_mode === "multi"}
                             onChange={() => setForm(prev => ({ ...prev, response_mode: prev.response_mode === "multi" ? "single" : "multi" }))}
@@ -546,22 +567,18 @@ function NoticeForm(props: {
                 )}
             </div>
 
-            <div className="flex gap-2 pt-1">
-                <button
-                    onClick={onCancel}
-                    className="rounded-lg border px-4 py-2 text-sm font-medium theme-subtext-color theme-border transition-opacity hover:opacity-70"
-                >
+            <FormFooter className="-mx-5 -mb-5 rounded-b-xl">
+                <Button variant="outlined" size="footer" className="ml-auto" onClick={onCancel}>
                     Cancel
-                </button>
-                <button
+                </Button>
+                <Button
+                    size="footer"
                     onClick={() => void onSave()}
                     disabled={saving || !form.title.trim() || !form.body.trim()}
-                    className="rounded-lg px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-                    style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
                 >
                     {saving ? "Saving…" : isNew ? "Create notice" : "Save"}
-                </button>
-            </div>
+                </Button>
+            </FormFooter>
         </div>
     )
 }

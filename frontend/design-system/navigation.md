@@ -65,10 +65,9 @@ These are not menus, so they don't become sheets:
   screen feels disconnected from its trigger.
 - **`md` stays the only chrome breakpoint.**
 
-## Migration
+## Remaining debt
 
-1. `Dropdown.tsx:272`: replace the mobile bubble with the shared sheet.
-2. `AppShell.tsx:206`: move the mobile account menu into a sheet.
-3. `TasksPageMobile.tsx:943`: make the existing handle work by adopting the shared sheet.
-4. `AppShell.tsx:297`: tab bar height and inactive opacity.
-5. `AppShell.tsx:367`: the sidebar flyout opens on hover only; add keyboard access.
+The mobile `Dropdown` and account menu are sheets, the tab bar and inactive opacity match, and the sidebar flyout opens on keyboard focus. What is left:
+
+- Tabs (`EventShell.tsx` links, the tab rows in `NotificationDetailPage.tsx` and `PushNotificationsPage.tsx`) have no arrow-key navigation (see accessibility.md).
+- `EventShell.tsx` tab labels are 11px and scroll sideways on narrow phones rather than all fitting at 360px.

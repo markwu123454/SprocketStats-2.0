@@ -12,8 +12,12 @@ import {
     type CheckinRole, type EventEntry,
 } from "@/lib/events"
 import { ROSTER_ROLES, rosterRoleLabel, type RosterRole } from "@/lib/rosterRoles"
-import { DANGER_RED, tintColor } from "@/lib/taskFormat"
+import Button from "@/components/ui/Button"
 import Dropdown from "@/components/ui/Dropdown"
+import FormFooter from "@/components/ui/FormFooter"
+import Notice from "@/components/ui/Notice"
+import { cardClass, fieldLabelClass, inputClass, typeTitle } from "@/lib/uiClasses"
+import { useDiscardGuard } from "@/lib/useDiscardGuard"
 import DayChips from "@/components/events/DayChips"
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -59,7 +63,7 @@ function PhoneCell({ value }: { value: string | null }) {
             className="inline-flex items-center gap-1 transition-opacity hover:opacity-70"
             style={{ color: "var(--theme-text-contrast)" }}
         >
-            <Phone size={12} />
+            <Phone size={14} />
             {value}
         </a>
     )
@@ -108,14 +112,13 @@ function ActionsCell({ data, onEdit, canEdit, currentUserId }: ActionsCellParams
     if (!canEdit && !isSelf) return null
     return (
         <span className="flex h-full w-full items-center justify-center">
-            <button
-                type="button"
+            <Button
+                variant="icon"
                 onClick={() => onEdit(data)}
                 aria-label={canEdit ? `Edit ${data.display_name}` : "Change your days"}
-                className="inline-flex items-center justify-center w-9 h-9 rounded-lg theme-subtext-color opacity-50 hover:opacity-100 transition-opacity outline-none focus:ring-2"
             >
                 <Pencil size={14} />
-            </button>
+            </Button>
         </span>
     )
 }
@@ -127,15 +130,6 @@ const DEFAULT_COL_DEF: ColDef = {
     resizable: true,
     suppressMovable: true,
 }
-
-const primaryButtonClass =
-    "theme-bg border theme-border theme-text-contrast rounded-xl text-sm font-semibold h-11 px-4 " +
-    "inline-flex items-center justify-center gap-2 outline-none focus:ring-2 transition-opacity " +
-    "disabled:opacity-40 disabled:cursor-not-allowed"
-
-const ghostButtonClass =
-    "h-11 px-2 rounded-lg text-sm theme-subtext-color hover:underline outline-none focus:ring-2 " +
-    "disabled:opacity-40 disabled:cursor-not-allowed"
 
 function NoRosterOverlay() {
     return <span style={{ color: "var(--theme-subtext-color)" }}>Roster not yet posted.</span>
@@ -166,6 +160,11 @@ export default function RosterPage() {
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [daysError, setDaysError] = useState<string | null>(null)
+
+    // Dirty = the role or day picks differ from what the panel opened with.
+    const confirmDiscard = useDiscardGuard(
+        !!editing && (editing.role !== editing.initialRole || !sameDaySet(editing.days, editing.initialDays)),
+    )
 
     const roster = info?.roster ?? []
 
@@ -320,35 +319,23 @@ export default function RosterPage() {
     return (
         <div className="h-full px-4 py-4 flex flex-col gap-3">
             {editing && (
-                <div className="rounded-xl border p-4 flex flex-col gap-3" style={{ background: "var(--theme-bg)", borderColor: "var(--theme-border)" }}>
-                    <p className="text-sm font-semibold theme-text truncate">{panelTitle}</p>
+                <div className={cardClass} style={{ background: "var(--theme-bg)" }}>
+                    <p className={`${typeTitle} theme-text truncate`}>{panelTitle}</p>
 
-                    {error && (
-                        <p
-                            role="alert"
-                            className="text-xs rounded-lg px-3 py-2"
-                            style={{
-                                color: DANGER_RED,
-                                background: tintColor(DANGER_RED, 10),
-                                border: `1px solid ${tintColor(DANGER_RED, 40)}`,
-                            }}
-                        >
-                            {error}
-                        </p>
-                    )}
+                    {error && <Notice>{error}</Notice>}
 
                     {canEdit && (
                         // Dropdown's trigger doesn't take an id/aria-label of its own --
                         // role="group" + aria-labelledby is the documented way to
                         // associate the "Role" label with it instead.
                         <div className="flex flex-col gap-1 sm:max-w-xs" role="group" aria-labelledby="roster-role-label">
-                            <label id="roster-role-label" className="text-sm font-semibold theme-text">Role</label>
+                            <label id="roster-role-label" className={fieldLabelClass}>Role</label>
                             <Dropdown
                                 value={editing.role}
                                 options={eventRoles.map(r => ({ value: r.key, label: r.label }))}
                                 onChange={v => setEditing(e => e ? { ...e, role: v } : e)}
                                 disabled={saving}
-                                triggerClassName="rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-border theme-text"
+                                triggerClassName={inputClass}
                             />
                         </div>
                     )}
@@ -364,14 +351,14 @@ export default function RosterPage() {
                         />
                     )}
 
-                    <div className="flex items-center gap-3">
-                        <button type="button" onClick={saveEditor} disabled={saving} className={primaryButtonClass}>
-                            {saving ? "Saving…" : "Save"}
-                        </button>
-                        <button type="button" onClick={closeEditor} disabled={saving} className={ghostButtonClass}>
+                    <FormFooter className="-mx-5 -mb-5 rounded-b-xl">
+                        <Button variant="text" size="footer" className="ml-auto" onClick={() => void confirmDiscard().then(ok => { if (ok) closeEditor() })} disabled={saving}>
                             Cancel
-                        </button>
-                    </div>
+                        </Button>
+                        <Button size="footer" onClick={saveEditor} disabled={saving}>
+                            {saving ? "Saving…" : "Save"}
+                        </Button>
+                    </FormFooter>
                 </div>
             )}
 

@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react"
-import { createPortal } from "react-dom"
-import { Check, ChevronDown, GripHorizontal, X } from "lucide-react"
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react"
+import { Check, ChevronDown, GripHorizontal } from "lucide-react"
+import Sheet from "@/components/ui/Sheet"
 import { fuzzyFilter } from "@/lib/fuzzyMatch"
 import { useIsMobile } from "@/lib/useIsMobile"
+import { focusRing, inputClass, menuRowClass } from "@/lib/uiClasses"
 
 export interface DropdownOption {
     value: string
@@ -71,17 +72,16 @@ export default function Dropdown({
     const selected = selectedIndex >= 0 ? options[selectedIndex] : undefined
     const filteredOptions = searchable ? fuzzyFilter(options, query) : options
 
-    // On mobile, an open menu renders as a centered portal modal instead of
-    // an anchored dropdown (Fix 1). Desktop/tablet behavior is untouched.
+    // On mobile, an open menu renders as a drag Sheet (portaled to body)
+    // instead of an anchored dropdown. Desktop/tablet behavior is untouched.
     const modalMode = open && isMobile
 
     // Close menu when clicking outside -- anchored mode only. In modal mode
-    // the menu is portaled to document.body, so it is never "inside
-    // rootRef"; attaching this listener there would fire on every tap
-    // inside the modal (including the search input) and slam it shut
-    // immediately. The scrim's own onClick already handles dismissal for
-    // the modal, so the listener is simply never attached while modalMode
-    // is true.
+    // the menu is portaled to document.body, so it is never "inside"
+    // rootRef; attaching this listener there would fire on every tap
+    // inside the sheet (including the search input) and slam it shut
+    // immediately. The Sheet's scrim already handles dismissal, so the
+    // listener is simply never attached while modalMode is true.
     useEffect(() => {
         if (modalMode) return
         function onClickOutside(e: MouseEvent) {
@@ -91,17 +91,9 @@ export default function Dropdown({
         return () => document.removeEventListener("mousedown", onClickOutside)
     }, [modalMode])
 
-    // Escape closes the modal even when focus never lands on an element
-    // that already handles it (e.g. a non-searchable modal has no input to
-    // catch the key via onKeyDown).
-    useEffect(() => {
-        if (!modalMode) return
-        function onKey(e: globalThis.KeyboardEvent) {
-            if (e.key === "Escape") setOpen(false)
-        }
-        document.addEventListener("keydown", onKey)
-        return () => document.removeEventListener("keydown", onKey)
-    }, [modalMode])
+    // Escape in modal mode is handled by the Sheet (it is the topmost overlay,
+    // and listens even when focus is elsewhere) and by onKeyDown below while
+    // the search input has focus.
 
     // Reset the search query whenever the menu opens or closes
     useEffect(() => {
@@ -144,7 +136,16 @@ export default function Dropdown({
         setHighlighted(startIndex)
         const el = listRef.current?.children[startIndex] as HTMLElement | undefined
         const list = listRef.current
-        if (el && list) list.scrollTop = el.offsetTop - list.clientHeight / 2 + el.clientHeight / 2
+        if (el && list) {
+            // In a Sheet the scroller is the Sheet's content area, not the <ul> itself.
+            const scroller = list.closest<HTMLElement>("[data-sheet-scroller]")
+            if (scroller) {
+                const offset = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+                scroller.scrollTop += offset - scroller.clientHeight / 2 + el.clientHeight / 2
+            } else {
+                list.scrollTop = el.offsetTop - list.clientHeight / 2 + el.clientHeight / 2
+            }
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open])
 
@@ -225,7 +226,7 @@ export default function Dropdown({
         }
     }
 
-    function renderRow(opt: DropdownOption, i: number, rowStyle: CSSProperties) {
+    function renderRow(opt: DropdownOption, i: number) {
         const isSelected = opt.value === value
         const isHighlighted = i === highlighted
         return (
@@ -234,22 +235,22 @@ export default function Dropdown({
                     type="button"
                     onMouseEnter={() => !isDragging.current && setHighlighted(i)}
                     onClick={() => selectIndex(i)}
-                    className="flex items-center justify-between gap-3 w-full px-3 text-sm text-left rounded-lg"
+                    className={`${menuRowClass} ${isSelected ? "font-semibold" : "font-medium"}`}
                     style={{
-                        ...rowStyle,
                         background: isHighlighted
                             ? "color-mix(in oklch, var(--theme-button-bg) 90%, transparent)"
                             : "transparent",
                         color: isSelected ? "var(--theme-text-contrast)" : "var(--theme-text)",
-                        fontWeight: isSelected ? 600 : 500,
                     }}
                 >
                     <span className="truncate">{opt.label}</span>
-                    {isSelected && <Check size={14} className="shrink-0" />}
+                    {isSelected && <Check size={16} className="shrink-0" />}
                 </button>
             </li>
         )
     }
+
+    const noMatches = "flex items-center min-h-12 md:min-h-10 px-3 text-sm theme-subtext-color select-none"
 
     const showMenu = open && !disabled && options.length > 0
 
@@ -260,7 +261,7 @@ export default function Dropdown({
                 disabled={disabled || options.length === 0}
                 onClick={toggleOpen}
                 onKeyDown={onKeyDown}
-                className={`flex items-center justify-between gap-2 w-full text-left transition-opacity disabled:cursor-not-allowed disabled:opacity-60 ${triggerClassName}`}
+                className={`flex items-center justify-between gap-2 w-full text-left transition-opacity disabled:cursor-not-allowed disabled:opacity-40 ${focusRing} ${triggerClassName}`}
             >
                 <span className="truncate">{selected ? selected.label : placeholder}</span>
                 <ChevronDown
@@ -269,59 +270,40 @@ export default function Dropdown({
                 />
             </button>
 
-            {showMenu && modalMode && createPortal(
-                <div style={modalOverlayStyle} onClick={() => setOpen(false)}>
-                    <div
-                        role="dialog"
-                        aria-modal="true"
-                        aria-label={label}
-                        style={modalCardStyle}
-                        onClick={e => e.stopPropagation()}
-                    >
-                        {label && (
-                            <div style={modalHeaderRowStyle}>
-                                <h2 style={modalTitleStyle}>{label}</h2>
-                                <button type="button" onClick={() => setOpen(false)} aria-label="Close" style={modalCloseBtnStyle}>
-                                    <X size={16} />
-                                </button>
-                            </div>
+            {showMenu && modalMode && (
+                <Sheet
+                    kind={searchable ? "form" : "menu"}
+                    title={label ?? "Choose an option"}
+                    labelledByTitleHidden={!label}
+                    onClose={() => setOpen(false)}
+                    className="px-2 pb-2"
+                >
+                    {searchable && (
+                        <div className="sticky top-0 z-10 theme-bg px-2 pt-2 pb-2">
+                            <input
+                                ref={searchInputRef}
+                                type="text"
+                                value={query}
+                                onChange={e => setQuery(e.target.value)}
+                                onKeyDown={onKeyDown}
+                                placeholder={searchPlaceholder}
+                                className={`w-full ${inputClass}`}
+                            />
+                        </div>
+                    )}
+                    <ul ref={listRef} role="listbox" className={searchable ? "" : "pt-2"}>
+                        {searchable && filteredOptions.length === 0 ? (
+                            <li className={noMatches}>No matches</li>
+                        ) : (
+                            filteredOptions.map((opt, i) => renderRow(opt, i))
                         )}
-
-                        {searchable && (
-                            <div style={modalSearchWrapStyle} className="border-b theme-border">
-                                <input
-                                    ref={searchInputRef}
-                                    type="text"
-                                    value={query}
-                                    onChange={e => setQuery(e.target.value)}
-                                    onKeyDown={onKeyDown}
-                                    placeholder={searchPlaceholder}
-                                    className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-border theme-text"
-                                />
-                            </div>
-                        )}
-
-                        <ul
-                            ref={listRef}
-                            role="listbox"
-                            className="flex-1 min-h-0 overflow-y-auto theme-scrollbar px-2 py-2"
-                        >
-                            {searchable && filteredOptions.length === 0 ? (
-                                <li className="px-3 py-2 text-sm theme-subtext-color select-none" style={{ minHeight: 44, display: "flex", alignItems: "center" }}>
-                                    No matches
-                                </li>
-                            ) : (
-                                filteredOptions.map((opt, i) => renderRow(opt, i, { minHeight: 44 }))
-                            )}
-                        </ul>
-                    </div>
-                </div>,
-                document.body
+                    </ul>
+                </Sheet>
             )}
 
             {showMenu && !modalMode && (
                 <div
-                    className={`absolute z-50 rounded-xl border shadow-lg theme-border flex flex-col overflow-hidden ${menuAlign === "right" ? "right-0" : "left-0"} ${openUpward ? "bottom-full mb-1.5" : "top-full mt-1.5"}`}
+                    className={`absolute z-40 rounded-xl border shadow-lg theme-border flex flex-col overflow-hidden ${menuAlign === "right" ? "right-0" : "left-0"} ${openUpward ? "bottom-full mb-1.5" : "top-full mt-1.5"}`}
                     style={{
                         background: "var(--theme-bg)",
                         width: "100%", // Forces menu to exact width of the parent card
@@ -337,7 +319,7 @@ export default function Dropdown({
                                 onChange={e => setQuery(e.target.value)}
                                 onKeyDown={onKeyDown}
                                 placeholder={searchPlaceholder}
-                                className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2 transition theme-bg theme-border theme-text"
+                                className={`w-full ${inputClass}`}
                             />
                         </div>
                     )}
@@ -348,87 +330,22 @@ export default function Dropdown({
                         style={{ maxHeight: resizable ? "none" : `${initialMaxHeight}px` }}
                     >
                         {searchable && filteredOptions.length === 0 ? (
-                            <li className="px-3 py-2 text-sm theme-subtext-color select-none">No matches</li>
+                            <li className={noMatches}>No matches</li>
                         ) : (
-                            filteredOptions.map((opt, i) => renderRow(opt, i, { paddingTop: 8, paddingBottom: 8 }))
+                            filteredOptions.map((opt, i) => renderRow(opt, i))
                         )}
                     </ul>
 
                     {resizable && (
                         <div
                             onMouseDown={startResize}
-                            className="w-full h-4 flex items-center justify-center cursor-ns-resize border-t theme-border select-none hover:bg-black/5 dark:hover:bg-white/5 rounded-b-xl transition-colors shrink-0"
+                            className="w-full h-4 flex items-center justify-center cursor-ns-resize border-t theme-border select-none hover:bg-[color-mix(in_oklch,var(--theme-text)_8%,transparent)] rounded-b-xl transition-colors shrink-0"
                         >
-                            <GripHorizontal size={12} className="opacity-40" />
+                            <GripHorizontal size={14} className="opacity-40" />
                         </div>
                     )}
                 </div>
             )}
         </div>
     )
-}
-
-// ── Mobile modal styles (Fix 1) ─────────────────────────────────────────
-// All colors come from `--theme-*` tokens (see .design-sync/conventions.md)
-// so the modal reads correctly under every season palette, including the
-// light cream theme-2026.
-
-const modalOverlayStyle: CSSProperties = {
-    position: "fixed",
-    inset: 0,
-    zIndex: 60,
-    height: "var(--real-vh, 100dvh)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "rgba(0,0,0,.55)",
-}
-
-const modalCardStyle: CSSProperties = {
-    width: "calc(100% - 32px)",
-    maxWidth: 380,
-    maxHeight: "calc(var(--real-vh, 100dvh) - 32px)",
-    borderRadius: 20,
-    background: "var(--theme-bg)",
-    border: "1px solid var(--theme-border)",
-    boxShadow: "0 16px 48px rgba(0,0,0,.5)",
-    display: "flex",
-    flexDirection: "column",
-    overflow: "hidden",
-}
-
-const modalHeaderRowStyle: CSSProperties = {
-    flex: "none",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    padding: "14px 14px 8px",
-}
-
-const modalTitleStyle: CSSProperties = {
-    margin: 0,
-    fontSize: 17,
-    fontWeight: 700,
-    color: "var(--theme-h1-color)",
-}
-
-const modalCloseBtnStyle: CSSProperties = {
-    flex: "none",
-    width: 36,
-    height: 36,
-    borderRadius: 999,
-    border: "1px solid var(--theme-border)",
-    background: "transparent",
-    color: "var(--theme-subtext-color)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-}
-
-const modalSearchWrapStyle: CSSProperties = {
-    flex: "none",
-    width: "100%",
-    padding: "10px 14px",
 }

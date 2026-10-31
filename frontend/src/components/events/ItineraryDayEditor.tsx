@@ -1,11 +1,13 @@
 import { useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import type { ItineraryItem } from "@/lib/eventApi"
-import { DANGER_RED, tintColor } from "@/lib/taskFormat"
+import Button from "@/components/ui/Button"
+import FormFooter from "@/components/ui/FormFooter"
+import Notice from "@/components/ui/Notice"
+import { useDiscardGuard, useIsDirty } from "@/lib/useDiscardGuard"
+import { fieldLabelClass, inputClass } from "@/lib/uiClasses"
 import { MAX_LONG_TEXT, MAX_SHORT_TEXT, timeOf, type ItineraryRowDraft } from "@/lib/eventContent"
 
-const inputClass = "rounded-lg border theme-border theme-bg theme-text px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
-const addButtonClass = "inline-flex items-center gap-1.5 self-start rounded-lg border theme-border theme-bg theme-text-contrast text-sm font-semibold px-3 py-2 min-h-11 hover:opacity-90 transition-opacity outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
 
 function todayKey(): string {
     const d = new Date()
@@ -38,6 +40,7 @@ interface Props {
 export default function ItineraryDayEditor({ day, items, saving, error, onCancel, onSave, onDelete }: Props) {
     const [dateValue, setDateValue] = useState(() => day || todayKey())
     const [rows, setRows] = useState<ItineraryRowDraft[]>(() => rowsFromItems(items))
+    const confirmDiscard = useDiscardGuard(useIsDirty({ dateValue, rows }))
 
     function updateRow(i: number, patch: Partial<ItineraryRowDraft>) {
         setRows(prev => prev.map((row, idx) => (idx === i ? { ...row, ...patch } : row)))
@@ -55,7 +58,7 @@ export default function ItineraryDayEditor({ day, items, saving, error, onCancel
         <div className="px-4 py-3 flex flex-col gap-3">
             {!day && (
                 <div className="flex flex-col gap-1">
-                    <label htmlFor="new-itinerary-day" className="text-sm font-semibold theme-text">Date</label>
+                    <label htmlFor="new-itinerary-day" className={fieldLabelClass}>Date</label>
                     <input
                         id="new-itinerary-day"
                         type="date"
@@ -94,65 +97,38 @@ export default function ItineraryDayEditor({ day, items, saving, error, onCancel
                             onChange={e => updateRow(i, { detail: e.target.value })}
                             className={`${inputClass} flex-1 min-w-0`}
                         />
-                        <button
-                            type="button"
+                        <Button
+                            variant="icon"
                             aria-label="Remove item"
                             onClick={() => removeRow(i)}
-                            className="inline-flex items-center justify-center w-9 h-9 shrink-0 self-end sm:self-center opacity-50 hover:opacity-100 transition-opacity rounded-lg outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
+                            className="shrink-0 self-end sm:self-center"
                         >
-                            <Trash2 size={16} className="theme-text" />
-                        </button>
+                            <Trash2 size={16} />
+                        </Button>
                     </div>
                 ))}
             </div>
 
-            <button type="button" onClick={addRow} className={addButtonClass}>
+            <Button variant="outlined" className="self-start" onClick={addRow}>
                 <Plus size={15} />
                 Add item
-            </button>
+            </Button>
 
-            {error && (
-                <p
-                    role="alert"
-                    className="text-sm rounded-lg border px-3 py-2"
-                    style={{ color: DANGER_RED, borderColor: tintColor(DANGER_RED, 40), background: tintColor(DANGER_RED, 10) }}
-                >
-                    {error}
-                </p>
-            )}
+            {error && <Notice>{error}</Notice>}
 
-            <div className="flex items-center justify-between gap-3">
-                {onDelete ? (
-                    <button
-                        type="button"
-                        onClick={onDelete}
-                        disabled={saving}
-                        className="text-sm font-semibold px-3 py-2 min-h-11 rounded-lg hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
-                        style={{ color: DANGER_RED }}
-                    >
+            <FormFooter className="-mx-4 -mb-3 rounded-b-xl">
+                {onDelete && (
+                    <Button variant="danger" size="footer" className="mr-auto" onClick={onDelete} disabled={saving}>
                         Delete day
-                    </button>
-                ) : <span />}
-
-                <div className="flex items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={onCancel}
-                        disabled={saving}
-                        className="text-sm font-semibold theme-subtext-color px-3 py-2 min-h-11 rounded-lg hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => onSave(dateValue, rows)}
-                        disabled={saving}
-                        className="rounded-lg border theme-bg theme-border theme-text-contrast text-sm font-semibold px-4 py-2 min-h-11 disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity outline-none focus:ring-2 focus:ring-[var(--theme-text-contrast)]"
-                    >
-                        {saving ? "Saving…" : "Save"}
-                    </button>
-                </div>
-            </div>
+                    </Button>
+                )}
+                <Button variant="text" size="footer" className="ml-auto" onClick={() => void confirmDiscard().then(ok => { if (ok) onCancel() })} disabled={saving}>
+                    Cancel
+                </Button>
+                <Button size="footer" onClick={() => onSave(dateValue, rows)} disabled={saving}>
+                    {saving ? "Saving…" : "Save"}
+                </Button>
+            </FormFooter>
         </div>
     )
 }

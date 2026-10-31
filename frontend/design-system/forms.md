@@ -37,7 +37,15 @@ a sheet or a dialog.
 4. **Invalid Save stays enabled.** Pressing it shows every error and moves focus to the first invalid field.
 5. **While saving,** disable Save and Cancel and label the button "Saving…".
 6. **Save failure** keeps the user's input and shows a notice directly above the footer.
-7. **Unsaved changes:** dismissing a dirty form asks "Discard changes?" in an alert dialog.
+7. **Unsaved changes:** a form is dirty when its values differ from the values it opened with. Leaving a
+   dirty form by any route asks "Discard changes?" in an alert dialog (`confirmDialog`, **Discard** is the
+   danger action): dismissing its sheet or dialog (scrim, Esc, close button, handle, drag), its **Cancel**
+   or **Reset**, following an in-app link, and closing the tab. Declining keeps the form as it is.
+   `useDiscardGuard(dirty)` from `lib/useDiscardGuard.ts` does this: it returns `confirmDiscard()` for
+   Cancel (run the cancel handler only on `true`), arms `beforeunload`, holds back in-app link clicks
+   (the app uses `BrowserRouter`, which has no `useBlocker`), and tells an enclosing `Sheet` it is dirty.
+   Prompts are shared, so nested forms never double-prompt. After a save the form closes or its
+   snapshot catches up, so it never prompts. Browser Back is not guarded (see debt).
 
 ### Where the footer is not used
 
@@ -78,17 +86,12 @@ the input becomes valid.
 - **Pristine Save is disabled** because there is nothing to save, and a success message would
   falsely confirm a change.
 
-## Migration
+## Remaining debt
 
-| Surface | Today | Change |
-|---|---|---|
-| `TasksPageMobile.tsx:1129` | Submit is the last item in a sheet with no max height or scroll, so a tall form can push it off-screen | FormFooter; bound the sheet (fix first) |
-| `TasksPageDesktop.tsx:1433` | Modal action row | FormFooter |
-| `MembersPage.tsx:578` | Shown only when dirty, on mobile only | Always shown, at every width |
-| `MembersPage.tsx:923`, `:1031` | Modals with inline actions | Mobile sheets with FormFooter |
-| `MeetingHoursEditor.tsx:543` | Scrolls away with the page | FormFooter |
-| `NotificationDetailPage.tsx:549` | Scrolls away with the page | FormFooter |
-| `RosterPage.tsx:369` | Inline in the editor panel | FormFooter |
-| `ItineraryDayEditor.tsx:146`, `PackingCategoryEditor.tsx:119`, `InstructionEditor.tsx:88` | Inline in expanding cards | FormFooter inside the card |
-| `EventScheduleEditor.tsx:280` | Sticky, Save first | Reorder and adopt the shared component |
-| `OnboardingShared.tsx:289` | Bottom of form | FormFooter without Cancel |
+All forms now use `FormFooter` (the migration table is complete). What is left needs new behaviour:
+
+- The pristine rule: Save is enabled whenever the form is not busy, not only after a change. Dirtiness is tracked only to guard exits (`useDiscardGuard`), not to gate Save.
+- "Discard changes?" does not cover browser Back / popstate (`BrowserRouter` cannot cancel it reliably), programmatic `navigate()` calls, or switching to another row's editor in place (`MeetingHoursEditor` row Edit, `RosterPage` pencil, the Tags and Attendance forms, which save immediately or hold no edits).
+- `NotificationDetailPage.tsx`: an invalid form keeps Save enabled and reports the error on press, instead of disabling Save or showing field errors first. Changing it alters validation behaviour.
+- `OnboardingShared.tsx` `SimpleDropdown` is a separate hand-built select, not the shared `Dropdown`. It should move to `Dropdown` once that can render in the onboarding flow.
+- `TasksPageDesktop.tsx` and `TasksPageMobile.tsx` still duplicate content (note thread, task form fields, row pieces). Principle 5 wants a `TasksShared.tsx`; extracting it moves handlers and is a refactor, not a restyle.

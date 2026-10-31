@@ -39,7 +39,7 @@ function hhmmToIdx(hhmm: string): number {
     return clamp(Math.round((mins - WHEEL_START) / WHEEL_STEP), 0, TIME_SLOTS.length - 1)
 }
 
-const fieldStyle = { background: "color-mix(in oklch, var(--theme-button-bg) 60%, transparent)", borderColor: "var(--theme-border)" }
+const fieldStyle = { background: "color-mix(in oklch, var(--theme-button-bg) 60%, transparent)", borderColor: "var(--theme-outline)" }
 
 /**
  * Drag-to-set time picker: 5-minute slots from 6:00 AM to 11:55 PM, with

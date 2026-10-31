@@ -6,8 +6,21 @@ import {
 } from "lucide-react"
 import { useIsMobile } from "../../lib/useIsMobile"
 import RoleAudienceSelect, { type RoleMeta } from "@/components/RoleAudienceSelect"
+import Button from "@/components/ui/Button"
+import FormFooter from "@/components/ui/FormFooter"
+import Notice from "@/components/ui/Notice"
+import Skeleton from "@/components/ui/Skeleton"
+import EmptyState from "@/components/ui/EmptyState"
+import { useDiscardGuard, isDirtyVs } from "@/lib/useDiscardGuard"
+import { fieldLabelClass, focusRing, inputClass, typeH1, typeH2, typeTitle } from "@/lib/uiClasses"
 
 const API = import.meta.env.VITE_BACKEND_URL
+
+// Delivery-status colours: data identity with no matching role in the palette (success and
+// warning have no tokens yet), so they stay literal. Failure uses the danger role.
+const STATUS_OK = "#16a34a"
+const STATUS_WARN = "#d97706"
+const STATUS_FAIL = "var(--theme-danger)"
 
 interface PushMessage {
     id: string
@@ -43,9 +56,9 @@ function statusBadge(status: DeliveryRow["status"]) {
         return (
             <span
                 className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium theme-border shrink-0"
-                style={{ color: "#16a34a", borderColor: "color-mix(in oklch, #16a34a 50%, transparent)" }}
+                style={{ color: STATUS_OK, borderColor: `color-mix(in oklch, ${STATUS_OK} 50%, transparent)` }}
             >
-                <CheckCircle2 size={12} /> Delivered
+                <CheckCircle2 size={14} /> Delivered
             </span>
         )
     }
@@ -53,9 +66,9 @@ function statusBadge(status: DeliveryRow["status"]) {
         return (
             <span
                 className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium theme-border shrink-0"
-                style={{ color: "#d97706", borderColor: "color-mix(in oklch, #d97706 50%, transparent)" }}
+                style={{ color: STATUS_WARN, borderColor: `color-mix(in oklch, ${STATUS_WARN} 50%, transparent)` }}
             >
-                <AlertCircle size={12} /> Partial
+                <AlertCircle size={14} /> Partial
             </span>
         )
     }
@@ -63,16 +76,16 @@ function statusBadge(status: DeliveryRow["status"]) {
         return (
             <span
                 className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium theme-border shrink-0"
-                style={{ color: "#dc2626", borderColor: "color-mix(in oklch, #dc2626 50%, transparent)" }}
+                style={{ color: STATUS_FAIL, borderColor: `color-mix(in oklch, ${STATUS_FAIL} 50%, transparent)` }}
                 title="Send error, or no delivery receipt yet. The device may still have shown it."
             >
-                <XCircle size={12} /> Failed
+                <XCircle size={14} /> Failed
             </span>
         )
     }
     return (
         <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium theme-border theme-subtext-color shrink-0">
-            <Clock size={12} /> Pending
+            <Clock size={14} /> Pending
         </span>
     )
 }
@@ -82,16 +95,16 @@ function statusBadge(status: DeliveryRow["status"]) {
 function listBadge(m: PushMessage) {
     // Nobody in the audience had push on -- not a success, nothing was sent.
     if (m.sent_count === 0) {
-        return { label: "No devices", color: "#6b7280" }
+        return { label: "No devices", color: "var(--theme-subtext-color)" }
     }
     if (m.failed_count > 0) {
-        return { label: `${m.failed_count} failed`, color: "#dc2626" }
+        return { label: `${m.failed_count} failed`, color: STATUS_FAIL }
     }
     const pending = Math.max(0, m.sent_count - m.delivered_count)
     if (pending > 0) {
-        return { label: `${pending} pending`, color: "#d97706" }
+        return { label: `${pending} pending`, color: STATUS_WARN }
     }
-    return { label: "All delivered", color: "#16a34a" }
+    return { label: "All delivered", color: STATUS_OK }
 }
 
 interface FormState {
@@ -123,13 +136,14 @@ function DeliverySection(
         <div className="flex flex-col">
             <button
                 onClick={() => setOpen(o => !o)}
-                className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 theme-border theme-button-bg"
+                aria-expanded={open}
+                className={`flex items-center justify-between gap-2 rounded-lg border px-3 min-h-11 theme-border theme-button-bg ${focusRing}`}
             >
-                <span className="text-xs font-semibold uppercase tracking-widest theme-subtext-color">
+                <span className={`${typeH2} theme-subtext-color`}>
                     {label} ({rows.length})
                 </span>
                 <ChevronDown
-                    size={15}
+                    size={16}
                     className="theme-subtext-color transition-transform"
                     style={{ transform: open ? "rotate(180deg)" : "none" }}
                 />
@@ -178,7 +192,7 @@ function DeliveryDetail(
             if (!res.ok) throw new Error("deliveries")
             setData(await res.json() as DeliveryDetails)
         } catch {
-            setError("Failed to load delivery details")
+            setError("Couldn't load delivery details")
         } finally {
             setLoading(false)
         }
@@ -196,7 +210,7 @@ function DeliveryDetail(
         <div className="flex flex-col gap-4 h-full overflow-y-auto theme-scrollbar">
             {/* header */}
             <div className="flex flex-col gap-2">
-                <h2 className="text-lg font-semibold theme-h1-color">{message.title}</h2>
+                <h2 className={`${typeTitle} theme-h1-color`}>{message.title}</h2>
                 <p className="text-sm theme-text whitespace-pre-wrap">{message.body}</p>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                     <span className="rounded-full border px-2.5 py-0.5 text-xs theme-border theme-subtext-color">
@@ -211,11 +225,11 @@ function DeliveryDetail(
                 </div>
                 {data && (
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm pt-1">
-                        <span className="font-medium" style={{ color: "#16a34a" }}>{data.summary.delivered} delivered</span>
+                        <span className="font-medium" style={{ color: STATUS_OK }}>{data.summary.delivered} delivered</span>
                         <span className="theme-subtext-color">·</span>
-                        <span className="font-medium" style={{ color: "#d97706" }}>{data.summary.partial} partial</span>
+                        <span className="font-medium" style={{ color: STATUS_WARN }}>{data.summary.partial} partial</span>
                         <span className="theme-subtext-color">·</span>
-                        <span className="font-medium" style={{ color: "#dc2626" }}>{data.summary.failed} failed</span>
+                        <span className="font-medium" style={{ color: STATUS_FAIL }}>{data.summary.failed} failed</span>
                         {data.summary.pending > 0 && (
                             <>
                                 <span className="theme-subtext-color">·</span>
@@ -226,32 +240,32 @@ function DeliveryDetail(
                 )}
             </div>
 
-            {loading && <p className="text-sm theme-subtext-color">Loading…</p>}
+            {loading && (
+                <div className="flex flex-col gap-3" role="status" aria-label="Loading delivery details">
+                    <Skeleton className="h-11 w-full" />
+                    <Skeleton className="h-11 w-full" />
+                </div>
+            )}
 
             {error && (
                 <div className="flex flex-col gap-2">
-                    <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
-                       style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
-                        {error}
-                    </p>
-                    <button
-                        onClick={() => void load()}
-                        className="self-start rounded-lg border px-3 py-1.5 text-sm font-medium theme-text theme-border transition-opacity hover:opacity-80"
-                    >
+                    <Notice>{error}</Notice>
+                    <Button variant="outlined" className="self-start" onClick={() => void load()}>
                         Retry
-                    </button>
+                    </Button>
                 </div>
             )}
 
             {data && (
                 <>
-                    <div className="flex items-center gap-2 rounded-lg border px-3 py-1.5 theme-border theme-bg">
-                        <Search size={15} className="theme-subtext-color shrink-0" />
+                    <div className="flex items-center gap-2 rounded-lg border px-3 min-h-11 theme-outline theme-bg focus-within:ring-2 focus-within:ring-[var(--theme-text-contrast)]">
+                        <Search size={16} className="theme-subtext-color shrink-0" />
                         <input
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                             placeholder="Search by name…"
-                            className="w-full bg-transparent text-sm theme-text outline-none"
+                            aria-label="Search recipients"
+                            className="w-full bg-transparent text-base md:text-sm theme-text outline-none"
                         />
                     </div>
                     <div className="flex flex-col gap-3">
@@ -274,7 +288,7 @@ function HistoryRow(
     return (
         <button
             onClick={onClick}
-            className="w-full text-left flex flex-col gap-1.5 px-4 py-3 border-b theme-border transition-colors"
+            className={`w-full text-left flex flex-col gap-1.5 px-4 py-3 border-b theme-border transition-colors ${focusRing}`}
             style={{
                 borderLeft: selected ? "2px solid var(--theme-text-contrast)" : "2px solid transparent",
                 background: selected ? "color-mix(in oklch, var(--theme-text-contrast) 8%, transparent)" : "transparent",
@@ -283,7 +297,7 @@ function HistoryRow(
             <div className="flex items-start justify-between gap-2.5">
                 <span className="text-sm font-medium theme-text leading-snug">{m.title}</span>
                 <span
-                    className="shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                    className="shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium"
                     style={{
                         color: badge.color,
                         borderColor: `color-mix(in oklch, ${badge.color} 45%, transparent)`,
@@ -328,6 +342,8 @@ export default function PushNotificationsPage() {
     const [tab, setTab] = useState<"compose" | "history">("compose")
 
     const [form, setForm] = useState<FormState>(EMPTY_FORM)
+    // Dirty = anything typed or narrowed since the form was empty. Guards in-app links and tab close (the form survives tab switches).
+    useDiscardGuard(isDirtyVs(form, EMPTY_FORM))
     const [sending, setSending] = useState(false)
     const [sendError, setSendError] = useState<string | null>(null)
     const [sendSuccess, setSendSuccess] = useState<string | null>(null)
@@ -352,7 +368,7 @@ export default function PushNotificationsPage() {
                 setRoleLabels(Object.fromEntries(cat.map(c => [c.value, c.label])))
             }
         } catch {
-            setLoadError("Failed to load push history")
+            setLoadError("Couldn't load push history")
         } finally {
             setLoading(false)
         }
@@ -391,7 +407,7 @@ export default function PushNotificationsPage() {
             })
             if (!res.ok) {
                 const data = await res.json().catch(() => null) as { detail?: string } | null
-                throw new Error(data?.detail ?? "Failed to send push")
+                throw new Error(data?.detail ?? "Couldn't send push")
             }
             const sent = await res.json() as PushMessage
             setSendSuccess(`Sent to ${sent.sent_count} device${sent.sent_count === 1 ? "" : "s"}`)
@@ -401,7 +417,7 @@ export default function PushNotificationsPage() {
             setSelectedId(sent.id)
             setTab("history")
         } catch (e) {
-            setSendError(e instanceof Error ? e.message : "Failed to send push")
+            setSendError(e instanceof Error ? e.message : "Couldn't send push")
         } finally {
             setSending(false)
         }
@@ -412,10 +428,8 @@ export default function PushNotificationsPage() {
         return (
             <button
                 onClick={() => setTab(key)}
-                className="pb-2.5 text-sm transition-colors"
+                className={`min-h-11 flex items-end pb-2.5 text-sm transition-colors ${active ? "font-bold theme-h1-color" : "font-medium theme-h1-color opacity-70 hover:opacity-100"} ${focusRing}`}
                 style={{
-                    fontWeight: active ? 700 : 500,
-                    color: active ? "var(--theme-text-contrast)" : "var(--theme-subtext-color)",
                     borderBottom: active ? "2px solid var(--theme-text-contrast)" : "2px solid transparent",
                     marginBottom: -1,
                 }}
@@ -426,16 +440,16 @@ export default function PushNotificationsPage() {
     }
 
     return (
-        <div className="px-4 py-6 flex flex-col gap-5 h-full">
+        <div className={`px-4 md:px-6 py-6 flex flex-col gap-5 h-full mx-auto w-full ${tab === "compose" ? "max-w-2xl" : "max-w-5xl"}`}>
             <div className="flex items-center gap-2">
                 <Link
                     to="/control"
                     aria-label="Back to Control Panel"
-                    className="md:hidden flex items-center justify-center w-9 h-9 -ml-2 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity"
+                    className={`md:hidden flex items-center justify-center w-11 h-11 -ml-3 -mr-3 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity ${focusRing}`}
                 >
-                    <ChevronLeft size={22} />
+                    <ChevronLeft size={21} />
                 </Link>
-                <h1 className="text-2xl font-bold theme-h1-color">Push Notifications</h1>
+                <h1 className={`${typeH1} theme-h1-color`}>Push Notifications</h1>
             </div>
 
             {/* Tabs */}
@@ -446,26 +460,27 @@ export default function PushNotificationsPage() {
 
             {/* ---------- COMPOSE ---------- */}
             {tab === "compose" && (
-                <div className="flex flex-col gap-3 max-w-2xl">
-                    <label className="flex flex-col gap-1 text-sm theme-text">
+                <div className="flex flex-col gap-4 rounded-xl border p-5 theme-border theme-bg">
+                    <label className={`flex flex-col gap-1 ${fieldLabelClass}`}>
                         Title
                         <input
                             value={form.title}
                             onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}
-                            className="rounded-lg border px-3 py-2 text-sm theme-border theme-bg theme-text"
+                            className={`w-full ${inputClass}`}
                         />
                     </label>
-                    <label className="flex flex-col gap-1 text-sm theme-text">
+                    <label className={`flex flex-col gap-1 ${fieldLabelClass}`}>
                         Body
                         <textarea
                             value={form.body}
                             onChange={e => setForm(prev => ({ ...prev, body: e.target.value }))}
                             rows={3}
-                            className="rounded-lg border px-3 py-2 text-sm theme-border theme-bg theme-text resize-none"
+                            className={`w-full resize-none ${inputClass}`}
                         />
                     </label>
-                    <div className="flex flex-col gap-1.5">
-                        <p className="text-sm theme-text">Send to</p>
+                    <div className="border-t theme-border" />
+                    <div className="flex flex-col gap-2">
+                        <p className={fieldLabelClass}>Send to</p>
                         <RoleAudienceSelect
                             catalog={catalog}
                             selected={form.target_roles}
@@ -473,65 +488,59 @@ export default function PushNotificationsPage() {
                         />
                     </div>
 
-                    {sendError && (
-                        <p className="text-sm px-3 py-2 rounded-lg border theme-subtext-color theme-border"
-                           style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
-                            {sendError}
-                        </p>
-                    )}
+                    {sendError && <Notice>{sendError}</Notice>}
                     {sendSuccess && (
                         <p className="text-sm px-3 py-2 rounded-lg border theme-text-contrast theme-border">
                             {sendSuccess}
                         </p>
                     )}
 
-                    <div className="flex flex-wrap items-center gap-3 pt-1">
+                    <FormFooter className="-mx-5 -mb-5 rounded-b-xl">
                         <p className="text-sm theme-subtext-color min-w-0">
                             Sending to <span className="font-semibold theme-text-contrast">{formatRoles(form.target_roles, roleLabels)}</span>
                         </p>
-                        <button
+                        <Button
+                            size="footer"
+                            className="ml-auto"
                             onClick={() => void handleSend()}
                             disabled={sending || !form.title.trim() || !form.body.trim()}
-                            className="ml-auto flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-                            style={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)" }}
                         >
                             <Send size={16} />
                             {sending ? "Sending…" : "Send Push"}
-                        </button>
-                    </div>
+                        </Button>
+                    </FormFooter>
                 </div>
             )}
 
             {/* ---------- HISTORY ---------- */}
             {tab === "history" && (
                 <div className="flex flex-col flex-1 min-h-0">
-                    {loadError && (
-                        <p className="text-sm px-3 py-2 mb-3 rounded-lg border theme-subtext-color theme-border"
-                           style={{ background: "color-mix(in oklch, var(--theme-border) 40%, transparent)" }}>
-                            {loadError}
-                        </p>
-                    )}
+                    {loadError && <Notice className="mb-4">{loadError}</Notice>}
 
                     {loading ? (
-                        <p className="text-sm theme-subtext-color px-1">Loading…</p>
+                        <div className="flex flex-col gap-3" role="status" aria-label="Loading push history">
+                            {Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+                        </div>
                     ) : sortedMessages.length === 0 ? (
-                        <p className="text-sm theme-subtext-color px-1">No pushes sent yet.</p>
+                        <div className="rounded-xl border theme-border theme-bg p-4">
+                            <EmptyState>No pushes sent yet.</EmptyState>
+                        </div>
                     ) : isMobile ? (
                         /* ---- Mobile: drill-down ---- */
                         selectedMessage ? (
                             <div className="flex flex-col flex-1 min-h-0 gap-3">
                                 <button
                                     onClick={() => setSelectedId(null)}
-                                    className="flex items-center gap-1 self-start text-sm font-medium theme-text-contrast"
+                                    className={`flex items-center gap-1 self-start min-h-11 rounded-lg text-sm font-medium theme-text-contrast ${focusRing}`}
                                 >
-                                    <ChevronLeft size={20} /> History
+                                    <ChevronLeft size={21} /> History
                                 </button>
-                                <div className="flex-1 min-h-0 rounded-xl border p-4 theme-border backdrop-blur-sm" style={{ background: "var(--theme-bg)" }}>
+                                <div className="flex-1 min-h-0 rounded-xl border p-4 theme-border theme-bg backdrop-blur-sm">
                                     <DeliveryDetail key={selectedMessage.id} message={selectedMessage} roleLabels={roleLabels} />
                                 </div>
                             </div>
                         ) : (
-                            <div className="flex flex-col flex-1 min-h-0 overflow-y-auto rounded-xl border theme-border theme-scrollbar backdrop-blur-sm" style={{ background: "var(--theme-bg)" }}>
+                            <div className="flex flex-col flex-1 min-h-0 overflow-y-auto rounded-xl border theme-border theme-bg theme-scrollbar backdrop-blur-sm">
                                 {sortedMessages.map(m => (
                                     <HistoryRow
                                         key={m.id}
@@ -545,7 +554,7 @@ export default function PushNotificationsPage() {
                         )
                     ) : (
                         /* ---- Desktop: master–detail split ---- */
-                        <div className="flex flex-1 min-h-0 rounded-xl border overflow-hidden theme-border backdrop-blur-sm" style={{ background: "var(--theme-bg)" }}>
+                        <div className="flex flex-1 min-h-0 rounded-xl border overflow-hidden theme-border theme-bg backdrop-blur-sm">
                             <div className="w-[340px] shrink-0 border-r overflow-y-auto theme-border theme-scrollbar">
                                 {sortedMessages.map(m => (
                                     <HistoryRow
