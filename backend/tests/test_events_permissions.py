@@ -9,7 +9,7 @@ test_task_permissions.py's approach for the (structurally identical)
 from core.permissions import ROLE_DEFINITIONS, can, get_permissions_for_role, has_task_authority
 
 _EVENT_EDIT_ROLES = {
-    "cad_lead", "electrical_lead", "manufacturing_lead", "programming_lead",
+    "cad_lead", "mechanical_lead", "manufacturing_lead", "programming_lead",
     "scouting_lead", "publicity_lead", "operations_lead", "outreach_lead",
     "captain", "mentor",
 }

@@ -8,7 +8,7 @@ from core.permissions import ROLE_DEFINITIONS, can, get_permissions_for_role, ha
 
 # The authority set per the spec: every *_lead, captain, and mentor.
 _AUTHORITY_ROLES = {
-    "cad_lead", "electrical_lead", "manufacturing_lead", "programming_lead",
+    "cad_lead", "mechanical_lead", "manufacturing_lead", "programming_lead",
     "scouting_lead", "publicity_lead", "operations_lead", "outreach_lead",
     "captain", "mentor",
 }
@@ -50,7 +50,7 @@ def test_task_buckets_is_every_subteam_plus_general_in_order():
     # matches the spec's bucket list exactly.
     assert task_buckets() == [
         "cad",
-        "electrical",
+        "mechanical",
         "manufacturing",
         "programming",
         "scouting",
