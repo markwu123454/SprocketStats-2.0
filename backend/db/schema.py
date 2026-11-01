@@ -802,6 +802,29 @@ async def _migration_0007_meeting_agenda(conn):
     await conn.execute("ALTER TABLE meeting_hours ADD COLUMN IF NOT EXISTS agenda TEXT NOT NULL DEFAULT ''")
 
 
+async def _migration_0008_electrical_into_mechanical(conn) -> None:
+    """Fold the retired Electrical subteam into Mechanical: users holding an
+    electrical_* role get the matching mechanical_* role, electrical tasks move
+    to the mechanical bucket, and notifications / push messages targeting an
+    electrical_* role target the mechanical_* one instead (deduplicated, in
+    case both were already targeted). Free text (task titles, areas, notes)
+    is left as written."""
+    await conn.execute("""
+        UPDATE users SET role = replace(role, 'electrical_', 'mechanical_')
+        WHERE role IN ('electrical_member', 'electrical_lead')
+    """)
+    await conn.execute("UPDATE tasks SET bucket = 'mechanical' WHERE bucket = 'electrical'")
+    for table in ("notifications", "push_messages"):
+        await conn.execute(f"""
+            UPDATE {table} SET target_roles = ARRAY(
+                SELECT replace(x, 'electrical_', 'mechanical_') AS r
+                FROM unnest(target_roles) WITH ORDINALITY AS t(x, ord)
+                GROUP BY r ORDER BY min(ord)
+            )
+            WHERE target_roles && ARRAY['electrical_member', 'electrical_lead']
+        """)
+
+
 # Append-only: never edit or renumber a migration that has shipped. Each must
 # be idempotent against init_db's current schema, because a fresh database
 # gets that schema first and then runs every migration.
@@ -813,6 +836,7 @@ _MIGRATIONS = [
     (5, _migration_0005_event_roster_table),
     (6, _migration_0006_notification_responses_pk),
     (7, _migration_0007_meeting_agenda),
+    (8, _migration_0008_electrical_into_mechanical),
 ]
 
 

@@ -6,7 +6,7 @@
 
 export const TASK_BUCKETS = [
     "cad",
-    "electrical",
+    "mechanical",
     "manufacturing",
     "programming",
     "scouting",

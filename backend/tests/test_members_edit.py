@@ -21,7 +21,7 @@ USERS = {
     "cad-lead-1": "cad_lead",
     "cad-lead-2": "cad_lead",
     "cad-member-1": "cad_member",
-    "elec-member-1": "electrical_member",
+    "mech-member-1": "mechanical_member",
     "alum-1": "alumni",
     "mentor-1": "mentor",
 }
@@ -73,7 +73,7 @@ def test_lead_can_edit_alumni(client_as):
 
 def test_lead_cannot_edit_other_subteam(client_as):
     client, written = client_as("cad-lead-1")
-    res = client.put("/members", json=[edit("elec-member-1", "electrical_member")])
+    res = client.put("/members", json=[edit("mech-member-1", "mechanical_member")])
     assert res.status_code == 403
     assert written == []
 
@@ -86,7 +86,7 @@ def test_lead_cannot_edit_leads_self_or_seniors(client_as, target):
     assert written == []
 
 
-@pytest.mark.parametrize("new_role", ["alumni", "cad_lead", "captain", "electrical_member", None])
+@pytest.mark.parametrize("new_role", ["alumni", "cad_lead", "captain", "mechanical_member", None])
 def test_lead_cannot_change_role(client_as, new_role):
     client, written = client_as("cad-lead-1")
     res = client.put("/members", json=[edit("cad-member-1", new_role)])
@@ -97,7 +97,7 @@ def test_lead_cannot_change_role(client_as, new_role):
 def test_one_out_of_scope_row_rejects_whole_batch(client_as):
     client, written = client_as("cad-lead-1")
     res = client.put("/members", json=[edit("cad-member-1", "cad_member"),
-                                       edit("elec-member-1", "electrical_member")])
+                                       edit("mech-member-1", "mechanical_member")])
     assert res.status_code == 403
     assert written == []
 
@@ -110,7 +110,7 @@ def test_unknown_member_is_404(client_as):
 @pytest.mark.parametrize("editor", ["captain-1", "scout-lead-1"])
 def test_full_managers_can_edit_anyone(client_as, editor):
     client, written = client_as(editor)
-    res = client.put("/members", json=[edit("elec-member-1", "cad_lead"), edit("mentor-1", "mentor")])
+    res = client.put("/members", json=[edit("mech-member-1", "cad_lead"), edit("mentor-1", "mentor")])
     assert res.status_code == 200
     assert len(written[0]) == 2
 

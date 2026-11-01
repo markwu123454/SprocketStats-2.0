@@ -42,8 +42,8 @@ STUDENT_EMAIL_DOMAIN = "stu.wvusd.org"
 ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
     "cad_member":           {"label": "CAD Member",           "level": "member", "subteam": "cad",           "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
     "cad_lead":             {"label": "CAD Lead",             "level": "lead",   "subteam": "cad",           "requires_approval": True, "student": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
-    "electrical_member":    {"label": "Electrical Member",    "level": "member", "subteam": "electrical",    "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
-    "electrical_lead":      {"label": "Electrical Lead",      "level": "lead",   "subteam": "electrical",    "requires_approval": True, "student": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
+    "mechanical_member":    {"label": "Mechanical Member",    "level": "member", "subteam": "mechanical",    "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
+    "mechanical_lead":      {"label": "Mechanical Lead",      "level": "lead",   "subteam": "mechanical",    "requires_approval": True, "student": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
     "manufacturing_member": {"label": "Manufacturing Member", "level": "member", "subteam": "manufacturing", "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
     "manufacturing_lead":   {"label": "Manufacturing Lead",   "level": "lead",   "subteam": "manufacturing", "requires_approval": True, "student": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
     "programming_member":   {"label": "Programming Member",   "level": "member", "subteam": "programming",   "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
@@ -196,7 +196,7 @@ def task_buckets() -> list[str]:
     validate an incoming ``bucket`` against; there is deliberately no DB CHECK
     constraint mirroring it, so it stays a pure-Python edit.
 
-    :returns: E.g. ``["cad", "electrical", ..., "outreach", "general"]``.
+    :returns: E.g. ``["cad", "mechanical", ..., "outreach", "general"]``.
     """
     subteams: list[str] = []
     for defn in ROLE_DEFINITIONS.values():
