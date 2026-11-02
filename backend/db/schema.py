@@ -825,6 +825,28 @@ async def _migration_0008_electrical_into_mechanical(conn) -> None:
         """)
 
 
+async def _migration_0009_into_manufacturing(conn) -> None:
+    """Fold Electrical into Manufacturing, not Mechanical. Migration 8 moved
+    the retired Electrical subteam into a new Mechanical subteam by mistake;
+    Mechanical is retired as well, so its users, tasks and notification / push
+    targets (and anything still on Electrical) move to the matching
+    manufacturing_* role and the manufacturing bucket. Target lists are
+    deduplicated, keeping order. Free text is left as written."""
+    old_roles = "ARRAY['electrical_member', 'electrical_lead', 'mechanical_member', 'mechanical_lead']"
+    new_role = "regexp_replace({col}, '^(electrical|mechanical)_', 'manufacturing_')"
+    await conn.execute(f"UPDATE users SET role = {new_role.format(col='role')} WHERE role = ANY({old_roles})")
+    await conn.execute("UPDATE tasks SET bucket = 'manufacturing' WHERE bucket IN ('electrical', 'mechanical')")
+    for table in ("notifications", "push_messages"):
+        await conn.execute(f"""
+            UPDATE {table} SET target_roles = ARRAY(
+                SELECT {new_role.format(col='x')} AS r
+                FROM unnest(target_roles) WITH ORDINALITY AS t(x, ord)
+                GROUP BY r ORDER BY min(ord)
+            )
+            WHERE target_roles && {old_roles}
+        """)
+
+
 # Append-only: never edit or renumber a migration that has shipped. Each must
 # be idempotent against init_db's current schema, because a fresh database
 # gets that schema first and then runs every migration.
@@ -837,6 +859,7 @@ _MIGRATIONS = [
     (6, _migration_0006_notification_responses_pk),
     (7, _migration_0007_meeting_agenda),
     (8, _migration_0008_electrical_into_mechanical),
+    (9, _migration_0009_into_manufacturing),
 ]
 
 

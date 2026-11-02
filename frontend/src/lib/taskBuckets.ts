@@ -1,4 +1,4 @@
-// Task board buckets — the 8 subteam slugs plus "general" for cross-team work.
+// Task board buckets — the 7 subteam slugs plus "general" for cross-team work.
 // Mirrors the fixed list the backend validates `bucket` against (see
 // backend/core/permissions.py / TASKS_CONTRACT.md). The frontend has no role
 // catalog entry that maps 1:1 to "subteam slug, no attached role" to derive
@@ -6,7 +6,6 @@
 
 export const TASK_BUCKETS = [
     "cad",
-    "mechanical",
     "manufacturing",
     "programming",
     "scouting",
@@ -29,6 +28,6 @@ export function bucketLabel(bucket: string): string {
     return bucket.charAt(0).toUpperCase() + bucket.slice(1)
 }
 
-/** `{ value, label }` pairs for the 9 buckets, in the canonical order above —
+/** `{ value, label }` pairs for the 8 buckets, in the canonical order above —
  *  feeds both the create-form bucket picker and the left-rail filter list. */
 export const BUCKET_OPTIONS = TASK_BUCKETS.map(b => ({ value: b, label: bucketLabel(b) }))
