@@ -30,7 +30,7 @@ export interface RoleMeta {
 }
 
 const DIVISIONS: { id: string; label: string; subteams: string[] }[] = [
-    { id: "eng", label: "Engineering", subteams: ["programming", "scouting", "cad", "mechanical", "manufacturing"] },
+    { id: "eng", label: "Engineering", subteams: ["programming", "scouting", "cad", "manufacturing", "mechanical"] },
     { id: "biz", label: "Business",    subteams: ["outreach", "operations", "publicity"] },
 ]
 
