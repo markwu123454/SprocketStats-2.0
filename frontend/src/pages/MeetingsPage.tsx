@@ -5,7 +5,6 @@ import Button from "@/components/ui/Button"
 import Notice from "@/components/ui/Notice"
 import Skeleton from "@/components/ui/Skeleton"
 import EmptyState from "@/components/ui/EmptyState"
-import TaskLeaderboard from "@/components/TaskLeaderboard"
 import { useOnboardedUser } from "@/contexts/authContext"
 import { can } from "@/lib/permissions"
 import { buttonClass, cardClass, typeH2, typeTitle } from "@/lib/uiClasses"
@@ -31,8 +30,8 @@ export default function MeetingsPage() {
                 </div>
                 {canManage && <Link to="/control/meeting" className={buttonClass({ variant: "outlined" })}><Settings size={16} aria-hidden="true" />Manage meetings</Link>}
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-            <section className={`${cardClass} theme-bg backdrop-blur-sm lg:col-span-2 min-w-0`} aria-labelledby="schedule-title">
+            <div className="flex flex-col gap-4">
+            <section className={`${cardClass} theme-bg backdrop-blur-sm min-w-0`} aria-labelledby="schedule-title">
                 <div className="flex items-center gap-2">
                     <Calendar size={18} className="theme-text-contrast" aria-hidden="true" />
                     <h2 id="schedule-title" className={`${typeTitle} theme-text`}>Upcoming meetings</h2>
@@ -63,7 +62,6 @@ export default function MeetingsPage() {
                         })}
                     </div>}
             </section>
-            <TaskLeaderboard />
             </div>
         </div>
     )

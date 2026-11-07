@@ -24,6 +24,9 @@ const PackingPage        = lazy(() => import("@/pages/events/PackingPage"))
 const RosterPage         = lazy(() => import("@/pages/events/RosterPage"))
 const CompPage           = lazy(() => import("@/pages/events/CompPage"))
 const EventTasksPage     = lazy(() => import("@/pages/events/EventTasksPage"))
+const LeaderboardsPage = lazy(() => import("@/pages/LeaderboardsPage"))
+const CheckinPage      = lazy(() => import("@/pages/CheckinPage"))
+const OtherPage       = lazy(() => import("@/pages/OtherPage"))
 const ScoutingPage    = lazy(() => import("@/pages/ScoutingPage"))
 const ScoutingFormPage = lazy(() => import("@/pages/ScoutingFormPage"))
 const TasksPage       = lazy(() => import("@/pages/TasksPageRouter"))
@@ -88,6 +91,9 @@ export default function App() {
                                             <Route path="tasks"     element={<EventTasksPage/>}/>
                                             <Route path="comp"      element={<CompPage/>}/>
                                         </Route>
+                                        <Route path="/leaderboards" element={<LeaderboardsPage/>}/>
+                                        <Route path="/checkin"     element={<CheckinPage/>}/>
+                                        <Route path="/other"       element={<OtherPage/>}/>
                                         <Route path="/scouting"    element={<ScoutingPage/>}/>
                                         <Route path="/scouting/scout" element={<ScoutingFormPage/>}/>
                                         <Route path="/tasks"       element={<TasksPage/>}/>
