@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
     Check,
     ChevronsUpDown,
@@ -119,6 +119,9 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
+
+    const formRef = useRef<HTMLDivElement>(null)
+    const scrollToForm = () => requestAnimationFrame(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }))
 
     const [mode, setMode] = useState<"add" | "edit" | "bulk">("add")
     const [selected, setSelected] = useState<Set<string>>(() => new Set())
@@ -275,6 +278,7 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
         setEndTime(toHHMM(end))
         setBaseline({ description: row.meeting_purpose ?? "", dateKey: localDateKey(start), startTime: toHHMM(start), endTime: toHHMM(end), repeat })
         setJustAdded(false)
+        scrollToForm()
     }
 
     function toggleSelected(id: string) {
@@ -301,6 +305,7 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
         setEndTime(toHHMM(new Date(first.end_time)))
         setBaseline({ description: first.meeting_purpose ?? "", dateKey, startTime: toHHMM(new Date(first.start_time)), endTime: toHHMM(new Date(first.end_time)), repeat })
         setJustAdded(false)
+        scrollToForm()
     }
 
     async function handleDeleteSelected() {
@@ -337,7 +342,7 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
             {error && <Notice>{error}</Notice>}
 
             {/* Schedule / edit a meeting */}
-            <div className="rounded-xl border p-6 flex flex-col gap-4 backdrop-blur-sm theme-bg theme-border">
+            <div ref={formRef} className="rounded-xl border p-6 flex flex-col gap-4 backdrop-blur-sm theme-bg theme-border scroll-mt-4">
                 <div>
                     <p className={`${typeH2} theme-subtext-color`}>
                         {mode === "bulk" ? "EDIT MEETINGS" : mode === "edit" ? "EDIT MEETING" : "SCHEDULE A MEETING"}
