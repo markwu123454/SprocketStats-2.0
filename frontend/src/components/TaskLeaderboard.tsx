@@ -34,16 +34,16 @@ export default function TaskLeaderboard() {
         </div>
         {loading ? <div role="status" aria-label="Loading task leaderboard" className="flex flex-col gap-3"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
             : error ? <Notice>Couldn't load the leaderboard. <Button variant="text" onClick={() => setAttempt(value => value + 1)}>Try again</Button></Notice>
-            : rows.length === 0 ? <EmptyState>No completed tasks yet. Approved tasks will appear here.</EmptyState>
+            : rows.length === 0 ? <EmptyState>No completed tasks yet. Approved tasks will appear here. Points: Low 1, Medium 2, High 3, Perish 5; contributors earn half, rounded up.</EmptyState>
             : <ol className="flex flex-col gap-1">
                 {rows.map(row => <li key={row.userId} className="rounded-lg p-3 flex flex-col gap-2"
                     style={row.userId === user.id ? { background: "var(--theme-button-bg)" } : undefined}>
                     <div className="flex items-center justify-between gap-3 text-sm">
                         <span className="theme-text min-w-0 break-words"><span className="theme-subtext-color mr-2">{row.rank}</span>{row.name}{row.userId === user.id ? " · You" : ""}</span>
-                        <span className="font-semibold theme-text shrink-0">{row.count} {row.count === 1 ? "task" : "tasks"}</span>
+                        <span className="font-semibold theme-text shrink-0">{row.points} {row.points === 1 ? "pt" : "pts"} <span className="theme-subtext-color font-normal">· {row.count} {row.count === 1 ? "task" : "tasks"}</span></span>
                     </div>
                     <div className="h-1 rounded-full theme-button-bg overflow-hidden" aria-hidden="true">
-                        <div className="h-full rounded-full" style={{ width: `${row.count / rows[0].count * 100}%`, background: "var(--theme-text-contrast)" }} />
+                        <div className="h-full rounded-full" style={{ width: `${row.points / rows[0].points * 100}%`, background: "var(--theme-text-contrast)" }} />
                     </div>
                 </li>)}
             </ol>}
