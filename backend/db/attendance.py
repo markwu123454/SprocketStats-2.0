@@ -127,8 +127,80 @@ async def list_all_attendance() -> list[asyncpg.Record]:
             raise HTTPException(status_code=500, detail="Failed to fetch attendance")
 
 
+QR_CODE_TTL = timedelta(seconds=30)
+
+
+async def create_kiosk_qr_code(token: str, kiosk_user_id: str) -> None:
+    async with db_connection(DB_NAME) as conn:
+        try:
+            # Opportunistic cleanup keeps the table tiny without a scheduler.
+            await conn.execute(
+                "DELETE FROM kiosk_qr_codes WHERE expires_at < now() - INTERVAL '10 minutes'"
+            )
+            await conn.execute(
+                "INSERT INTO kiosk_qr_codes (token, kiosk_user_id, expires_at) "
+                "VALUES ($1, $2, now() + $3)",
+                token, kiosk_user_id, QR_CODE_TTL,
+            )
+        except Exception as e:
+            logger.error("create_kiosk_qr_code failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to create check-in code")
+
+
+async def claim_kiosk_qr_code(token: str, user_id: str) -> bool:
+    """Atomically claim an unexpired, unused code. False if it can't be claimed."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            row = await conn.fetchrow(
+                """
+                UPDATE kiosk_qr_codes SET used_by = $2, used_at = now()
+                WHERE token = $1 AND used_at IS NULL AND expires_at > now()
+                RETURNING token
+                """,
+                token, user_id,
+            )
+            return row is not None
+        except Exception as e:
+            logger.error("claim_kiosk_qr_code failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to claim check-in code")
+
+
+async def set_kiosk_qr_result(token: str, attendance_status: str) -> None:
+    async with db_connection(DB_NAME) as conn:
+        try:
+            await conn.execute(
+                "UPDATE kiosk_qr_codes SET result_status = $2 WHERE token = $1",
+                token, attendance_status,
+            )
+        except Exception as e:
+            logger.error("set_kiosk_qr_result failed: %s", e)
+
+
+async def list_kiosk_qr_results(kiosk_user_id: str, tokens: list[str]) -> list[asyncpg.Record]:
+    """Claimed codes among ``tokens`` that belong to this kiosk's authorizer."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetch(
+                """
+                SELECT c.token, c.result_status, u.display_name, u.given_name
+                FROM kiosk_qr_codes c
+                LEFT JOIN users u ON u.id = c.used_by
+                WHERE c.kiosk_user_id = $1 AND c.token = ANY($2::text[]) AND c.used_at IS NOT NULL
+                """,
+                kiosk_user_id, tokens,
+            )
+        except Exception as e:
+            logger.error("list_kiosk_qr_results failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to read check-in results")
+
+
 __all__ = [
     "KIOSK_SESSION_MAX_AGE",
+    "QR_CODE_TTL",
+    "create_kiosk_qr_code",
+    "claim_kiosk_qr_code",
+    "set_kiosk_qr_result",
+    "list_kiosk_qr_results",
     "create_attendance_entry",
     "toggle_kiosk_attendance",
     "list_attendance_for_user",

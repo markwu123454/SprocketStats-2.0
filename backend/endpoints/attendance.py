@@ -1,8 +1,8 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel, model_validator
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field, model_validator
 
 import db
 from core.security import get_current_user, require_active
@@ -103,3 +103,33 @@ class ClockEntry(BaseModel):
 async def submit_attendance(entry: ClockEntry, user: dict = Depends(require_active)):
     row = await db.create_attendance_entry(user["sub"], entry.source, entry.checkin_time, entry.checkout_time)
     return {"id": row["id"], "checkin_time": row["checkin_time"], "checkout_time": row["checkout_time"]}
+
+
+class QrCheckinRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=128)
+
+
+@router.post("/qr_checkin")
+async def qr_checkin(body: QrCheckinRequest, user: dict = Depends(require_active)):
+    """Check the signed-in member in/out by claiming a code shown on a kiosk.
+
+    Possessing a live code proves presence at the kiosk, which is what the
+    admin countersign used to establish.
+    """
+    row = await db.get_user(user["sub"])
+    if row is None:
+        raise HTTPException(status_code=404, detail="Member not found")
+    if not row["onboarding_complete"]:
+        raise HTTPException(status_code=403, detail="Onboarding incomplete")
+
+    if not await db.claim_kiosk_qr_code(body.token, user["sub"]):
+        raise HTTPException(status_code=410, detail="This code expired or was already used")
+
+    attendance_status = await db.toggle_kiosk_attendance(user["sub"])
+    if attendance_status is None:
+        raise HTTPException(status_code=404, detail="Member not found")
+    await db.set_kiosk_qr_result(body.token, attendance_status)
+    return {
+        "name": row["display_name"] or row["given_name"] or "Unknown User",
+        "status": attendance_status,
+    }

@@ -2,14 +2,14 @@ import { useState, useRef, useEffect } from "react"
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom"
 import { useAuth, useOnboardedUser } from "@/contexts/authContext"
 import {
-    LayoutDashboard, CalendarCheck, ClipboardList, Settings,
-    LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Milestone, ListChecks,
+    Settings, LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen, SlidersHorizontal,
 } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
 import Sheet from "@/components/ui/Sheet"
 import { focusRing, menuRowClass } from "@/lib/uiClasses"
 import NotificationGate from "@/components/NotificationGate.tsx"
-import { can, getPerm, type PermPolicy } from "@/lib/permissions"
+import { can, getPerm } from "@/lib/permissions"
+import { CORE_TABS, OTHER_TAB, otherPages } from "@/lib/navTabs"
 import { visibleSections, type ControlSection } from "@/lib/controlSections"
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community"
 import { useAppReady } from "@/contexts/appReadyContext"
@@ -22,28 +22,6 @@ const NAV_TEXT_KEY = "nav-show-text"
 function getNavTextPref(): boolean {
     const stored = localStorage.getItem(NAV_TEXT_KEY)
     return stored === null ? true : stored === "true"
-}
-
-interface NavTab {
-    to: string
-    label: string
-    icon: typeof LayoutDashboard
-    /** Optional gate; a tab with no predicate is always shown. */
-    visible?: (perms: PermPolicy | null | undefined) => boolean
-}
-
-const CORE_TABS: NavTab[] = [
-    { to: "/dashboard",   label: "Dashboard",   icon: LayoutDashboard },
-    { to: "/meetings",    label: "Meetings",    icon: CalendarCheck },
-    { to: "/events", label: "Events", icon: Milestone          },
-    { to: "/scouting",    label: "Scouting",    icon: ClipboardList   },
-    { to: "/tasks",       label: "Tasks",       icon: ListChecks,     visible: p => can(p, "tasks.view") },
-]
-
-const CONTROL_PANEL_TAB = {
-    to: "/control",
-    label: "Control Panel",
-    icon: SlidersHorizontal,
 }
 
 export default function AppShell() {
@@ -114,10 +92,12 @@ export default function AppShell() {
     // mobile hub filter the same list through the same predicate so they never drift.
     const controlSections = visibleSections(user.permissions)
 
-    // Mobile bottom bar keeps Control Panel as a single tab (→ hub of cards).
-    const navTabs = canViewControl
-        ? [...coreTabs, CONTROL_PANEL_TAB]
-        : coreTabs
+    // Mobile bottom bar: the `mobile` core tabs plus Other, which holds everything
+    // else (leaderboards, scouting, control panel, settings) so the bar stays at 5.
+    const navTabs = [...coreTabs.filter(t => t.mobile), OTHER_TAB]
+    // Other is the active tab on any page it hosts.
+    const otherActive = (to: string) =>
+        to === OTHER_TAB.to && otherPages(user.permissions).some(p => isActive(p.to))
 
     // Human-readable role label comes from the backend policy; fall back to the
     // raw role slug if the role isn't in the policy map.
@@ -307,7 +287,7 @@ export default function AppShell() {
             >
                 <div className="flex h-16">
                     {navTabs.map(({ to, label, icon: Icon }) => {
-                        const active = isActive(to)
+                        const active = isActive(to) || otherActive(to)
                         return (
                             <Link
                                 key={to}

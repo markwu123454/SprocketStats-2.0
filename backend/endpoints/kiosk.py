@@ -1,4 +1,5 @@
 import os
+import secrets
 from typing import Literal
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
@@ -169,6 +170,55 @@ async def verify_checkin_code(
         name=member["display_name"] or member["given_name"] or "Unknown User",
         status=attendance_status,
     )
+
+
+class QrCodeResponse(BaseModel):
+    token: str
+    url: str
+    expires_in: int
+
+
+class QrStatusRequest(BaseModel):
+    tokens: list[str] = Field(max_length=10)
+
+
+class QrStatusResult(BaseModel):
+    token: str
+    name: str
+    status: Literal["checked_in", "checked_out"]
+
+
+@router.post("/qr_code", response_model=QrCodeResponse)
+async def qr_code(kiosk: dict = Depends(require_verified_kiosk)) -> QrCodeResponse:
+    """Mint a short-lived one-time code for the kiosk to render as a QR."""
+    token = secrets.token_urlsafe(16)
+    await db.create_kiosk_qr_code(token, kiosk["id"])
+    base = os.environ["FRONTEND_URL"].rstrip("/")
+    return QrCodeResponse(
+        token=token,
+        url=f"{base}/checkin?t={token}",
+        expires_in=int(db.QR_CODE_TTL.total_seconds()),
+    )
+
+
+@router.post("/qr_status", response_model=list[QrStatusResult])
+async def qr_status(
+        body: QrStatusRequest,
+        kiosk: dict = Depends(require_verified_kiosk),
+) -> list[QrStatusResult]:
+    """Outcomes for any of the kiosk's recent codes that a phone has used."""
+    if not body.tokens:
+        return []
+    rows = await db.list_kiosk_qr_results(kiosk["id"], body.tokens)
+    return [
+        QrStatusResult(
+            token=r["token"],
+            name=r["display_name"] or r["given_name"] or "Unknown User",
+            status=r["result_status"],
+        )
+        for r in rows
+        if r["result_status"] in ("checked_in", "checked_out")
+    ]
 
 
 @router.post("/verify_logout")

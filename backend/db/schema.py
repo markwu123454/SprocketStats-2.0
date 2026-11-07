@@ -211,6 +211,18 @@ async def init_db():
                     "CREATE UNIQUE INDEX IF NOT EXISTS attendance_one_open_session_idx "
                     "ON attendance (user_id) WHERE checkout_time IS NULL"
                 )
+                # One-time codes shown as a QR on the kiosk. A member's phone
+                # claims one (used_by) and the kiosk reads the outcome back.
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS kiosk_qr_codes (
+                        token         TEXT        PRIMARY KEY,
+                        kiosk_user_id TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        expires_at    TIMESTAMPTZ NOT NULL,
+                        used_by       TEXT        REFERENCES users(id) ON DELETE SET NULL,
+                        used_at       TIMESTAMPTZ,
+                        result_status TEXT
+                    )
+                """)
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS notifications (
                         id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
