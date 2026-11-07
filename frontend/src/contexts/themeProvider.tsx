@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
+import { applyCustomBackground } from "@/lib/customBackground"
 import { ThemeContext, type Theme } from "./themeContext"
 
 const THEME_KEY = "app-theme"
@@ -17,6 +18,8 @@ function initializeTheme(): Theme {
 
 export default function ThemeProvider({ children }: { children: ReactNode }) {
     const [theme, setThemeState] = useState<Theme>(() => initializeTheme())
+
+    useEffect(() => { void applyCustomBackground() }, [])
 
     const setTheme = (t: Theme) => {
         setThemeState(t)

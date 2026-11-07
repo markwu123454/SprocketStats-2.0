@@ -1,11 +1,15 @@
 import { useAuth, useOnboardedUser } from "@/contexts/authContext"
 import { getPerm } from "@/lib/permissions"
-import { LogOut, Mail, ShieldCheck, Palette, Navigation, Bell, ListChecks, CalendarClock, Milestone, Megaphone, Pencil } from "lucide-react"
-import { useEffect, useState } from "react"
+import { LogOut, Mail, ShieldCheck, Palette, Navigation, Bell, ListChecks, CalendarClock, Milestone, Megaphone, Pencil, ImagePlus } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
 import { useTheme } from "@/contexts/themeContext"
 import Avatar from "@/components/Avatar.tsx"
 import Button from "@/components/ui/Button"
 import Toggle from "@/components/ui/Toggle"
+import {
+    BACKGROUND_MAX_DIM, getBackgroundDim, isCustomBackgroundEnabled,
+    resetCustomBackground, setBackgroundDim, setCustomBackground,
+} from "@/lib/customBackground"
 import { useDiscardGuard } from "@/lib/useDiscardGuard"
 import { fieldErrorClass, focusRing, helperClass, inputClass, typeH1, typeH2 } from "@/lib/uiClasses"
 import {
@@ -38,6 +42,23 @@ export default function SettingPage() {
     // Dirty while the inline name field holds something other than the saved name.
     const confirmDiscard = useDiscardGuard(editingName && nameDraft !== user.display_name)
     const { theme, setTheme } = useTheme()
+    const bgInputRef = useRef<HTMLInputElement>(null)
+    const [customBg, setCustomBg] = useState(isCustomBackgroundEnabled)
+    const [bgDim, setBgDim] = useState(getBackgroundDim)
+    const [bgError, setBgError] = useState<string | null>(null)
+
+    async function onPickBackground(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0]
+        e.target.value = ""
+        if (!file) return
+        try {
+            setBgError(null)
+            await setCustomBackground(file)
+            setCustomBg(true)
+        } catch (err) {
+            setBgError(err instanceof Error ? err.message : "Could not set background")
+        }
+    }
     const [showNavText, setShowNavTextState] = useState<boolean>(getNavTextPref)
     const [pushState, setPushState] = useState<PushState>("unsubscribed")
     const [pushBusy, setPushBusy] = useState(false)
@@ -257,6 +278,40 @@ export default function SettingPage() {
                                 </button>
                             ))}
                         </div>
+                    </div>
+
+                    {/* Custom Background Row */}
+                    <div className="px-4 py-3 space-y-3">
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-3">
+                                <ImagePlus size={16} className="theme-subtext-color shrink-0" />
+                                <div>
+                                    <p className="text-sm font-medium theme-text">Background</p>
+                                    <p className="text-xs theme-subtext-color">
+                                        {customBg ? "Using your custom image (stored on this device)" : "Default theme background"}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <input ref={bgInputRef} type="file" accept="image/*" className="hidden" onChange={onPickBackground} />
+                                <Button onClick={() => bgInputRef.current?.click()}>{customBg ? "Change" : "Upload"}</Button>
+                                {customBg && (
+                                    <Button onClick={() => { void resetCustomBackground(); setCustomBg(false) }}>Default</Button>
+                                )}
+                            </div>
+                        </div>
+                        {customBg && (
+                            <label className="flex items-center gap-3">
+                                <span className="text-xs theme-subtext-color w-16">Dimming</span>
+                                <input
+                                    type="range" min={0} max={BACKGROUND_MAX_DIM} step={0.05} value={bgDim}
+                                    aria-label="Background dimming"
+                                    onChange={e => { const v = Number(e.target.value); setBgDim(v); void setBackgroundDim(v) }}
+                                    className="flex-1"
+                                />
+                            </label>
+                        )}
+                        {bgError && <p className="text-xs text-red-500">{bgError}</p>}
                     </div>
 
                     {/* Nav Labels Row */}
