@@ -165,15 +165,19 @@ async def claim_kiosk_qr_code(token: str, user_id: str) -> bool:
             raise HTTPException(status_code=500, detail="Failed to claim check-in code")
 
 
-async def set_kiosk_qr_result(token: str, attendance_status: str) -> None:
+async def set_kiosk_qr_result(token: str, attendance_status: str) -> str | None:
+    """Record the outcome; returns the owning kiosk's user id, or None on failure."""
     async with db_connection(DB_NAME) as conn:
         try:
-            await conn.execute(
-                "UPDATE kiosk_qr_codes SET result_status = $2 WHERE token = $1",
+            row = await conn.fetchrow(
+                "UPDATE kiosk_qr_codes SET result_status = $2 WHERE token = $1 "
+                "RETURNING kiosk_user_id",
                 token, attendance_status,
             )
+            return row["kiosk_user_id"] if row else None
         except Exception as e:
             logger.error("set_kiosk_qr_result failed: %s", e)
+            return None
 
 
 async def list_kiosk_qr_results(kiosk_user_id: str, tokens: list[str]) -> list[asyncpg.Record]:

@@ -35,6 +35,7 @@ def client(monkeypatch):
 
     async def set_result(token, st):
         codes[token]["status"] = st
+        return codes[token]["kiosk"]
 
     async def results(kiosk_user_id, tokens):
         return [
