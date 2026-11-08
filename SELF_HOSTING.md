@@ -233,6 +233,7 @@ Note that changing a user's role clears `approved_by` ([backend/db/users.py:176]
 | `LABEL_STUDIO_PROJECT_ID` | yes | **runs**, defaults to `7` | |
 | `VAPID_CLAIM_EMAIL` | no | **runs**, defaults to `mailto:admin@example.com` | push services may reject the default |
 | `TEAM_TIMEZONE` | no | **runs**, defaults to `America/Los_Angeles` | IANA zone; used for meeting/event reminder times and to read the naive local times in `events.start_time` |
+| `DATABASE_URL_DIRECT` | no | **runs**, kiosk QR events are in-memory only (correct for a single machine) | Neon **direct** (non-pooled) connection string. Set it when running more than one Fly machine so kiosk QR-claim SSE events reach the right machine via Postgres `LISTEN/NOTIFY`. The LISTEN connection is only open while a kiosk is connected. |
 | `DATABASE_URL_LABEL_STUDIO` | no | **runs**, fails only on labeling queries | second Neon database |
 | `ENV` | no | **runs** as production | `production` or `development` |
 

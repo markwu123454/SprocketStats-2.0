@@ -1,12 +1,17 @@
+import asyncio
+import json
 import os
 import secrets
+import time
 from typing import Literal
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi.responses import StreamingResponse
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
 
 import db
+from core import qr_events
 from core.permissions import role_requires_approval
 from core.security import JWT_ALGORITHM, JWT_SECRET
 
@@ -219,6 +224,42 @@ async def qr_status(
         for r in rows
         if r["result_status"] in ("checked_in", "checked_out")
     ]
+
+
+SSE_PING_INTERVAL = 20.0  # Fly's proxy drops idle connections
+SSE_DISCONNECT_POLL = 5.0
+
+
+@router.get("/qr_events")
+async def qr_events_stream(
+        request: Request,
+        kiosk: dict = Depends(require_verified_kiosk),
+) -> StreamingResponse:
+    """SSE: ``claimed`` event whenever one of this kiosk's QR tokens is used."""
+
+    async def stream():
+        async with qr_events.hub.subscribe(kiosk["id"]) as queue:
+            yield "retry: 3000\n\n"
+            last_send = time.monotonic()
+            while True:
+                if await request.is_disconnected():
+                    break
+                wait = min(SSE_DISCONNECT_POLL, max(0.0, SSE_PING_INTERVAL - (time.monotonic() - last_send)))
+                try:
+                    token = await asyncio.wait_for(queue.get(), timeout=wait)
+                except asyncio.TimeoutError:
+                    if time.monotonic() - last_send >= SSE_PING_INTERVAL:
+                        yield ": ping\n\n"
+                        last_send = time.monotonic()
+                    continue
+                yield f"event: claimed\ndata: {json.dumps({'token': token})}\n\n"
+                last_send = time.monotonic()
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/verify_logout")

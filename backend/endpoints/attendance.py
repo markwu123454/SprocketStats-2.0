@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 import db
+from core import qr_events
 from core.security import get_current_user, require_active
 
 logger = logging.getLogger(__name__)
@@ -128,7 +129,10 @@ async def qr_checkin(body: QrCheckinRequest, user: dict = Depends(require_active
     attendance_status = await db.toggle_kiosk_attendance(user["sub"])
     if attendance_status is None:
         raise HTTPException(status_code=404, detail="Member not found")
-    await db.set_kiosk_qr_result(body.token, attendance_status)
+    kiosk_id = await db.set_kiosk_qr_result(body.token, attendance_status)
+    if kiosk_id is not None:
+        # Best-effort: publish() swallows its own errors.
+        await qr_events.hub.publish(kiosk_id, body.token)
     return {
         "name": row["display_name"] or row["given_name"] or "Unknown User",
         "status": attendance_status,
