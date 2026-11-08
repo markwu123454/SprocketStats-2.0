@@ -724,23 +724,24 @@ function TaskRow({
                     {done || review ? "✓" : ""}
                 </button>
 
-                <span style={{ flex: "1 1 200px", minWidth: 130, display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "2px 10px" }}>
+                <span style={{ flex: "1 1 220px", minWidth: 160, display: "flex", flexDirection: "column", gap: 2 }}>
                     <span className="text-sm font-semibold" style={{
-                        flex: "1 1 auto", minWidth: 90, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                         color: done ? "var(--theme-subtext-color)" : "var(--theme-h1-color)", textDecoration: done ? "line-through" : "none",
                     }}>
                         {task.title}
                     </span>
-                    <span className="text-xs" style={{ flex: "none", whiteSpace: "nowrap", color: "var(--theme-subtext-color)" }}>
-                        <span style={{ color: due.color }}>{due.text}</span> · {formatPosted(task.created_at)}
+                    <span className="text-xs" style={{ display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap", color: "var(--theme-subtext-color)" }}>
+                        <span style={{ color: due.color }}>{due.text}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>{formatPosted(task.created_at)}</span>
+                        <span aria-hidden="true">·</span>
+                        {critical ? (
+                            <span style={{ ...CRITICAL_BADGE_STYLE, flex: "none" }}>☠ {PRIORITY_LABEL.critical}</span>
+                        ) : (
+                            <span className="uppercase tracking-widest opacity-75">{PRIORITY_LABEL[task.priority]}</span>
+                        )}
                     </span>
-                    {critical ? (
-                        <span style={{ ...CRITICAL_BADGE_STYLE, flex: "none", alignSelf: "center" }}>☠ {PRIORITY_LABEL.critical}</span>
-                    ) : (
-                        <span className="text-xs uppercase tracking-widest whitespace-nowrap shrink-0 theme-subtext-color opacity-75">
-                            {PRIORITY_LABEL[task.priority]}
-                        </span>
-                    )}
                 </span>
 
                 <span style={{ display: "flex", alignItems: "center", gap: 10, flex: "none", marginLeft: "auto" }}>
@@ -751,7 +752,7 @@ function TaskRow({
                         className={`hover:border-(--theme-text-contrast) text-xs font-semibold ${focusRing}`}
                         style={{
                             font: "inherit",
-                            display: "flex", alignItems: "center", gap: 4, height: 28, padding: "0 8px", borderRadius: 999,
+                            display: "flex", alignItems: "center", justifyContent: "center", gap: 4, height: 28, minWidth: 44, padding: "0 8px", borderRadius: 999,
                             cursor: "pointer",
                             border: `1px solid ${chipUnread ? "var(--theme-text-contrast)" : "var(--theme-outline)"}`,
                             background: chipUnread ? "var(--ag-grid-selected-bg)" : "transparent",
@@ -762,15 +763,15 @@ function TaskRow({
                         {task.note_count > 0 && <span>{task.note_count}</span>}
                     </button>
 
-                    <span style={{ display: "flex", alignItems: "center" }}>
-                        {avatarPeople.map(p => (
+                    <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", width: 84 }}>
+                        {avatarPeople.map((p, i) => (
                             <span
                                 key={p.id}
                                 title={p.name}
                                 className="text-xs font-bold"
                                 style={{
                                     width: 24, height: 24, borderRadius: "50%", display: "grid", placeItems: "center",
-                                    marginLeft: -6,
+                                    marginLeft: i === 0 ? 0 : -6,
                                     border: "1.5px solid var(--theme-bg)", background: avatarBg(p.name), color: AVATAR_INK,
                                 }}
                             >
@@ -793,6 +794,7 @@ function TaskRow({
                         )}
                     </span>
 
+                    <span style={{ display: "flex", justifyContent: "flex-end", minWidth: 200 }}>
                     {!done && !review && (
                         <span style={{ position: "relative", display: "flex" }} data-task-popover>
                             <button
@@ -889,6 +891,7 @@ function TaskRow({
                             <span>✓</span><span>Done</span>
                         </span>
                     )}
+                    </span>
 
                     <span style={{ position: "relative", display: "flex", alignItems: "center" }} data-task-popover>
                         <button
