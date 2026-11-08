@@ -725,21 +725,24 @@ function TaskRow({
                 </button>
 
                 <span style={{ flex: "1 1 220px", minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-                    <span className="text-sm font-semibold" style={{
-                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                        color: done ? "var(--theme-subtext-color)" : "var(--theme-h1-color)", textDecoration: done ? "line-through" : "none",
-                    }}>
-                        {task.title}
+                    <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                        {critical && <span style={{ ...CRITICAL_BADGE_STYLE, flex: "none" }}>☠ {PRIORITY_LABEL.critical}</span>}
+                        <span className="text-sm font-semibold" style={{
+                            minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                            color: done ? "var(--theme-subtext-color)" : "var(--theme-h1-color)", textDecoration: done ? "line-through" : "none",
+                        }}>
+                            {task.title}
+                        </span>
                     </span>
                     <span className="text-xs" style={{ display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap", overflow: "hidden", color: "var(--theme-subtext-color)" }}>
                         <span style={{ color: due.color }}>{due.text}</span>
                         <span aria-hidden="true">·</span>
                         <span>{formatPosted(task.created_at)}</span>
-                        <span aria-hidden="true">·</span>
-                        {critical ? (
-                            <span style={{ ...CRITICAL_BADGE_STYLE, flex: "none" }}>☠ {PRIORITY_LABEL.critical}</span>
-                        ) : (
-                            <span className="uppercase tracking-widest opacity-75">{PRIORITY_LABEL[task.priority]}</span>
+                        {!critical && (
+                            <>
+                                <span aria-hidden="true">·</span>
+                                <span className="uppercase tracking-widest opacity-75">{PRIORITY_LABEL[task.priority]}</span>
+                            </>
                         )}
                     </span>
                 </span>
@@ -751,7 +754,7 @@ function TaskRow({
                         aria-label="Notes"
                         className={`hover:border-(--theme-text-contrast) text-xs font-semibold ${focusRing}`}
                         style={{
-                            font: "inherit",
+                            font: "inherit", fontSize: "0.75rem", fontWeight: 600,
                             display: "flex", alignItems: "center", justifyContent: "center", gap: 4, height: 28, minWidth: 44, padding: "0 8px", borderRadius: 999,
                             cursor: "pointer",
                             border: `1px solid ${chipUnread ? "var(--theme-text-contrast)" : "var(--theme-outline)"}`,
@@ -763,7 +766,7 @@ function TaskRow({
                         {task.note_count > 0 && <span>{task.note_count}</span>}
                     </button>
 
-                    <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", width: 84 }}>
+                    <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", width: 76 }}>
                         {avatarPeople.map((p, i) => (
                             <span
                                 key={p.id}
@@ -784,7 +787,7 @@ function TaskRow({
                                 onClick={e => { e.stopPropagation(); onClaim() }}
                                 className={`hover:bg-(--ag-grid-selected-bg) text-xs font-semibold ${focusRing}`}
                                 style={{
-                                    font: "inherit", background: "transparent",
+                                    font: "inherit", fontSize: "0.75rem", fontWeight: 600, background: "transparent",
                                     height: 28, padding: "0 12px", borderRadius: 999, border: "1px dashed var(--theme-text-contrast)",
                                     display: "grid", placeItems: "center", color: "var(--theme-text-contrast)", cursor: "pointer",
                                 }}
@@ -794,7 +797,7 @@ function TaskRow({
                         )}
                     </span>
 
-                    <span style={{ display: "flex", flex: "none", width: 208 }}>
+                    <span style={{ display: "flex", flex: "none", width: 184 }}>
                     {!done && !review && (
                         <span style={{ position: "relative", display: "flex", flex: 1 }} data-task-popover>
                             <button
@@ -839,7 +842,7 @@ function TaskRow({
                     )}
 
                     {review && (
-                        <span style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
                             <button
                                 type="button"
                                 onClick={e => { e.stopPropagation(); onSetStatus("doing") }}
@@ -871,13 +874,13 @@ function TaskRow({
                                     title="Someone else on the team needs to review this"
                                     className="text-xs font-semibold rounded-lg"
                                     style={{
-                                        height: 28, boxSizing: "border-box", padding: "0 8px", flex: 1, overflow: "hidden", textOverflow: "ellipsis",
-                                        display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
+                                        height: 28, boxSizing: "border-box", padding: "0 6px", flex: 1, minWidth: 0, overflow: "hidden",
+                                        display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
                                         border: `1px dashed ${tint("--theme-text-contrast", 55)}`, color: "var(--theme-text-contrast)",
                                     }}
                                 >
-                                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--theme-text-contrast)" }} />
-                                    <span>Needs a second pair of eyes</span>
+                                    <span style={{ width: 6, height: 6, flex: "none", borderRadius: "50%", background: "var(--theme-text-contrast)" }} />
+                                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>Pending</span>
                                 </span>
                             )}
                         </span>
