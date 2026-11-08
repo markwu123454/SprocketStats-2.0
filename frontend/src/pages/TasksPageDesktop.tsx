@@ -724,14 +724,14 @@ function TaskRow({
                     {done || review ? "✓" : ""}
                 </button>
 
-                <span style={{ flex: "1 1 220px", minWidth: 160, display: "flex", flexDirection: "column", gap: 2 }}>
+                <span style={{ flex: "1 1 220px", minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
                     <span className="text-sm font-semibold" style={{
                         whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                         color: done ? "var(--theme-subtext-color)" : "var(--theme-h1-color)", textDecoration: done ? "line-through" : "none",
                     }}>
                         {task.title}
                     </span>
-                    <span className="text-xs" style={{ display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap", color: "var(--theme-subtext-color)" }}>
+                    <span className="text-xs" style={{ display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap", overflow: "hidden", color: "var(--theme-subtext-color)" }}>
                         <span style={{ color: due.color }}>{due.text}</span>
                         <span aria-hidden="true">·</span>
                         <span>{formatPosted(task.created_at)}</span>
@@ -794,9 +794,9 @@ function TaskRow({
                         )}
                     </span>
 
-                    <span style={{ display: "flex", justifyContent: "flex-end", minWidth: 200 }}>
+                    <span style={{ display: "flex", flex: "none", width: 208 }}>
                     {!done && !review && (
-                        <span style={{ position: "relative", display: "flex" }} data-task-popover>
+                        <span style={{ position: "relative", display: "flex", flex: 1 }} data-task-popover>
                             <button
                                 type="button"
                                 onClick={e => { e.stopPropagation(); if (canChangeStatus) onToggleStatusMenu() }}
@@ -804,7 +804,7 @@ function TaskRow({
                                 title={canChangeStatus ? undefined : disabledTitle}
                                 className={`hover:border-(--theme-text-contrast) disabled:cursor-not-allowed text-xs font-semibold rounded-lg ${focusRing}`}
                                 style={{
-                                    minWidth: 118, height: 28, boxSizing: "border-box", padding: "0 8px",
+                                    width: "100%", height: 28, boxSizing: "border-box", padding: "0 8px",
                                     display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
                                     border: "1px solid var(--theme-border)", background: "var(--theme-bg)", color: "var(--theme-text)",
                                     opacity: canChangeStatus ? 1 : 0.6,
@@ -839,13 +839,13 @@ function TaskRow({
                     )}
 
                     {review && (
-                        <span style={{ display: "flex", alignItems: "center", gap: 6, flex: "none" }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
                             <button
                                 type="button"
                                 onClick={e => { e.stopPropagation(); onSetStatus("doing") }}
                                 className={`hover:border-(--theme-text-contrast) text-xs font-semibold rounded-lg ${focusRing}`}
                                 style={{
-                                    height: 28, boxSizing: "border-box", padding: "0 12px",
+                                    height: 28, boxSizing: "border-box", padding: "0 12px", flex: "none",
                                     display: "grid", placeItems: "center", whiteSpace: "nowrap", border: "1px solid var(--theme-border)",
                                     color: "var(--theme-text)",
                                 }}
@@ -859,7 +859,7 @@ function TaskRow({
                                     title={isFinisher && canAssign ? "You finished this task — mark it reviewed anyway" : undefined}
                                     className={`hover:brightness-110 text-xs font-bold rounded-lg ${focusRing}`}
                                     style={{
-                                        height: 28, boxSizing: "border-box", padding: "0 12px",
+                                        height: 28, boxSizing: "border-box", padding: "0 12px", flex: 1,
                                         display: "grid", placeItems: "center", whiteSpace: "nowrap", background: "var(--theme-text-contrast)", color: "var(--theme-bg)",
                                     }}
                                 >
@@ -871,7 +871,7 @@ function TaskRow({
                                     title="Someone else on the team needs to review this"
                                     className="text-xs font-semibold rounded-lg"
                                     style={{
-                                        height: 28, boxSizing: "border-box", padding: "0 8px",
+                                        height: 28, boxSizing: "border-box", padding: "0 8px", flex: 1, overflow: "hidden", textOverflow: "ellipsis",
                                         display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
                                         border: `1px dashed ${tint("--theme-text-contrast", 55)}`, color: "var(--theme-text-contrast)",
                                     }}
@@ -885,7 +885,7 @@ function TaskRow({
 
                     {done && (
                         <span className="text-xs font-semibold rounded-lg" style={{
-                            minWidth: 118, height: 28, boxSizing: "border-box", padding: "0 8px",
+                            flex: 1, height: 28, boxSizing: "border-box", padding: "0 8px",
                             display: "flex", alignItems: "center", gap: 6, background: "var(--ag-grid-selected-bg)", color: "var(--theme-text-contrast)",
                         }}>
                             <span>✓</span><span>Done</span>
