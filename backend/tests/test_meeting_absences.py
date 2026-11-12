@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 import db
 import core.push_notify as push_notify
-from core.permissions import absence_push_roles, can_view_absence, has_absence_view
+from core.permissions import absence_push_roles, can_view_absence, has_absence_view, tracks_attendance
 from core.security import require_active
 from endpoints import meeting_hours
 from endpoints.meeting_hours import router
@@ -67,9 +67,11 @@ def test_has_absence_view():
 def setup(monkeypatch):
     meetings = {
         FUTURE_ID: {"id": uuid.UUID(FUTURE_ID), "start_time": NOW + timedelta(days=1),
-                    "end_time": NOW + timedelta(days=1, hours=2), "meeting_purpose": "Build"},
+                    "end_time": NOW + timedelta(days=1, hours=2), "meeting_purpose": "Build",
+                    "created_by": None, "agenda": ""},
         PAST_ID: {"id": uuid.UUID(PAST_ID), "start_time": NOW - timedelta(days=2),
-                  "end_time": NOW - timedelta(days=2) + timedelta(hours=2), "meeting_purpose": None},
+                  "end_time": NOW - timedelta(days=2) + timedelta(hours=2), "meeting_purpose": None,
+                  "created_by": None, "agenda": ""},
     }
     absences: dict[tuple[str, str], dict] = {}
 
@@ -97,6 +99,13 @@ def setup(monkeypatch):
     monkeypatch.setattr(db, "upsert_meeting_absence", upsert)
     monkeypatch.setattr(db, "delete_meeting_absence", delete)
     monkeypatch.setattr(db, "list_meeting_absences", list_absences)
+    monkeypatch.setattr(db, "list_active_members", AsyncMock(return_value=[
+        {"id": uid, "display_name": name, "role": role, "created_at": NOW - timedelta(days=30), "approved_by": "captain-1"}
+        for uid, (name, role) in USERS.items()
+    ] + [
+        {"id": "pending-lead", "display_name": "Pending", "role": "cad_lead", "created_at": NOW, "approved_by": None},
+        {"id": "a-mentor", "display_name": "Mentor", "role": "mentor", "created_at": NOW, "approved_by": "captain-1"},
+    ]))
     notify = MagicMock()
     monkeypatch.setattr(meeting_hours, "notify_meeting_absence", notify)
 
@@ -250,3 +259,33 @@ def test_endpoint_passes_no_reason_to_push(setup):
     _put(client_for("me"), body={"reason": "Secret dentist visit"})
     assert len(notify.call_args.args) == 2
     assert "Secret" not in str(notify.call_args)
+
+
+# ── attendance overview ────────────────────────────────────────────────────────
+
+def test_tracks_attendance_students_only():
+    assert all(tracks_attendance(r) for r in ("cad_member", "cad_lead", "captain"))
+    assert not any(tracks_attendance(r) for r in ("mentor", "alumni", "visitor", None))
+
+
+def test_attendance_forbidden_for_members(setup):
+    client, _, _ = setup
+    assert client("me").get("/meeting-hours/attendance").status_code == 403
+
+
+def test_attendance_lead_sees_own_subteam_members(setup):
+    client, _, _ = setup
+    client("cad-mate").put(f"/meeting-hours/{FUTURE_ID}/absence", json={"reason": "x"})
+    client("prog-member").put(f"/meeting-hours/{FUTURE_ID}/absence", json={"reason": "y"})
+    body = client("cad-lead").get("/meeting-hours/attendance").json()
+    # Pending (unapproved) lead and the untracked mentor are left out.
+    assert [m["user_id"] for m in body["members"]] == ["cad-lead", "cad-mate", "me"]
+    assert all("created_at" in m for m in body["members"])
+    assert [a["user_id"] for a in body["absences"]] == ["cad-mate"]
+    assert {m["id"] for m in body["meetings"]} == {FUTURE_ID, PAST_ID}
+
+
+def test_attendance_captain_sees_every_tracked_member(setup):
+    client, _, _ = setup
+    ids = [m["user_id"] for m in client("captain-1").get("/meeting-hours/attendance").json()["members"]]
+    assert set(ids) == {"me", "cad-mate", "cad-lead", "prog-member", "captain-1"}

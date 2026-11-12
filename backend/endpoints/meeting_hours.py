@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 import db
-from core.permissions import can_view_absence
+from core.permissions import can_view_absence, has_absence_view, role_requires_approval, tracks_attendance
 from core.push_notify import notify_meeting_absence
 from core.security import require_access, require_active
 
@@ -111,6 +111,39 @@ async def list_absences(user: dict = Depends(require_active)):
     visible.sort(key=lambda r: (meetings.get(str(r["meeting_id"])) or datetime.max.replace(tzinfo=timezone.utc),
                                 r["display_name"] or ""))
     return [_absence_json(r) for r in visible]
+
+
+@router.get("/attendance")
+async def attendance_overview(user: dict = Depends(require_active)):
+    """Control Panel attendance data for leads, captains and mentors.
+
+    ``members`` is everyone the viewer may see who is expected at meetings
+    (active, approved where required, an attendance-tracked role), with their
+    account ``created_at`` -- the client only counts meetings from then on.
+    ``absences`` is limited to those members. Meeting check-ins will join this
+    payload as a further list so missed meetings and hours attended can be
+    derived from the same data.
+    """
+    viewer_role = user.get("role")
+    if not has_absence_view(viewer_role):
+        raise HTTPException(status_code=403, detail="Not allowed to view attendance")
+    members = [
+        m for m in await db.list_active_members()
+        if tracks_attendance(m["role"])
+        and (m["approved_by"] is not None or not role_requires_approval(m["role"]))
+        and can_view_absence(viewer_role, m["role"])
+    ]
+    member_ids = {m["id"] for m in members}
+    absences = [a for a in await db.list_meeting_absences() if a["user_id"] in member_ids]
+    return {
+        "meetings": [_row_to_meeting(r) for r in await db.list_all_meeting_hours()],
+        "members": sorted(
+            ({"user_id": m["id"], "display_name": m["display_name"], "role": m["role"], "created_at": m["created_at"]}
+             for m in members),
+            key=lambda m: (m["display_name"] or "").lower(),
+        ),
+        "absences": [_absence_json(a) for a in absences],
+    }
 
 
 @router.put("/{meeting_id}/absence")

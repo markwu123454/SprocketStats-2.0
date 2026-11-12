@@ -14,7 +14,7 @@
 // predicate, so they never drift. Gating here is cosmetic; the backend still
 // enforces each action on the real endpoints.
 
-import { Bell, CalendarClock, CalendarPlus, Send, Users, type LucideIcon } from "lucide-react"
+import { Bell, CalendarClock, CalendarPlus, ClipboardCheck, Send, Users, type LucideIcon } from "lucide-react"
 import { can, getPerm, type PermPolicy } from "./permissions"
 
 /** Convenience: dotted capability paths all live under `control_panel.`. */
@@ -52,6 +52,15 @@ export const CONTROL_SECTIONS: ControlSection[] = [
         // `can_moderate` spec) can open it; the roster itself scopes who each
         // viewer may act on.
         visible: p => can(p, CP + "members") || getPerm(p, "can_moderate") != null,
+    },
+    {
+        to: "attendance",
+        label: "Attendance",
+        icon: ClipboardCheck,
+        // Meeting absences, past and upcoming. Mirrors has_absence_view in
+        // backend/core/permissions.py; the endpoint scopes which absences each
+        // viewer gets (leads: their subteam).
+        visible: p => ["lead", "captain", "mentor"].includes(getPerm(p, "level") as string),
     },
     {
         to: "notifications",

@@ -286,6 +286,13 @@ def has_absence_view(role: str | None) -> bool:
     return get_perm(get_permissions_for_role(role), "level") in ("lead", "captain", "mentor")
 
 
+def tracks_attendance(role: str | None) -> bool:
+    """Return whether members holding ``role`` are expected at meetings and so
+    appear on the Control Panel attendance page (the ``attendance.view`` roles:
+    students, leads and captains -- not mentors, alumni or visitors)."""
+    return bool(get_perm(get_permissions_for_role(role), "attendance.view"))
+
+
 def can_view_absence(viewer_role: str | None, absentee_role: str | None) -> bool:
     """Return whether a viewer may see an absence reported by ``absentee_role``.
 
@@ -366,6 +373,7 @@ __all__ = [
     "can_edit_authored",
     "has_absence_view",
     "can_view_absence",
+    "tracks_attendance",
     "absence_push_roles",
     "role_catalog",
 ]

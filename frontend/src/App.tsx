@@ -34,6 +34,7 @@ const ControlPanelHub  = lazy(() => import("@/pages/control/ControlPanelHub"))
 const MeetingPage       = lazy(() => import("@/pages/control/MeetingPage"))
 const UpcomingEventPage = lazy(() => import("@/pages/control/UpcomingEventPage"))
 const MembersPage       = lazy(() => import("@/pages/control/MembersPage"))
+const ControlAttendancePage = lazy(() => import("@/pages/control/AttendancePage"))
 const NotificationsPage = lazy(() => import("@/pages/control/NotificationsPage"))
 const NotificationDetailPage = lazy(() => import("@/pages/control/NotificationDetailPage"))
 const PushNotificationsPage = lazy(() => import("@/pages/control/PushNotificationsPage"))
@@ -101,6 +102,7 @@ export default function App() {
                                         <Route path="/control/meeting"        element={<ControlGuard section="meeting"><MeetingPage/></ControlGuard>}/>
                                         <Route path="/control/upcoming-event" element={<ControlGuard section="upcoming-event"><UpcomingEventPage/></ControlGuard>}/>
                                         <Route path="/control/members"        element={<ControlGuard section="members"><MembersPage/></ControlGuard>}/>
+                                        <Route path="/control/attendance"     element={<ControlGuard section="attendance"><ControlAttendancePage/></ControlGuard>}/>
                                         <Route path="/control/notifications"  element={<ControlGuard section="notifications"><NotificationsPage/></ControlGuard>}/>
                                         <Route path="/control/notifications/new" element={<ControlGuard section="notifications"><NotificationDetailPage isNew/></ControlGuard>}/>
                                         <Route path="/control/notifications/:id" element={<ControlGuard section="notifications"><NotificationDetailPage/></ControlGuard>}/>
