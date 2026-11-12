@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { absencesByMeeting, relativeDayLabel, upcomingMeetings, type Meeting, type MeetingAbsence } from "./meetings"
+import { absencesByMeeting, canViewOthersAbsences, meetingAbsencesFor, relativeDayLabel, upcomingMeetings, type Meeting, type MeetingAbsence } from "./meetings"
 
 describe("upcoming meetings", () => {
     it("includes live and future meetings in order, excludes ended meetings, and keeps multiple meetings on one day", () => {
@@ -29,5 +29,30 @@ describe("relativeDayLabel", () => {
         expect(relativeDayLabel(at(11, 22), now)).toBe("Today")
         expect(relativeDayLabel(at(12, 1), now)).toBe("Tomorrow")
         expect(relativeDayLabel(at(16, 16), now)).toBe("In 5 days")
+    })
+})
+
+describe("meetingAbsencesFor", () => {
+    const row = (meeting_id: string, user_id: string, display_name: string): MeetingAbsence =>
+        ({ meeting_id, user_id, display_name, role: "cad_member", reason: "secret", created_at: "", updated_at: "" })
+    const rows = [row("next", "me", "Me"), row("next", "2", "Zed"), row("next", "3", "Ava"), row("later", "4", "Kim")]
+
+    it("splits one meeting's absences into mine and others, others sorted by name", () => {
+        const { mine, others } = meetingAbsencesFor(rows, "next", "me")
+        expect(mine?.user_id).toBe("me")
+        expect(others.map(r => r.display_name)).toEqual(["Ava", "Zed"])
+    })
+
+    it("ignores other meetings and handles nobody absent", () => {
+        expect(meetingAbsencesFor(rows, "later", "me")).toEqual({ mine: undefined, others: [rows[3]] })
+        expect(meetingAbsencesFor(rows, "none", "me")).toEqual({ mine: undefined, others: [] })
+    })
+})
+
+describe("canViewOthersAbsences", () => {
+    it("is true for leads, captains and mentors only", () => {
+        for (const level of ["lead", "captain", "mentor"]) expect(canViewOthersAbsences({ level })).toBe(true)
+        for (const level of ["member", "alumni", "visitor"]) expect(canViewOthersAbsences({ level })).toBe(false)
+        expect(canViewOthersAbsences(null)).toBe(false)
     })
 })

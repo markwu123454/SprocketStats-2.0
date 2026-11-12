@@ -2,15 +2,17 @@ import {useEffect, useState, type ReactNode} from "react"
 import { Link } from "react-router-dom"
 import { useOnboardedUser } from "@/contexts/authContext"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
-import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks } from "lucide-react"
+import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks, UserX } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
 import Skeleton from "@/components/ui/Skeleton"
 import { focusRing } from "@/lib/uiClasses"
 import ActiveEventCard from "@/components/events/ActiveEventCard"
+import NextMeetingAbsencesCard from "@/components/meetings/NextMeetingAbsences"
 import { hubKeyOf, pickActiveEvent, type EventEntry } from "@/lib/events"
 import { fetchEvents, type EventInfo } from "@/lib/eventApi"
 import { can } from "@/lib/permissions"
 import type { TasksPageState } from "@/pages/TasksPageRouter"
+import { canViewOthersAbsences, meetingAbsencesFor, useMeetingAbsences } from "@/lib/meetings"
 import { fetchTasks, PRIORITY_LABEL, STATUS_LABEL, type Task, type TaskPriority } from "@/lib/tasksApi"
 
 const API = import.meta.env.VITE_BACKEND_URL
@@ -116,6 +118,15 @@ export default function DashboardPage() {
     const current = sorted.find(m => new Date(m.start_time) <= now && now <= new Date(m.end_time))
     const next = sorted.find(m => new Date(m.start_time) > now)
 
+    // Absences for the meeting the card above is about: the one in progress
+    // until it ends, then the next. Visibility is filtered server-side.
+    const { absences, loading: absencesLoading } = useMeetingAbsences()
+    const target = current ?? next
+    const { mine: myAbsence, others: othersAbsent } = target && !absencesLoading
+        ? meetingAbsencesFor(absences, target.id, user.id)
+        : { mine: undefined, others: [] }
+    const showOthersAbsent = canViewOthersAbsences(user.permissions) && othersAbsent.length > 0
+
     // Grade/team_year are only ever set for roles that require school info
     // (see OnboardingRequest.validate_school_info_required on the backend) --
     // mentors/alumni never have them, so their absence gates this card.
@@ -184,8 +195,21 @@ export default function DashboardPage() {
                             <p className="text-sm theme-subtext-color">Nothing else scheduled this week.</p>
                         </>
                     )}
-                    <span className="mt-auto flex items-center gap-1 text-sm font-semibold theme-text-contrast">View meetings<ChevronRight size={16} aria-hidden="true" /></span>
+                    {myAbsence && (
+                        <p className="flex items-center gap-1.5 text-sm font-semibold theme-text-contrast">
+                            <UserX size={16} aria-hidden="true" />You're marked absent
+                        </p>
+                    )}
+                    <span className="mt-auto flex items-center gap-1 text-sm font-semibold theme-text-contrast">{myAbsence ? "Change on Meetings" : "View meetings"}<ChevronRight size={16} aria-hidden="true" /></span>
                 </Link>
+
+                {/* Who's out -- leads/captains/mentors only, and only when someone is */}
+                {target && showOthersAbsent && (
+                    <NextMeetingAbsencesCard
+                        absences={othersAbsent}
+                        meetingLabel={`${target.meeting_purpose || "Team meeting"} · ${current ? "In progress" : formatMeetingDay(target.start_time)}`}
+                    />
+                )}
 
                 {/* Your tasks -- only for roles with tasks.view permission */}
                 {canViewTasks && (

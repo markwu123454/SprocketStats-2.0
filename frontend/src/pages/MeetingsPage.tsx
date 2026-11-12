@@ -6,9 +6,9 @@ import Skeleton from "@/components/ui/Skeleton"
 import EmptyState from "@/components/ui/EmptyState"
 import { useOnboardedUser } from "@/contexts/authContext"
 import { MeetingAbsenceRow } from "@/components/meetings/MeetingAbsence"
-import { can, getPerm } from "@/lib/permissions"
+import { can } from "@/lib/permissions"
 import { focusRing } from "@/lib/uiClasses"
-import { absencesByMeeting, meetingDate, meetingTime, relativeDayLabel, upcomingMeetings, useMeetingAbsences, useMeetings, useRoleLabels } from "@/lib/meetings"
+import { absencesByMeeting, canViewOthersAbsences, meetingDate, meetingTime, relativeDayLabel, upcomingMeetings, useMeetingAbsences, useMeetings, useRoleLabels } from "@/lib/meetings"
 
 const CARD_BG = "bg-[color-mix(in_oklch,var(--theme-bg)_92%,transparent)]"
 const eyebrow = "text-[11px] font-bold tracking-[0.1em] uppercase"
@@ -19,7 +19,7 @@ export default function MeetingsPage() {
     const [absenceRevision, setAbsenceRevision] = useState(0)
     const { absences, loading: absencesLoading, error: absencesError, retry: retryAbsences } = useMeetingAbsences(absenceRevision)
     const grouped = useMemo(() => absencesByMeeting(absences), [absences])
-    const canViewAbsences = ["lead", "captain", "mentor"].includes(getPerm(user.permissions, "level") as string)
+    const canViewAbsences = canViewOthersAbsences(user.permissions)
     const roleLabels = useRoleLabels(canViewAbsences)
     const [now, setNow] = useState(Date.now)
     useEffect(() => {
