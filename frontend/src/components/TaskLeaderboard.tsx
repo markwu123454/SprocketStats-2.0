@@ -5,12 +5,15 @@ import Notice from "@/components/ui/Notice"
 import Skeleton from "@/components/ui/Skeleton"
 import EmptyState from "@/components/ui/EmptyState"
 import { useOnboardedUser } from "@/contexts/authContext"
+import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { cardClass, typeTitle } from "@/lib/uiClasses"
 import { taskLeaderboard, type CompletedTask } from "@/lib/taskLeaderboard"
 
 export default function TaskLeaderboard() {
     const user = useOnboardedUser()
-    const [tasks, setTasks] = useState<CompletedTask[]>([])
+    // Seeded from /bootstrap: null means no data yet. The fetch below still runs and
+    // silently refreshes; a failed refresh keeps seeded data on screen.
+    const [tasks, setTasks] = useBootstrapped<CompletedTask[] | null>("tasks", null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(false)
     const [attempt, setAttempt] = useState(0)
@@ -24,16 +27,16 @@ export default function TaskLeaderboard() {
             .catch(() => { if (!controller.signal.aborted) setError(true) })
             .finally(() => { if (!controller.signal.aborted) setLoading(false) })
         return () => controller.abort()
-    }, [attempt])
-    const rows = taskLeaderboard(tasks)
+    }, [attempt, setTasks])
+    const rows = taskLeaderboard(tasks ?? [])
 
     return <section className={`${cardClass} theme-bg`} aria-labelledby="leaderboard-title">
         <div className="flex items-center gap-2">
             <Trophy size={18} className="theme-text-contrast" aria-hidden="true" />
             <h2 id="leaderboard-title" className={`${typeTitle} theme-text`}>Task leaderboard</h2>
         </div>
-        {loading ? <div role="status" aria-label="Loading task leaderboard" className="flex flex-col gap-3"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
-            : error ? <Notice>Couldn't load the leaderboard. <Button variant="text" onClick={() => setAttempt(value => value + 1)}>Try again</Button></Notice>
+        {loading && tasks === null ? <div role="status" aria-label="Loading task leaderboard" className="flex flex-col gap-3"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
+            : error && tasks === null ? <Notice>Couldn't load the leaderboard. <Button variant="text" onClick={() => setAttempt(value => value + 1)}>Try again</Button></Notice>
             : rows.length === 0 ? <EmptyState>No completed tasks yet. Approved tasks will appear here. Points: Low 1, Medium 2, High 3, Perish 5; contributors earn half, rounded up.</EmptyState>
             : <ol className="flex flex-col gap-1">
                 {rows.map(row => <li key={row.userId} className="rounded-lg p-3 flex flex-col gap-2"

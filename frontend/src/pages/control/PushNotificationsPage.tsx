@@ -5,6 +5,7 @@ import {
     CheckCircle2, AlertCircle, XCircle, Clock,
 } from "lucide-react"
 import { useIsMobile } from "../../lib/useIsMobile"
+import { useBootstrapped } from "@/contexts/bootstrapContext"
 import RoleAudienceSelect, { type RoleMeta } from "@/components/RoleAudienceSelect"
 import Button from "@/components/ui/Button"
 import FormFooter from "@/components/ui/FormFooter"
@@ -334,8 +335,8 @@ export default function PushNotificationsPage() {
     const isMobile = useIsMobile()
 
     const [messages, setMessages] = useState<PushMessage[]>([])
-    const [catalog, setCatalog] = useState<RoleMeta[]>([])
-    const [roleLabels, setRoleLabels] = useState<Record<string, string>>({})
+    const [catalog, setCatalog] = useBootstrapped<RoleMeta[]>("roles", [])
+    const roleLabels = useMemo<Record<string, string>>(() => Object.fromEntries(catalog.map(c => [c.value, c.label])), [catalog])
     const [loading, setLoading] = useState(true)
     const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -365,14 +366,13 @@ export default function PushNotificationsPage() {
             if (rRes.ok) {
                 const cat = await rRes.json() as RoleMeta[]
                 setCatalog(cat)
-                setRoleLabels(Object.fromEntries(cat.map(c => [c.value, c.label])))
             }
         } catch {
             setLoadError("Couldn't load push history")
         } finally {
             setLoading(false)
         }
-    }, [])
+    }, [setCatalog])
 
     useEffect(() => { void load() }, [load])
 

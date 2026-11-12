@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react"
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react"
 
+import { useBootstrapped } from "../contexts/bootstrapContext"
 import type { RoleCatalogEntry } from "@/lib/permissions"
 
 export const MEETINGS_API = `${import.meta.env.VITE_BACKEND_URL}/meeting-hours`
@@ -39,27 +40,40 @@ export function upcomingMeetings(meetings: Meeting[], now: number): Meeting[] {
         .sort((a, b) => Date.parse(a.start_time) - Date.parse(b.start_time))
 }
 
+const EMPTY_MEETINGS: Meeting[] = []
+const EMPTY_ABSENCES: MeetingAbsence[] = []
+
 export function useMeetings(revision = 0) {
-    const [meetings, setMeetings] = useState<Meeting[]>([])
-    const [loading, setLoading] = useState(true)
-    const [error, setError] = useState(false)
+    // Seeded from /bootstrap (null = no data yet). The fetch below still runs and
+    // silently refreshes: with data present there is no skeleton and a failed
+    // refresh keeps the data.
+    const [data, setData] = useBootstrapped<Meeting[] | null>("meeting_schedule", null)
+    const [fetching, setFetching] = useState(true)
+    const [failed, setFailed] = useState(false)
     const [attempt, setAttempt] = useState(0)
+    const meetings = data ?? EMPTY_MEETINGS
+    const loading = fetching && data === null
+    const error = failed && data === null
+    const setMeetings = useCallback<Dispatch<SetStateAction<Meeting[]>>>(
+        value => setData(prev => typeof value === "function" ? value(prev ?? EMPTY_MEETINGS) : value),
+        [setData],
+    )
     const retry = useCallback(() => setAttempt(value => value + 1), [])
 
     useEffect(() => {
         const controller = new AbortController()
-        setLoading(true)
-        setError(false)
+        setFetching(true)
+        setFailed(false)
         fetch(MEETINGS_API, { credentials: "include", signal: controller.signal })
             .then(response => {
                 if (!response.ok) throw new Error("load")
                 return response.json() as Promise<Meeting[]>
             })
-            .then(setMeetings)
-            .catch(() => { if (!controller.signal.aborted) setError(true) })
-            .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+            .then(setData)
+            .catch(() => { if (!controller.signal.aborted) setFailed(true) })
+            .finally(() => { if (!controller.signal.aborted) setFetching(false) })
         return () => controller.abort()
-    }, [revision, attempt])
+    }, [revision, attempt, setData])
 
     return { meetings, setMeetings, loading, error, retry }
 }
@@ -87,10 +101,14 @@ export function absencesByMeeting(list: MeetingAbsence[]): Map<string, MeetingAb
 }
 
 export function useMeetingAbsences(revision = 0) {
-    const [absences, setAbsences] = useState<MeetingAbsence[]>([])
-    const [loading, setLoading] = useState(true)
-    const [error, setError] = useState(false)
+    // Seeded from /bootstrap, same rules as useMeetings.
+    const [data, setAbsences] = useBootstrapped<MeetingAbsence[] | null>("meeting_absences", null)
+    const [fetching, setFetching] = useState(true)
+    const [failed, setFailed] = useState(false)
     const [attempt, setAttempt] = useState(0)
+    const absences = data ?? EMPTY_ABSENCES
+    const loading = fetching && data === null
+    const error = failed && data === null
     const retry = useCallback(() => setAttempt(value => value + 1), [])
 
     useEffect(() => {
@@ -100,11 +118,11 @@ export function useMeetingAbsences(revision = 0) {
                 if (!response.ok) throw new Error("load")
                 return response.json() as Promise<MeetingAbsence[]>
             })
-            .then(rows => { setAbsences(rows); setError(false) })
-            .catch(() => { if (!controller.signal.aborted) setError(true) })
-            .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+            .then(rows => { setAbsences(rows); setFailed(false) })
+            .catch(() => { if (!controller.signal.aborted) setFailed(true) })
+            .finally(() => { if (!controller.signal.aborted) setFetching(false) })
         return () => controller.abort()
-    }, [revision, attempt])
+    }, [revision, attempt, setAbsences])
 
     return { absences, loading, error, retry }
 }
@@ -130,15 +148,19 @@ export function withdrawAbsence(meetingId: string): Promise<void> {
 
 /** Role value -> label from the role catalog. Only fetched when `enabled`. */
 export function useRoleLabels(enabled: boolean): Map<string, string> {
-    const [labels, setLabels] = useState<Map<string, string>>(new Map())
+    const [catalog, setCatalog] = useBootstrapped<RoleCatalogEntry[] | null>("roles", null)
+    const labels = useMemo(
+        () => new Map((catalog ?? []).map((entry): [string, string] => [entry.value, entry.label])),
+        [catalog],
+    )
     useEffect(() => {
         if (!enabled) return
         const controller = new AbortController()
         fetch(`${import.meta.env.VITE_BACKEND_URL}/auth/roles`, { credentials: "include", signal: controller.signal })
-            .then(response => response.ok ? response.json() as Promise<RoleCatalogEntry[]> : [])
-            .then(catalog => setLabels(new Map(catalog.map(entry => [entry.value, entry.label]))))
+            .then(response => response.ok ? response.json() as Promise<RoleCatalogEntry[]> : null)
+            .then(fresh => { if (fresh) setCatalog(fresh) })
             .catch(() => { /* fall back to the raw role value */ })
         return () => controller.abort()
-    }, [enabled])
+    }, [enabled, setCatalog])
     return labels
 }

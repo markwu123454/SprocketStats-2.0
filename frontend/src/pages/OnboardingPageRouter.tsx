@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "@/contexts/authContext"
+import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { useAppReady } from "@/contexts/appReadyContext"
 import type { RoleCatalogEntry } from "@/lib/permissions"
 import { STUDENT_EMAIL_DOMAIN } from "@/lib/Roles"
@@ -49,7 +50,7 @@ export default function OnboardingPageRouter() {
     const [selectedTeamYear, setSelectedTeamYear] = useState<string | null>(null)
     const [submitting,       setSubmitting]       = useState(false)
     const [error,            setError]            = useState<string | null>(null)
-    const [roleCatalog,      setRoleCatalog]      = useState<RoleCatalogEntry[]>([])
+    const [roleCatalog,      setRoleCatalog]      = useBootstrapped<RoleCatalogEntry[]>("roles", [])
 
     // The role catalog (labels + school-info rule for every role) is owned by the
     // backend; fetch it for the picker since the user has no role yet.
@@ -60,7 +61,7 @@ export default function OnboardingPageRouter() {
             .then((data: RoleCatalogEntry[]) => { if (!cancelled) setRoleCatalog(data) })
             .catch(() => {})
         return () => { cancelled = true }
-    }, [])
+    }, [setRoleCatalog])
 
     // Whether the chosen role requires grade/team-year, per the backend catalog.
     // Defaults to true until the catalog loads (a role can't be picked before then).

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from "react"
 import { useOnboardedUser } from "@/contexts/authContext"
+import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { can, getPerm } from "@/lib/permissions"
 import { isTaskBucket, type TaskBucket } from "@/lib/taskBuckets"
 import {
@@ -35,6 +36,9 @@ function saveSeenMap(map: Record<string, number>) {
         // just won't persist across reloads, which is fine.
     }
 }
+
+const EMPTY_TASKS: Task[] = []
+const EMPTY_PEOPLE: Person[] = []
 
 export interface TaskBoard {
     tasks: Task[]
@@ -81,9 +85,22 @@ export function useTaskBoard(): TaskBoard {
     const rawSubteam = getPerm(user.permissions, "subteam")
     const mySubteam = typeof rawSubteam === "string" && isTaskBucket(rawSubteam) ? rawSubteam : null
 
-    const [tasks, setTasks] = useState<Task[]>([])
-    const [people, setPeople] = useState<Person[]>([])
-    const [loading, setLoading] = useState(true)
+    // Seeded from /bootstrap (null = not available); load() below still runs
+    // and silently refreshes. Seeded data skips the loading skeleton.
+    const [seededTasks, setSeededTasks] = useBootstrapped<Task[] | null>("tasks", null)
+    const [seededPeople, setSeededPeople] = useBootstrapped<Person[] | null>("task_people", null)
+    const tasks = seededTasks ?? EMPTY_TASKS
+    const setTasks = useCallback<Dispatch<SetStateAction<Task[]>>>(
+        value => setSeededTasks(prev => typeof value === "function" ? value(prev ?? EMPTY_TASKS) : value),
+        [setSeededTasks],
+    )
+    const setPeople = setSeededPeople
+    const people = seededPeople ?? EMPTY_PEOPLE
+    const hasSeed = seededTasks !== null && seededPeople !== null
+    const [loading, setLoading] = useState(!hasSeed)
+    // Mirrors `hasSeed` for load(), which must not flip `loading` on when data is already shown.
+    const hasDataRef = useRef(hasSeed)
+    useEffect(() => { hasDataRef.current = hasSeed }, [hasSeed])
     const [loadError, setLoadError] = useState<string | null>(null)
     const [actionError, setActionError] = useState<string | null>(null)
 
@@ -128,21 +145,32 @@ export function useTaskBoard(): TaskBoard {
     }, [])
 
     const load = useCallback(async () => {
-        setLoading(true)
+        if (!hasDataRef.current) setLoading(true)
         setLoadError(null)
         try {
             const [t, p] = await Promise.all([fetchTasks(), fetchPeople()])
             setTasks(t)
             setPeople(p)
+            hasDataRef.current = true
             stampSeenForNewTasks(t)
         } catch {
-            setLoadError("Couldn't load tasks")
+            // A failed refresh keeps seeded data on screen rather than replacing it with an error.
+            if (!hasDataRef.current) setLoadError("Couldn't load tasks")
         } finally {
             setLoading(false)
         }
-    }, [stampSeenForNewTasks])
+    }, [stampSeenForNewTasks, setTasks, setPeople])
 
     useEffect(() => { void load() }, [load])
+
+    // Seeded tasks render before load() resolves, so stamp them now too -- else
+    // every task with notes would flash as unread until the refresh lands.
+    const stampedSeed = useRef(false)
+    useEffect(() => {
+        if (stampedSeed.current || !seededTasks) return
+        stampedSeed.current = true
+        stampSeenForNewTasks(seededTasks)
+    }, [seededTasks, stampSeenForNewTasks])
 
     // Guards `refreshTasksSilently` against overlapping requests (a poll
     // tick firing while the previous one is still in flight, or racing the
@@ -186,7 +214,7 @@ export function useTaskBoard(): TaskBoard {
         } finally {
             pollInFlight.current = false
         }
-    }, [stampSeenForNewTasks])
+    }, [stampSeenForNewTasks, setTasks])
 
     // Poll every 30s while the tab is visible, so two people are less likely
     // to both go for the same unclaimed task. Pauses entirely while hidden
@@ -230,12 +258,12 @@ export function useTaskBoard(): TaskBoard {
             next[idx] = updated
             return next
         })
-    }, [])
+    }, [setTasks])
 
     const removeTask = useCallback((id: string) => {
         lastMutationAt.current = Date.now()
         setTasks(prev => prev.filter(t => t.id !== id))
-    }, [])
+    }, [setTasks])
 
     // Notes live in their own thread endpoint (see TaskNotes), so their count
     // is nudged locally rather than re-fetching the whole task on every post/delete.
@@ -262,7 +290,7 @@ export function useTaskBoard(): TaskBoard {
             saveSeenMap(next)
             return next
         })
-    }, [])
+    }, [setTasks])
 
     function canEditTask(task: Task): boolean {
         return canAssign || task.created_by === user.id
