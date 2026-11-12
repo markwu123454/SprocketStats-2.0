@@ -84,9 +84,28 @@ async def list_absence_viewer_ids(roles: list[str], exclude_user_id: str) -> lis
             raise
 
 
+
+async def list_active_members() -> list[asyncpg.Record]:
+    """Onboarded, unbanned users with the fields the attendance page needs.
+
+    Approval is filtered by the caller (``role_requires_approval`` lives in
+    Python), mirroring ``account_state._assert_entry_active``.
+    """
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetch(
+                "SELECT id, display_name, role, created_at, approved_by FROM users "
+                "WHERE banned_at IS NULL AND onboarding_complete"
+            )
+        except Exception as e:
+            logger.error("list_active_members failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to fetch members")
+
+
 __all__ = [
     "upsert_meeting_absence",
     "delete_meeting_absence",
     "list_meeting_absences",
     "list_absence_viewer_ids",
+    "list_active_members",
 ]
