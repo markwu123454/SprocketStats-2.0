@@ -96,11 +96,16 @@ export function useTaskBoard(): TaskBoard {
     )
     const setPeople = setSeededPeople
     const people = seededPeople ?? EMPTY_PEOPLE
-    const hasSeed = seededTasks !== null && seededPeople !== null
-    const [loading, setLoading] = useState(!hasSeed)
-    // Mirrors `hasSeed` for load(), which must not flip `loading` on when data is already shown.
-    const hasDataRef = useRef(hasSeed)
-    useEffect(() => { hasDataRef.current = hasSeed }, [hasSeed])
+    // Tasks and people load and fail independently: the board only waits on
+    // tasks (people just feed the assignee picker), and a failure on one never
+    // throws away the other.
+    const [loading, setLoading] = useState(seededTasks === null)
+    // Mirror "data on screen" for load(), which must not flip `loading` on or
+    // raise an error over data that's already shown.
+    const hasTasksRef = useRef(seededTasks !== null)
+    const hasPeopleRef = useRef(seededPeople !== null)
+    useEffect(() => { if (seededTasks !== null) hasTasksRef.current = true }, [seededTasks])
+    useEffect(() => { if (seededPeople !== null) hasPeopleRef.current = true }, [seededPeople])
     const [loadError, setLoadError] = useState<string | null>(null)
     const [actionError, setActionError] = useState<string | null>(null)
 
@@ -145,20 +150,25 @@ export function useTaskBoard(): TaskBoard {
     }, [])
 
     const load = useCallback(async () => {
-        if (!hasDataRef.current) setLoading(true)
+        if (!hasTasksRef.current) setLoading(true)
         setLoadError(null)
-        try {
-            const [t, p] = await Promise.all([fetchTasks(), fetchPeople()])
+        const errors: string[] = []
+        // A failed refresh keeps data already on screen rather than replacing it with an error.
+        const tasksLoad = fetchTasks().then(t => {
             setTasks(t)
-            setPeople(p)
-            hasDataRef.current = true
+            hasTasksRef.current = true
             stampSeenForNewTasks(t)
-        } catch {
-            // A failed refresh keeps seeded data on screen rather than replacing it with an error.
-            if (!hasDataRef.current) setLoadError("Couldn't load tasks")
-        } finally {
-            setLoading(false)
-        }
+        }, () => { if (!hasTasksRef.current) errors.push("Couldn't load tasks") })
+        const peopleLoad = fetchPeople().then(p => {
+            setPeople(p)
+            hasPeopleRef.current = true
+        }, () => { if (!hasPeopleRef.current) errors.push("Couldn't load the people list") })
+        // The board renders as soon as tasks land; people can arrive later.
+        await tasksLoad
+        setLoading(false)
+        if (errors.length) setLoadError(errors.join(". "))
+        await peopleLoad
+        if (errors.length) setLoadError(errors.join(". "))
     }, [stampSeenForNewTasks, setTasks, setPeople])
 
     useEffect(() => { void load() }, [load])
