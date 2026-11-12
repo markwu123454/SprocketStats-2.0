@@ -56,9 +56,12 @@ PUSH_DELIVERY_SWEEP_SECONDS = 60
 PUSH_DELIVERY_SWEEP_MAX_SECONDS = 21600  # 6 hours
 
 # How often each process checks for due meeting/event reminders (see
-# core.push_notify.send_due_reminders). Deliberately a fixed interval with no
-# idle backoff, unlike the loops above: reminders are time-driven, and a quiet
-# night is exactly when the next morning's reminder has to go out on time.
+# core.push_notify.send_due_reminders) and drains the push outbox. Deliberately
+# a fixed interval with no idle backoff, unlike the loops above: reminders are
+# time-driven, and a quiet night is exactly when the next morning's reminder
+# has to go out on time. The drain here is the backstop for pushes another
+# process queued but didn't finish (crash, redeploy); retries within a running
+# process are scheduled by push_notify itself.
 PUSH_REMINDER_SWEEP_SECONDS = 300
 
 # Below this many requests in a sleep window, a loop treats itself as idle
@@ -131,18 +134,20 @@ async def _push_delivery_sweep_loop():
 async def _push_reminder_loop():
     """Send meeting/event reminders as they come due, for the life of the app.
 
-    A failed sweep is logged and retried on the next tick. Safe to run in
-    several processes at once: each reminder is claimed in the database
-    before it's sent, so only one process sends it.
+    Also drains the push outbox each tick. A failed sweep is logged and
+    retried on the next tick. Safe to run in several processes at once: each
+    reminder is claimed in the database when it's queued, and outbox rows are
+    claimed before they're sent, so only one process sends each.
     """
     while True:
         await asyncio.sleep(PUSH_REMINDER_SWEEP_SECONDS)
         try:
-            sent = await push_notify.send_due_reminders(datetime.now(timezone.utc))
-            if sent:
-                logger.info("push reminder sweep: sent %d reminder(s)", sent)
+            queued = await push_notify.send_due_reminders(datetime.now(timezone.utc))
+            if queued:
+                logger.info("push reminder sweep: queued %d reminder(s)", queued)
         except Exception as e:
             logger.error("push reminder sweep failed: %s", e)
+        await push_notify.drain_outbox()
 
 
 @asynccontextmanager
@@ -154,6 +159,9 @@ async def lifespan(_: FastAPI):
     refresh_task = asyncio.create_task(_account_state_refresh_loop())
     push_sweep_task = asyncio.create_task(_push_delivery_sweep_loop())
     push_reminder_task = asyncio.create_task(_push_reminder_loop())
+    # Send whatever a previous process queued but didn't get to (e.g. a push
+    # queued just before a redeploy).
+    push_notify.kick_outbox()
     yield
     refresh_task.cancel()
     push_sweep_task.cancel()

@@ -6,6 +6,7 @@ from .meeting_absences import *
 from .attendance import *
 from .notifications import *
 from .push import *
+from .push_outbox import *
 from .tags import *
 from .events import *
 from .comp_events import *
