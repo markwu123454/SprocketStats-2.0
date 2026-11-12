@@ -234,6 +234,8 @@ Note that changing a user's role clears `approved_by` ([backend/db/users.py:176]
 | `VAPID_CLAIM_EMAIL` | no | **runs**, defaults to `mailto:admin@example.com` | push services may reject the default |
 | `TEAM_TIMEZONE` | no | **runs**, defaults to `America/Los_Angeles` | IANA zone; used for meeting/event reminder times and to read the naive local times in `events.start_time` |
 | `DATABASE_URL_DIRECT` | no | **runs**, kiosk QR events are in-memory only (correct for a single machine) | Neon **direct** (non-pooled) connection string. Set it when running more than one Fly machine so kiosk QR-claim SSE events reach the right machine via Postgres `LISTEN/NOTIFY`. The LISTEN connection is only open while a kiosk is connected. |
+| `DISCORD_MEETING_WEBHOOK_URL` | no | **runs**, new meetings aren't announced on Discord | Discord channel webhook (Server Settings → Integrations → Webhooks). A secret: set it with `flyctl secrets set`. Needs `DISCORD_MEMBER_ROLE_ID` too. |
+| `DISCORD_MEMBER_ROLE_ID` | no | **runs**, same as above | numeric id of the role to ping (Developer Mode → right-click the role → Copy Role ID). If the ping doesn't notify anyone, enable "Allow anyone to @mention this role". |
 | `DATABASE_URL_LABEL_STUDIO` | no | **runs**, fails only on labeling queries | second Neon database |
 | `ENV` | no | **runs** as production | `production` or `development` |
 

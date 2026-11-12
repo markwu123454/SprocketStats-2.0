@@ -133,6 +133,9 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
     const [justAdded, setJustAdded] = useState(false)
     const [repeat, setRepeat] = useState<Repeat>("none")
     const [repeatUntil, setRepeatUntil] = useState(() => localDateKey(new Date()))
+    // New meetings ping the team's Discord role; offered only when the server has a webhook configured.
+    const [discordEnabled, setDiscordEnabled] = useState(false)
+    const [notifyDiscord, setNotifyDiscord] = useState(true)
 
     // The values the form opened with (set wherever the form is reset or loaded with a meeting); dirty = anything differs.
     const [baseline, setBaseline] = useState(() => ({
@@ -156,6 +159,15 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
 
     useEffect(() => { void load() }, [load])
 
+    useEffect(() => {
+        const controller = new AbortController()
+        fetch(`${API}/meeting-hours/discord`, { credentials: "include", signal: controller.signal })
+            .then(r => r.ok ? r.json() as Promise<{ enabled: boolean }> : { enabled: false })
+            .then(status => setDiscordEnabled(status.enabled))
+            .catch(() => { /* stays hidden */ })
+        return () => controller.abort()
+    }, [])
+
     const resetForm = useCallback(() => {
         setMode("add")
         setEditingId(null)
@@ -164,6 +176,7 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
         setStartTime(DEFAULT_START)
         setEndTime(DEFAULT_END)
         setRepeat("none")
+        setNotifyDiscord(true)
         setSelected(new Set())
         setBaseline({ description: "", dateKey: localDateKey(new Date()), startTime: DEFAULT_START, endTime: DEFAULT_END, repeat: "none" })
     }, [])
@@ -239,11 +252,14 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
                         end_time: combineDateAndTime(d, endTime).toISOString(),
                     })),
                     meeting_purpose: description.trim(),
+                    notify_discord: discordEnabled && notifyDiscord,
                 }
                 : {
                     start_time: combineDateAndTime(date, startTime).toISOString(),
                     end_time: combineDateAndTime(date, endTime).toISOString(),
                     meeting_purpose: description.trim(),
+                    // Ignored on edit (PUT); only creating a meeting announces it.
+                    ...(isEdit ? {} : { notify_discord: discordEnabled && notifyDiscord }),
                 }
             const url = isEdit ? `${API}/meeting-hours/${editingId}` : `${API}/meeting-hours${isRecurring ? "/batch" : ""}`
             const res = await fetch(url, {
@@ -373,7 +389,8 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
 
                 {/* Recurrence (new meetings only) */}
                 {mode === "add" && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+                    // Full width like the fields above until "Repeat until" needs the second column.
+                    <div className={`grid grid-cols-1 gap-4 items-start ${repeat !== "none" ? "sm:grid-cols-2" : ""}`}>
                         <Dropdown
                             value={repeat}
                             onChange={(v) => { setRepeat(v as Repeat); setJustAdded(false) }}
@@ -388,6 +405,13 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
                                 onChange={value => { setRepeatUntil(value); setJustAdded(false) }} />
                         )}
                     </div>
+                )}
+
+                {mode === "add" && discordEnabled && (
+                    <label className="inline-flex items-center gap-2.5 min-h-11 -my-2 pl-0.5 text-sm theme-text cursor-pointer self-start">
+                        <Checkbox checked={notifyDiscord} onChange={() => setNotifyDiscord(v => !v)} />
+                        Notify @member on Discord
+                    </label>
                 )}
 
                 {/* Start / end time wheels */}
