@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { checkInRolesOf, defaultCheckInRole, findByHubKey, formatCountdown, hasEventPage, hiddenTabsOf, isCheckInOpen, isHubOpen, pickActiveEvent, resolveEvent } from "./events"
+import { checkInRolesOf, dateBadgeOf, groupTimeline, defaultCheckInRole, findByHubKey, formatCountdown, hasEventPage, hiddenTabsOf, isCheckInOpen, isHubOpen, pickActiveEvent, resolveEvent } from "./events"
 
 const DAY = 24 * 60 * 60 * 1000
 const now = new Date("2026-10-21T12:00")
@@ -150,5 +150,54 @@ describe("check-in roles", () => {
             checkinRoles: [{ key: "volunteer", label: "Volunteer" }, { key: "booth", label: "Booth" }] }
         expect(checkInRolesOf(custom).map((r) => r.label)).toEqual(["Volunteer", "Booth"])
         expect(defaultCheckInRole(custom)).toBe("volunteer")
+    })
+})
+
+describe("groupTimeline", () => {
+    const ev = (name: string, start: string, location = "Woodshop") => resolveEvent({ name, start, location, type: "Build" }, now)
+
+    it("collapses consecutive week events at one location into a series", () => {
+        const items = groupTimeline([
+            ev("Kickoff", "2027-01-09", "Room"),
+            ev("Build Season Week 1", "2027-01-11"),
+            ev("Build Season - Week 2", "2027-01-18"),
+            ev("Regional", "2027-03-01", "Arena"),
+        ])
+        expect(items.map((i) => i.kind)).toEqual(["single", "series", "single"])
+        const series = items[1]
+        expect(series.kind === "series" && series.label).toBe("Build Season · 2 weeks")
+        expect(series.kind === "series" && series.events).toHaveLength(2)
+    })
+
+    it("splits a series around an event between its weeks, keeping date order", () => {
+        const items = groupTimeline([
+            ev("Comp Season - Week 1", "2027-03-03", "TBD"),
+            ev("Comp Season - Week 2", "2027-03-10", "TBD"),
+            ev("District Event", "2027-03-12", "Arena"),
+            ev("Comp Season - Week 3", "2027-03-17", "TBD"),
+            ev("Comp Season - Week 4", "2027-03-24", "TBD"),
+        ])
+        expect(items.map((i) => i.kind)).toEqual(["series", "single", "series"])
+        expect(items.map((i) => i.kind === "series" ? i.label : i.event.name))
+            .toEqual(["Comp Season · Weeks 1–2", "District Event", "Comp Season · Weeks 3–4"])
+    })
+
+    it("starts a new series after a long gap", () => {
+        const items = groupTimeline([ev("Outreach Week 1", "2027-01-01"), ev("Outreach Week 2", "2027-06-01")])
+        expect(items.map((i) => i.kind)).toEqual(["single", "single"])
+    })
+
+    it("keeps a lone week event, and splits on a location change", () => {
+        expect(groupTimeline([ev("Build Season Week 1", "2027-01-11")])[0].kind).toBe("single")
+        const split = groupTimeline([ev("Build Week 1", "2027-01-11", "A"), ev("Build Week 2", "2027-01-18", "B")])
+        expect(split.map((i) => i.kind)).toEqual(["single", "single"])
+    })
+})
+
+describe("dateBadgeOf", () => {
+    it("formats single days, ranges and month-crossing ranges", () => {
+        expect(dateBadgeOf("2027-01-09")).toEqual({ month: "JAN", days: "9", range: false })
+        expect(dateBadgeOf("2027-01-11", "2027-01-17")).toEqual({ month: "JAN", days: "11–17", range: true })
+        expect(dateBadgeOf("2027-03-30T09:00", "2027-04-02T17:00")).toEqual({ month: "MAR–APR", days: "30–2", range: true })
     })
 })

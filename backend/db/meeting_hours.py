@@ -35,6 +35,15 @@ async def list_all_meeting_hours() -> list[asyncpg.Record]:
             raise HTTPException(status_code=500, detail="Failed to fetch meeting hours")
 
 
+async def get_meeting_hours(meeting_id: str) -> asyncpg.Record | None:
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow("SELECT * FROM meeting_hours WHERE id = $1", meeting_id)
+        except Exception as e:
+            logger.error("get_meeting_hours failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to fetch meeting")
+
+
 async def list_meetings_starting_between(start: datetime, end: datetime) -> list[asyncpg.Record]:
     """Meetings whose *start* falls in ``(start, end]`` -- for the reminder sweep.
 
@@ -145,6 +154,7 @@ __all__ = [
     "update_meeting_agenda",
     "list_meeting_hours",
     "list_all_meeting_hours",
+    "get_meeting_hours",
     "list_meetings_starting_between",
     "create_meeting_hours",
     "create_meeting_hours_batch",

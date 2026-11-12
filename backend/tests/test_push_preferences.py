@@ -46,12 +46,12 @@ def test_partial_update_only_touches_sent_categories(client):
     resp = client.put("/push/preferences", json={"preferences": {"meeting_reminder": False}})
     assert resp.status_code == 200
     assert resp.json()["preferences"] == {
-        "task_assigned": True, "meeting_reminder": False, "event_reminder": True,
+        "task_assigned": True, "meeting_reminder": False, "event_reminder": True, "meeting_absence": True,
     }
 
     resp = client.put("/push/preferences", json={"preferences": {"meeting_reminder": True, "task_assigned": False}})
     assert resp.json()["preferences"] == {
-        "task_assigned": False, "meeting_reminder": True, "event_reminder": True,
+        "task_assigned": False, "meeting_reminder": True, "event_reminder": True, "meeting_absence": True,
     }
 
 

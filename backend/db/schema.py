@@ -16,6 +16,18 @@ logger = logging.getLogger(__name__)
 # but every process must use the same value.
 _SCHEMA_LOCK_KEY = 0x53_70_72_6F_63_6B_65_74  # "Sprocket"
 
+# Shared by init_db and migration 10 (idempotent).
+_MEETING_ABSENCES_DDL = """
+    CREATE TABLE IF NOT EXISTS meeting_absences (
+        meeting_id  UUID        NOT NULL REFERENCES meeting_hours(id) ON DELETE CASCADE,
+        user_id     TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        reason      TEXT        NOT NULL DEFAULT '',
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (meeting_id, user_id)
+    )
+"""
+
 
 async def _create_offline_code_functions(conn) -> None:
     """Install the checksum helpers required by ``users.offline_code``."""
@@ -194,6 +206,7 @@ async def init_db():
                         CONSTRAINT check_valid_time_range CHECK (end_time > start_time)
                     )
                 """)
+                await conn.execute(_MEETING_ABSENCES_DDL)
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS attendance (
                         id            TEXT        PRIMARY KEY DEFAULT (gen_random_uuid())::text,
@@ -859,6 +872,10 @@ async def _migration_0009_into_manufacturing(conn) -> None:
         """)
 
 
+async def _migration_0010_meeting_absences(conn) -> None:
+    await conn.execute(_MEETING_ABSENCES_DDL)
+
+
 # Append-only: never edit or renumber a migration that has shipped. Each must
 # be idempotent against init_db's current schema, because a fresh database
 # gets that schema first and then runs every migration.
@@ -872,6 +889,7 @@ _MIGRATIONS = [
     (7, _migration_0007_meeting_agenda),
     (8, _migration_0008_electrical_into_mechanical),
     (9, _migration_0009_into_manufacturing),
+    (10, _migration_0010_meeting_absences),
 ]
 
 

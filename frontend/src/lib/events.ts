@@ -266,3 +266,97 @@ export function unionRosterDays(roster: RosterMember[]): string[] {
     }
     return [...days].sort()
 }
+
+// ---- Events list layout -----------------------------------------------------
+
+// "Build Season Week 3", "Build Season - Week 3", "Build Season: week 3" ->
+// base "Build Season", week 3. Anything else isn't part of a series.
+const SERIES_RE = /^(.*?\S)\s*[-–—·:|]?\s*week\s*(\d+)$/i
+
+export function seriesWeekOf(name: string): { base: string; week: number } | null {
+    const m = SERIES_RE.exec(name.trim())
+    return m ? { base: m[1], week: Number(m[2]) } : null
+}
+
+// One row of the events timeline: a lone event, or a run of consecutive
+// "<base> Week N" events at one location collapsed into one card. `label` is
+// the card title: "Build Season · 6 weeks", or "Comp Season · Weeks 3–5" when
+// other events fall between the series' weeks and split it into pieces.
+export type TimelineItem =
+    | { kind: "single"; event: ResolvedEvent }
+    | { kind: "series"; key: string; base: string; label: string; location: string; events: ResolvedEvent[] }
+
+// A week more than this long after the previous one starts a new series.
+const SERIES_GAP_MS = 21 * DAY_MS
+
+// `events` must already be in date order, and the timeline keeps it: a
+// series only spans weeks with nothing else between them, so an event
+// landing mid-series splits it into a card before and a card after. A piece
+// needs at least two weeks; a lone week stays a normal event.
+export function groupTimeline(events: ResolvedEvent[]): TimelineItem[] {
+    type Run = { base: string; location: string; events: ResolvedEvent[] }
+    const slots: (ResolvedEvent | Run)[] = []
+    let run: Run | null = null
+    for (const event of events) {
+        const sw = seriesWeekOf(event.name)
+        const prev = run?.events[run.events.length - 1]
+        if (sw && run && prev && run.base.toLowerCase() === sw.base.toLowerCase() && run.location === event.location
+            && event.startsAt - prev.startsAt <= SERIES_GAP_MS) {
+            run.events.push(event)
+        } else if (sw) {
+            run = { base: sw.base, location: event.location, events: [event] }
+            slots.push(run)
+        } else {
+            run = null
+            slots.push(event)
+        }
+    }
+
+    // A series that got split is titled by its week numbers, so the pieces read as one.
+    const pieces = new Map<string, number>()
+    const pieceKey = (r: Run) => `${r.base.toLowerCase()}|${r.location}`
+    for (const slot of slots) if (!("startsAt" in slot)) pieces.set(pieceKey(slot), (pieces.get(pieceKey(slot)) ?? 0) + 1)
+
+    const items: TimelineItem[] = []
+    for (const slot of slots) {
+        if ("startsAt" in slot) items.push({ kind: "single", event: slot })
+        else if (slot.events.length < 2) items.push({ kind: "single", event: slot.events[0] })
+        else {
+            const weeks = slot.events.map((e) => seriesWeekOf(e.name)!.week)
+            const label = (pieces.get(pieceKey(slot)) ?? 1) > 1
+                ? `${slot.base} · Weeks ${weeks[0]}–${weeks[weeks.length - 1]}`
+                : `${slot.base} · ${slot.events.length} weeks`
+            items.push({ kind: "series", key: `${slot.base}-${slot.events[0].start}`, base: slot.base, label, location: slot.location, events: slot.events })
+        }
+    }
+    return items
+}
+
+export function timelineEvents(item: TimelineItem): ResolvedEvent[] {
+    return item.kind === "single" ? [item.event] : item.events
+}
+
+export function isTimelineDone(item: TimelineItem): boolean {
+    return timelineEvents(item).every((e) => e.status === "done")
+}
+
+// The date badge on the timeline rail: "JAN" over "9", "JAN" over "11–17",
+// or "MAR–APR" over "30–2" when the span crosses a month.
+export function dateBadgeOf(start: string, end?: string): { month: string; days: string; range: boolean } {
+    const s = parseEventDate(start)
+    const e = parseEventDate(end ?? start)
+    const sm = MONTHS[s.getMonth()].toUpperCase()
+    const em = MONTHS[e.getMonth()].toUpperCase()
+    if (s.toDateString() === e.toDateString()) return { month: sm, days: String(s.getDate()), range: false }
+    return { month: sm === em ? sm : `${sm}–${em}`, days: `${s.getDate()}–${e.getDate()}`, range: true }
+}
+
+// "in 60d" style short countdown for compact rows -- whole days, or hours
+// inside the last day.
+export function formatShortCountdown(ms: number): string {
+    const total = Math.max(0, ms)
+    const days = Math.floor(total / DAY_MS)
+    if (days > 0) return `in ${days}d`
+    const hours = Math.floor(total / (60 * 60 * 1000))
+    return hours > 0 ? `in ${hours}h` : "soon"
+}
