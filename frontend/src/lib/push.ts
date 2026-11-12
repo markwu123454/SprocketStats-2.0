@@ -195,7 +195,7 @@ export async function unsubscribeFromPush(): Promise<void> {
 }
 
 /** Automated push categories (mirrors `PUSH_CATEGORIES` in backend/db/push.py). */
-export type PushCategory = "task_assigned" | "meeting_reminder" | "event_reminder"
+export type PushCategory = "task_assigned" | "meeting_reminder" | "event_reminder" | "meeting_absence"
 export type PushPreferences = Record<PushCategory, boolean>
 
 /** The signed-in user's per-category choices (account-wide, not per device). */

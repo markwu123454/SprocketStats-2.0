@@ -280,6 +280,48 @@ def can_edit_authored(actor_role: str | None, author_role: str | None) -> bool:
     return role_rank(actor_role) >= role_rank(author_role)
 
 
+def has_absence_view(role: str | None) -> bool:
+    """Return whether ``role`` may see other members' meeting absences at all
+    (leads, captains, mentors)."""
+    return get_perm(get_permissions_for_role(role), "level") in ("lead", "captain", "mentor")
+
+
+def can_view_absence(viewer_role: str | None, absentee_role: str | None) -> bool:
+    """Return whether a viewer may see an absence reported by ``absentee_role``.
+
+    Captains and mentors see everyone's; leads see absentees in their own
+    subteam. A user's own absence is always visible to them, but that is the
+    endpoint's concern, not this helper's.
+    """
+    viewer = get_permissions_for_role(viewer_role)
+    level = get_perm(viewer, "level")
+    if level in ("captain", "mentor"):
+        return True
+    if level == "lead":
+        subteam = get_perm(viewer, "subteam")
+        return subteam is not None and get_perm(get_permissions_for_role(absentee_role), "subteam") == subteam
+    return False
+
+
+def absence_push_roles(absentee_role: str | None) -> list[str]:
+    """Roles that get a push when ``absentee_role`` reports an absence.
+
+    A subteam member notifies their own subteam's lead(s); a lead notifies the
+    captain(s); anyone else notifies nobody. Narrower than ``can_view_absence``.
+    """
+    absentee = get_permissions_for_role(absentee_role)
+    level = get_perm(absentee, "level")
+    if level == "member" and get_perm(absentee, "subteam") is not None:
+        subteam = get_perm(absentee, "subteam")
+        return [
+            r for r, d in ROLE_DEFINITIONS.items()
+            if get_perm(d, "level") == "lead" and get_perm(d, "subteam") == subteam
+        ]
+    if level == "lead":
+        return [r for r, d in ROLE_DEFINITIONS.items() if get_perm(d, "level") == "captain"]
+    return []
+
+
 def role_catalog() -> list[dict[str, Any]]:
     """Return the public list of roles for the onboarding picker and roster UI.
 
@@ -322,5 +364,8 @@ __all__ = [
     "can_role_moderate",
     "role_rank",
     "can_edit_authored",
+    "has_absence_view",
+    "can_view_absence",
+    "absence_push_roles",
     "role_catalog",
 ]

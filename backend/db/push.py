@@ -50,7 +50,7 @@ PUSH_RETRY_AFTER_CAP_SECONDS = 30.0
 # and deliberately have no category -- they reach every subscribed device, so
 # leads always have a channel to everyone; a user who wants none of it turns
 # push off for the device entirely.
-PUSH_CATEGORIES = ("task_assigned", "meeting_reminder", "event_reminder")
+PUSH_CATEGORIES = ("task_assigned", "meeting_reminder", "event_reminder", "meeting_absence")
 
 
 async def save_push_subscription(user_id: str, endpoint: str, p256dh: str, auth: str) -> None:

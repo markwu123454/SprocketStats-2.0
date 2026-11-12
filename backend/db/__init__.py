@@ -2,6 +2,7 @@ from .connection import *
 from .schema import *
 from .users import *
 from .meeting_hours import *
+from .meeting_absences import *
 from .attendance import *
 from .notifications import *
 from .push import *

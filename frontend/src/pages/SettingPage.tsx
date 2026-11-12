@@ -1,6 +1,6 @@
 import { useAuth, useOnboardedUser } from "@/contexts/authContext"
 import { getPerm } from "@/lib/permissions"
-import { LogOut, Mail, ShieldCheck, Palette, Navigation, Bell, ListChecks, CalendarClock, Milestone, Megaphone, Pencil, ImagePlus } from "lucide-react"
+import { LogOut, Mail, ShieldCheck, Palette, Navigation, Bell, ListChecks, CalendarClock, Milestone, Megaphone, UserX, Pencil, ImagePlus } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useTheme } from "@/contexts/themeContext"
 import Avatar from "@/components/Avatar.tsx"
@@ -20,11 +20,13 @@ import {
 const NAV_TEXT_KEY = "nav-show-text"
 
 const API = import.meta.env.VITE_BACKEND_URL
+const ABSENCE_PUSH_LEVELS = ["lead", "captain"]
 
 const PUSH_CATEGORY_ROWS: { key: PushCategory; label: string; description: string; icon: typeof Bell }[] = [
     { key: "task_assigned",    label: "Task assignments",   description: "When someone assigns you a task or adds you to one", icon: ListChecks },
     { key: "meeting_reminder", label: "Meeting reminders",  description: "A day before each team meeting",                    icon: CalendarClock },
     { key: "event_reminder",   label: "Competition events", description: "The evening before and morning of each event",      icon: Milestone },
+    { key: "meeting_absence",  label: "Absence reports",    description: "When someone you oversee reports they'll miss a meeting", icon: UserX },
 ]
 
 function getNavTextPref(): boolean {
@@ -368,7 +370,7 @@ export default function SettingPage() {
                                     <p className="text-xs theme-subtext-color">Always on while push is enabled</p>
                                 </div>
                             </div>
-                            {PUSH_CATEGORY_ROWS.map(({ key, label, description, icon: Icon }) => (
+                            {PUSH_CATEGORY_ROWS.filter(row => row.key !== "meeting_absence" || ABSENCE_PUSH_LEVELS.includes(getPerm(user.permissions, "level") as string)).map(({ key, label, description, icon: Icon }) => (
                                 <div key={key} className="flex items-center justify-between px-4 py-3 gap-4">
                                     <div className="flex items-center gap-3">
                                         <Icon size={16} className="theme-subtext-color shrink-0" />

@@ -1,10 +1,13 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 import db
+from core.permissions import can_view_absence
+from core.push_notify import notify_meeting_absence
 from core.security import require_access, require_active
 
 logger = logging.getLogger(__name__)
@@ -54,6 +57,83 @@ async def list_meetings(_: dict = Depends(require_active)):
     """Scheduled meetings and agendas, visible to active signed-in members."""
     rows = await db.list_all_meeting_hours()
     return [_row_to_meeting(r) for r in rows]
+
+
+MAX_ABSENCE_REASON = 500
+
+
+class AbsenceWrite(BaseModel):
+    # Required key (so the client always sends it) but may be blank.
+    reason: str = Field(max_length=MAX_ABSENCE_REASON + 1000)
+
+    @field_validator("reason")
+    @classmethod
+    def _clean_reason(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) > MAX_ABSENCE_REASON:
+            raise ValueError(f"Reason must be {MAX_ABSENCE_REASON} characters or fewer")
+        return v
+
+
+def _absence_json(r) -> dict:
+    return {
+        "meeting_id": str(r["meeting_id"]),
+        "user_id": r["user_id"],
+        "display_name": r["display_name"],
+        "role": r["role"],
+        "reason": r["reason"],
+        "created_at": r["created_at"],
+        "updated_at": r["updated_at"],
+    }
+
+
+async def _open_meeting(meeting_id: str):
+    """The meeting, or 404 (unknown / malformed id) or 409 (already ended)."""
+    try:
+        UUID(meeting_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    meeting = await db.get_meeting_hours(meeting_id)
+    if meeting is None:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    if meeting["end_time"] <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=409, detail="This meeting has already ended")
+    return meeting
+
+
+# Declared before any `/{meeting_id}` GET route so "absences" is never read as an id.
+@router.get("/absences")
+async def list_absences(user: dict = Depends(require_active)):
+    """The caller's own absences plus every absence their role may view."""
+    rows = await db.list_meeting_absences()
+    visible = [r for r in rows if r["user_id"] == user["sub"] or can_view_absence(user.get("role"), r["role"])]
+    meetings = {str(m["id"]): m["start_time"] for m in await db.list_all_meeting_hours()}
+    visible.sort(key=lambda r: (meetings.get(str(r["meeting_id"])) or datetime.max.replace(tzinfo=timezone.utc),
+                                r["display_name"] or ""))
+    return [_absence_json(r) for r in visible]
+
+
+@router.put("/{meeting_id}/absence")
+async def report_absence(meeting_id: str, body: AbsenceWrite, user: dict = Depends(require_active)):
+    meeting = await _open_meeting(meeting_id)
+    _, created = await db.upsert_meeting_absence(meeting_id, user["sub"], body.reason)
+    mine = next(
+        r for r in await db.list_meeting_absences([meeting_id]) if r["user_id"] == user["sub"]
+    )
+    if created:
+        notify_meeting_absence(
+            meeting,
+            {"user_id": user["sub"], "display_name": mine["display_name"], "role": mine["role"]},
+        )
+    return _absence_json(mine)
+
+
+@router.delete("/{meeting_id}/absence")
+async def withdraw_absence(meeting_id: str, user: dict = Depends(require_active)):
+    await _open_meeting(meeting_id)
+    if not await db.delete_meeting_absence(meeting_id, user["sub"]):
+        raise HTTPException(status_code=404, detail="No absence reported for this meeting")
+    return {"ok": True}
 
 
 @router.post("")

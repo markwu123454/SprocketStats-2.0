@@ -22,6 +22,7 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import db
+from core.permissions import absence_push_roles
 from db.push import VAPID_PRIVATE_KEY
 
 logger = logging.getLogger(__name__)
@@ -111,10 +112,42 @@ def notify_task_assigned(task, assignee_id: str, actor: dict, as_contributor: bo
     notify_users_later([assignee_id], "task_assigned", "New task", body, "/tasks", f"task-{task['id']}")
 
 
+# ── Meeting absences ───────────────────────────────────────────────────────────
+
+async def _notify_absence(meeting, absentee: dict) -> None:
+    roles = absence_push_roles(absentee["role"])
+    if not roles:
+        return
+    try:
+        recipient_ids = await db.list_absence_viewer_ids(roles, absentee["user_id"])
+    except Exception as e:
+        logger.warning("notify_meeting_absence recipients failed: %s", e)
+        return
+    if not recipient_ids:
+        return
+    start_local = meeting["start_time"].astimezone(TEAM_TZ)
+    # The reason is deliberately not in the push: it can be sensitive and a lock
+    # screen is public. Recipients read it on the Meetings page.
+    body = f"{absentee['display_name']} will miss {meeting['meeting_purpose'] or 'Team meeting'} · {_short_date(start_local.date())}"
+    await notify_users(
+        recipient_ids, "meeting_absence", "Absence reported", body, "/meetings",
+        f"absence-{meeting['id']}-{absentee['user_id']}",
+    )
+
+
+def notify_meeting_absence(meeting, absentee: dict) -> None:
+    """Tell the absentee's lead(s) (or, for a lead, the captain(s)) about a new absence.
+
+    ``absentee`` carries ``user_id``, ``display_name`` and ``role``. Fire-and-forget.
+    """
+    fire_and_forget(_notify_absence(meeting, absentee))
+
+
 # ── Reminders ──────────────────────────────────────────────────────────────────
 
 def _short_date(d: date) -> str:
     return f"{d:%a, %b} {d.day}"
+
 
 
 def _clock(dt: datetime) -> str:
@@ -240,6 +273,7 @@ __all__ = [
     "notify_users",
     "notify_users_later",
     "notify_task_assigned",
+    "notify_meeting_absence",
     "due_meeting_reminders",
     "due_event_reminders",
     "parse_event_start",
