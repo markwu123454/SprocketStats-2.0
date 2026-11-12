@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 import db
 from core.permissions import can_view_absence, has_absence_view, role_requires_approval, tracks_attendance
+from core.discord_notify import discord_configured, notify_meetings_created
 from core.push_notify import notify_meeting_absence
 from core.security import require_access, require_active
 
@@ -169,9 +170,23 @@ async def withdraw_absence(meeting_id: str, user: dict = Depends(require_active)
     return {"ok": True}
 
 
+class MeetingHoursCreate(MeetingHoursWrite):
+    # Ping the team on Discord about it (when a webhook is configured).
+    notify_discord: bool = True
+
+
+@router.get("/discord")
+async def discord_status(_: dict = Depends(require_meeting_time)):
+    """Whether new meetings can be announced on Discord -- the Control Panel
+    only offers its "Notify Discord" checkbox when they can."""
+    return {"enabled": discord_configured()}
+
+
 @router.post("")
-async def create_meeting(body: MeetingHoursWrite, user: dict = Depends(require_meeting_time)):
+async def create_meeting(body: MeetingHoursCreate, user: dict = Depends(require_meeting_time)):
     row = await db.create_meeting_hours(user["sub"], body.start_time, body.end_time, body.meeting_purpose)
+    if body.notify_discord:
+        notify_meetings_created([row])
     return _row_to_meeting(row)
 
 
@@ -191,6 +206,8 @@ class MeetingHoursBatch(BaseModel):
 
     slots: list[MeetingSlot] = Field(min_length=1, max_length=MAX_RECURRING_OCCURRENCES)
     meeting_purpose: str | None = None
+    # One Discord message for the whole series, not one per date.
+    notify_discord: bool = True
 
     @field_validator("meeting_purpose")
     @classmethod
@@ -203,6 +220,8 @@ async def create_meeting_batch(body: MeetingHoursBatch, user: dict = Depends(req
     rows = await db.create_meeting_hours_batch(
         user["sub"], [(s.start_time, s.end_time) for s in body.slots], body.meeting_purpose
     )
+    if body.notify_discord:
+        notify_meetings_created(rows)
     return [_row_to_meeting(r) for r in rows]
 
 
