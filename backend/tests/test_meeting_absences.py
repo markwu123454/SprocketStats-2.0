@@ -6,6 +6,7 @@ dependency override, same approach as test_meeting_agenda.py.
 
 import asyncio
 import uuid
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -79,9 +80,13 @@ def setup(monkeypatch):
         name, role = USERS[a["user_id"]]
         return {**a, "display_name": name, "role": role}
 
-    async def upsert(meeting_id, user_id, reason):
+    queued = []
+
+    async def upsert(meeting_id, user_id, reason, push=None):
         key = (meeting_id, user_id)
         created = key not in absences
+        if created and push is not None:
+            queued.append(push)
         if created:
             absences[key] = {"meeting_id": uuid.UUID(meeting_id), "user_id": user_id,
                              "created_at": NOW, "updated_at": NOW}
@@ -106,8 +111,14 @@ def setup(monkeypatch):
         {"id": "pending-lead", "display_name": "Pending", "role": "cad_lead", "created_at": NOW, "approved_by": None},
         {"id": "a-mentor", "display_name": "Mentor", "role": "mentor", "created_at": NOW, "approved_by": "captain-1"},
     ]))
-    notify = MagicMock()
-    monkeypatch.setattr(meeting_hours, "notify_meeting_absence", notify)
+    monkeypatch.setattr(db, "get_user", AsyncMock(side_effect=lambda uid: {
+        "id": uid, "display_name": USERS[uid][0], "role": USERS[uid][1],
+    }))
+    # build: core.push_notify.absence_push; queued: pushes handed to the upsert
+    # (i.e. written in its transaction); kick: the follow-up outbox drain.
+    notify = SimpleNamespace(build=AsyncMock(return_value="PUSH"), queued=queued, kick=MagicMock())
+    monkeypatch.setattr(meeting_hours, "absence_push", notify.build)
+    monkeypatch.setattr(meeting_hours, "kick_outbox", notify.kick)
 
     app = FastAPI()
     app.include_router(router, prefix="/meeting-hours")
@@ -131,14 +142,31 @@ def test_create_then_update_pushes_only_on_create(setup):
     body = resp.json()
     assert body["meeting_id"] == FUTURE_ID and body["user_id"] == "me"
     assert body["display_name"] == "Me" and body["role"] == "cad_member" and body["reason"] == "Dentist"
-    notify.assert_called_once()
-    meeting, absentee = notify.call_args.args
+    meeting, absentee = notify.build.call_args.args
     assert absentee == {"user_id": "me", "display_name": "Me", "role": "cad_member"}
+    assert notify.queued == ["PUSH"]
+    notify.kick.assert_called_once()
 
     resp = _put(client, body={"reason": "  Flu  "})
     assert resp.status_code == 200 and resp.json()["reason"] == "Flu"
-    notify.assert_called_once()  # no second push
+    assert notify.queued == ["PUSH"]  # no second push
+    notify.kick.assert_called_once()
     assert absences[(FUTURE_ID, "me")]["reason"] == "Flu"
+
+
+def test_absence_still_saved_when_push_lookup_fails(setup):
+    client_for, absences, notify = setup
+    notify.build.side_effect = RuntimeError("db blip")
+    assert _put(client_for("me")).status_code == 200
+    assert (FUTURE_ID, "me") in absences
+    assert notify.queued == [] and not notify.kick.called
+
+
+def test_no_recipients_queues_nothing(setup):
+    client_for, _, notify = setup
+    notify.build.return_value = None
+    assert _put(client_for("me")).status_code == 200
+    assert notify.queued == [] and not notify.kick.called
 
 
 def test_blank_reason_accepted_missing_key_and_too_long_rejected(setup):
@@ -209,56 +237,72 @@ def test_absence_push_roles():
         assert absence_push_roles(role) == []
 
 
-def _push(monkeypatch, role, viewer_ids=("recipient",)):
+MEETING = {"id": FUTURE_ID, "start_time": datetime(2026, 11, 13, 20, 0, tzinfo=timezone.utc),
+           "end_time": datetime(2026, 11, 13, 22, 0, tzinfo=timezone.utc), "meeting_purpose": "Build"}
+
+
+def _push(monkeypatch, role, viewer_ids=("recipient",), meeting=MEETING):
     lookup = AsyncMock(return_value=list(viewer_ids))
-    notify = AsyncMock()
     monkeypatch.setattr(db, "list_absence_viewer_ids", lookup)
-    monkeypatch.setattr(push_notify, "notify_users", notify)
-    meeting = {"id": FUTURE_ID, "start_time": datetime(2026, 11, 13, 20, 0, tzinfo=timezone.utc),
-               "end_time": datetime(2026, 11, 13, 22, 0, tzinfo=timezone.utc), "meeting_purpose": "Build"}
-    asyncio.run(push_notify._notify_absence(meeting, {"user_id": "me", "display_name": "Ava", "role": role}))
-    return lookup, notify
+    monkeypatch.setattr(push_notify, "VAPID_PRIVATE_KEY", "test-key")
+    absentee = {"user_id": "me", "display_name": "Ava", "role": role}
+    return lookup, asyncio.run(push_notify.absence_push(meeting, absentee))
 
 
 def test_member_absence_pushes_only_own_subteam_lead(monkeypatch):
-    lookup, notify = _push(monkeypatch, "cad_member")
+    lookup, push = _push(monkeypatch, "cad_member")
     roles, excluded = lookup.call_args.args
     assert roles == ["cad_lead"] and excluded == "me"
-    args = notify.call_args.args
-    assert args[0] == ["recipient"] and args[1] == "meeting_absence" and args[2] == "Absence reported"
-    assert args[3] == "Ava will miss Build · Fri, Nov 13"
-    assert args[4] == "/meetings" and args[5] == f"absence-{FUTURE_ID}-me"
+    assert push.user_ids == ["recipient"] and push.category == "meeting_absence"
+    assert push.title == "Absence reported"
+    assert push.body == "Ava will miss Build · Fri, Nov 13"
+    assert push.url == "/meetings" and push.tag == f"absence-{FUTURE_ID}-me"
 
 
 def test_lead_absence_pushes_captains_only(monkeypatch):
-    lookup, notify = _push(monkeypatch, "cad_lead")
+    lookup, push = _push(monkeypatch, "cad_lead")
     assert lookup.call_args.args[0] == ["captain"]
-    notify.assert_called_once()
+    assert push is not None
 
 
 @pytest.mark.parametrize("role", ["captain", "mentor", "alumni"])
 def test_captain_mentor_alumni_absence_pushes_nobody(monkeypatch, role):
-    lookup, notify = _push(monkeypatch, role)
+    lookup, push = _push(monkeypatch, role)
     lookup.assert_not_called()
-    notify.assert_not_called()
+    assert push is None
+
+
+def test_no_live_recipients_means_no_push(monkeypatch):
+    _, push = _push(monkeypatch, "cad_member", viewer_ids=())
+    assert push is None
+
+
+def test_no_push_without_vapid_key(monkeypatch):
+    monkeypatch.setattr(db, "list_absence_viewer_ids", AsyncMock(return_value=["recipient"]))
+    monkeypatch.setattr(push_notify, "VAPID_PRIVATE_KEY", None)
+    absentee = {"user_id": "me", "display_name": "Ava", "role": "cad_member"}
+    assert asyncio.run(push_notify.absence_push(MEETING, absentee)) is None
+
+
+def test_absence_push_expires_at_meeting_end_or_a_day_out(monkeypatch):
+    soon = datetime.now(timezone.utc) + timedelta(hours=2)
+    _, push = _push(monkeypatch, "cad_member", meeting={**MEETING, "start_time": soon - timedelta(hours=1), "end_time": soon})
+    assert push.expires_at == soon
+    far = datetime.now(timezone.utc) + timedelta(days=5)
+    _, push = _push(monkeypatch, "cad_member", meeting={**MEETING, "start_time": far, "end_time": far + timedelta(hours=2)})
+    assert timedelta(hours=23) < push.expires_at - datetime.now(timezone.utc) <= timedelta(hours=24)
 
 
 def test_push_body_never_includes_reason(monkeypatch):
-    meeting = {"id": FUTURE_ID, "start_time": datetime(2026, 11, 13, 20, 0, tzinfo=timezone.utc),
-               "end_time": datetime(2026, 11, 13, 22, 0, tzinfo=timezone.utc), "meeting_purpose": "Build"}
-    monkeypatch.setattr(db, "list_absence_viewer_ids", AsyncMock(return_value=["recipient"]))
-    notify = AsyncMock()
-    monkeypatch.setattr(push_notify, "notify_users", notify)
-    absentee = {"user_id": "me", "display_name": "Ava", "role": "cad_member"}
-    asyncio.run(push_notify._notify_absence(meeting, absentee))
-    assert "Secret" not in str(notify.call_args)
+    _, push = _push(monkeypatch, "cad_member")
+    assert "Secret" not in str(push)
 
 
 def test_endpoint_passes_no_reason_to_push(setup):
     client_for, _, notify = setup
     _put(client_for("me"), body={"reason": "Secret dentist visit"})
-    assert len(notify.call_args.args) == 2
-    assert "Secret" not in str(notify.call_args)
+    assert len(notify.build.call_args.args) == 2
+    assert "Secret" not in str(notify.build.call_args)
 
 
 # ── attendance overview ────────────────────────────────────────────────────────

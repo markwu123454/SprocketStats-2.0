@@ -4,26 +4,37 @@ import asyncpg
 from fastapi import HTTPException
 
 from .connection import DB_NAME, db_connection
+from .push_outbox import OutboxPush, enqueue_push_conn
 
 logger = logging.getLogger(__name__)
 
 
-async def upsert_meeting_absence(meeting_id: str, user_id: str, reason: str) -> tuple[asyncpg.Record, bool]:
+async def upsert_meeting_absence(
+    meeting_id: str, user_id: str, reason: str, push: OutboxPush | None = None
+) -> tuple[asyncpg.Record, bool]:
     """Report (or edit) an absence. Returns ``(record, created)``; ``created`` is
-    False when an existing report's reason was just updated."""
+    False when an existing report's reason was just updated.
+
+    ``push`` is queued in the same transaction, only when the absence is new,
+    so a saved absence always has its notification owed (see db.push_outbox).
+    """
     async with db_connection(DB_NAME) as conn:
         try:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO meeting_absences (meeting_id, user_id, reason)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (meeting_id, user_id)
-                DO UPDATE SET reason = EXCLUDED.reason, updated_at = now()
-                RETURNING *, (xmax = 0) AS created
-                """,
-                meeting_id, user_id, reason,
-            )
-            return row, bool(row["created"])
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO meeting_absences (meeting_id, user_id, reason)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (meeting_id, user_id)
+                    DO UPDATE SET reason = EXCLUDED.reason, updated_at = now()
+                    RETURNING *, (xmax = 0) AS created
+                    """,
+                    meeting_id, user_id, reason,
+                )
+                created = bool(row["created"])
+                if created and push is not None:
+                    await enqueue_push_conn(conn, push)
+                return row, created
         except Exception as e:
             logger.error("upsert_meeting_absence failed: %s", e)
             raise HTTPException(status_code=500, detail="Failed to save absence")

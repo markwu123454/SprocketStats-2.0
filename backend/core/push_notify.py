@@ -1,10 +1,13 @@
 """Automated push notifications: task assignments and scheduled reminders.
 
-Everything here goes through ``db.send_web_push`` like a Control Panel send,
-but differs in two ways:
+Unlike a Control Panel send, which goes straight to ``db.send_web_push``:
 
   * Each push has a category (``db.PUSH_CATEGORIES``) that users can opt out
     of in Settings; Control Panel announcements have none.
+  * Each push is first written to the durable outbox (``db.push_outbox``) and
+    sent from there by ``drain_outbox``, which retries with backoff over
+    minutes and survives restarts. A drain is kicked off right after queueing,
+    so the usual delay is about a second.
   * Deliveries aren't logged to ``push_delivery_logs`` -- that table backs the
     Control Panel's per-message delivery stats, and these sends have no
     ``push_messages`` row to hang them off.
@@ -18,12 +21,13 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import db
 from core.permissions import absence_push_roles
 from db.push import VAPID_PRIVATE_KEY
+from db.push_outbox import OutboxPush
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +45,19 @@ MEETING_REMINDER_LEAD = timedelta(hours=24)
 EVENT_EVE_TIME = time(17, 0)
 EVENT_MORNING_TIME = time(7, 0)
 
+# How long an absence / task push stays worth sending if it can't get through.
+# Matches the push service's own hold time (db.push.PUSH_TTL_SECONDS).
+PUSH_EXPIRY = timedelta(hours=24)
+
+# Outbox drain tuning. A claimed row is reserved for OUTBOX_LEASE_SECONDS; if
+# the process dies mid-send, another drain picks the row up after that. Retry
+# n waits OUTBOX_RETRY_BASE_SECONDS * 2**(n-1), capped, or the push service's
+# Retry-After if longer.
+OUTBOX_BATCH_SIZE = 100
+OUTBOX_LEASE_SECONDS = 120.0
+OUTBOX_RETRY_BASE_SECONDS = 30.0
+OUTBOX_RETRY_MAX_SECONDS = 1800.0
+
 # Strong references for fire-and-forget sends. asyncio.create_task() only
 # holds a *weak* reference to the task -- without this, the task object can be
 # garbage-collected mid-flight (before the webpush network calls finish),
@@ -56,42 +73,129 @@ def fire_and_forget(coro) -> None:
 
 @dataclass(frozen=True)
 class Reminder:
-    key: str  # dedup key for db.claim_push_reminder; embeds the start time
+    key: str  # dedup key for db.claim_reminder_and_enqueue; embeds the start time
     title: str
     body: str
     url: str
     tag: str
+    expires_at: datetime  # past this, the reminder is stale and is dropped unsent
 
 
-def _deliveries(subs) -> list[dict]:
-    return [{"endpoint": s["endpoint"], "p256dh": s["p256dh"], "auth": s["auth"]} for s in subs]
+# ── Outbox ─────────────────────────────────────────────────────────────────────
+
+def _outbox_retry_delay(attempts: int, retry_after: float | None) -> float:
+    """Seconds until the next try of a row that has now failed ``attempts`` times."""
+    delay = min(OUTBOX_RETRY_BASE_SECONDS * 2 ** max(attempts - 1, 0), OUTBOX_RETRY_MAX_SECONDS)
+    return max(delay, retry_after or 0.0)
 
 
-async def notify_users(
-    user_ids: list[str], category: str, title: str, body: str, url: str | None = None, tag: str | None = None
-) -> None:
-    """Push to every subscribed device of ``user_ids``, minus opt-outs.
+_retry_timer: asyncio.TimerHandle | None = None
+_retry_at: float | None = None
 
-    Never raises: callers fire this off after the real work (e.g. a task
-    write) has already succeeded, and a push failure must not surface there.
+
+def _schedule_drain(delay: float) -> None:
+    """Drain again in ``delay`` seconds, unless one is already due sooner.
+
+    Only an in-process shortcut for prompt retries: the rows are in the
+    database, and the periodic sweep in main.py drains them even if this
+    process exits before the timer fires.
     """
+    global _retry_timer, _retry_at
+    loop = asyncio.get_running_loop()
+    at = loop.time() + delay
+    if _retry_timer is not None and _retry_at is not None and _retry_at <= at:
+        return
+    if _retry_timer is not None:
+        _retry_timer.cancel()
+    _retry_at = at
+
+    def fire():
+        global _retry_timer, _retry_at
+        _retry_timer = _retry_at = None
+        kick_outbox()
+
+    _retry_timer = loop.call_later(delay, fire)
+
+
+async def _send_row(row) -> tuple[str, float | None]:
+    deliv = {"endpoint": row["endpoint"], "p256dh": row["p256dh"], "auth": row["auth"]}
+    return await db.send_push_once(deliv, row["title"], row["body"], row["url"], row["tag"])
+
+
+async def drain_outbox() -> int:
+    """Send every due outbox row once. Returns how many the push service accepted.
+
+    Accepted, dead-device and rejected rows are deleted; transient failures are
+    rescheduled with backoff until the row's ``expires_at``. Never raises.
+    """
+    if not VAPID_PRIVATE_KEY:
+        return 0
+    sent = 0
+    soonest_retry: float | None = None
     try:
-        subs = await db.get_push_subscriptions_for_users(user_ids, category)
-        await db.send_web_push(_deliveries(subs), title, body, url, tag)
+        while True:
+            rows = await db.claim_due_pushes(OUTBOX_BATCH_SIZE, OUTBOX_LEASE_SECONDS)
+            if not rows:
+                break
+            outcomes = await asyncio.gather(*(_send_row(r) for r in rows))
+            now = datetime.now(timezone.utc)
+            done: list[int] = []
+            retry: dict[int, float] = {}
+            for row, (outcome, retry_after) in zip(rows, outcomes):
+                if outcome == db.PUSH_SENT:
+                    sent += 1
+                    done.append(row["id"])
+                elif outcome == db.PUSH_RETRY:
+                    delay = _outbox_retry_delay(row["attempts"], retry_after)
+                    if now + timedelta(seconds=delay) >= row["expires_at"]:
+                        logger.warning(
+                            "push outbox: gave up on a %s push after %d attempt(s): expires before next try",
+                            row["category"], row["attempts"],
+                        )
+                        done.append(row["id"])
+                    else:
+                        retry[row["id"]] = delay
+                        soonest_retry = delay if soonest_retry is None else min(soonest_retry, delay)
+                else:  # gone (subscription pruned) or rejected: retrying won't help
+                    done.append(row["id"])
+            await db.settle_pushes(done, retry)
+            if len(rows) < OUTBOX_BATCH_SIZE:
+                break
     except Exception as e:
-        logger.warning("notify_users(%s) failed: %s", category, e)
+        logger.warning("push outbox drain failed: %s", e)
+    if soonest_retry is not None:
+        _schedule_drain(soonest_retry)
+    return sent
 
 
-def notify_users_later(
+def kick_outbox() -> None:
+    """Drain the outbox in the background, without making the caller wait."""
+    fire_and_forget(drain_outbox())
+
+
+async def queue_push(
     user_ids: list[str], category: str, title: str, body: str, url: str | None = None, tag: str | None = None
 ) -> None:
-    """``notify_users`` without making the caller's request wait on webpush."""
-    fire_and_forget(notify_users(user_ids, category, title, body, url, tag))
+    """Queue a push to every subscribed device of ``user_ids`` (minus opt-outs) and send it.
+
+    Never raises: callers queue this after the real work (e.g. a task write)
+    has already succeeded, and a push failure must not surface there.
+    """
+    if not VAPID_PRIVATE_KEY or not user_ids:
+        return
+    push = OutboxPush(category, title, body, url, tag, datetime.now(timezone.utc) + PUSH_EXPIRY, list(user_ids))
+    try:
+        if await db.enqueue_push(push):
+            kick_outbox()
+    except Exception as e:
+        logger.warning("queue_push(%s) failed: %s", category, e)
 
 
-async def _notify_everyone(category: str, reminder: Reminder) -> None:
-    subs = await db.get_push_subscriptions_for_roles([], category)
-    await db.send_web_push(_deliveries(subs), reminder.title, reminder.body, reminder.url, reminder.tag)
+def queue_push_later(
+    user_ids: list[str], category: str, title: str, body: str, url: str | None = None, tag: str | None = None
+) -> None:
+    """``queue_push`` without making the caller's request wait on it."""
+    fire_and_forget(queue_push(user_ids, category, title, body, url, tag))
 
 
 # ── Task assignment ────────────────────────────────────────────────────────────
@@ -109,38 +213,40 @@ def notify_task_assigned(task, assignee_id: str, actor: dict, as_contributor: bo
     body = f"{who} {verb} “{task['title']}”"
     if task["due_date"]:
         body += f" · due {_short_date(task['due_date'])}"
-    notify_users_later([assignee_id], "task_assigned", "New task", body, "/tasks", f"task-{task['id']}")
+    queue_push_later([assignee_id], "task_assigned", "New task", body, "/tasks", f"task-{task['id']}")
 
 
 # ── Meeting absences ───────────────────────────────────────────────────────────
 
-async def _notify_absence(meeting, absentee: dict) -> None:
+async def absence_push(meeting, absentee: dict) -> OutboxPush | None:
+    """The push to queue when ``absentee`` reports a new absence from ``meeting``.
+
+    Goes to the absentee's lead(s) or, for a lead, the captain(s); None when
+    nobody should be told (or push isn't configured). ``absentee`` carries
+    ``user_id``, ``display_name`` and ``role``. The caller hands the result to
+    ``db.upsert_meeting_absence`` so it is queued in the same transaction as
+    the absence, then calls ``kick_outbox``.
+    """
+    if not VAPID_PRIVATE_KEY:
+        return None
     roles = absence_push_roles(absentee["role"])
     if not roles:
-        return
-    try:
-        recipient_ids = await db.list_absence_viewer_ids(roles, absentee["user_id"])
-    except Exception as e:
-        logger.warning("notify_meeting_absence recipients failed: %s", e)
-        return
+        return None
+    recipient_ids = await db.list_absence_viewer_ids(roles, absentee["user_id"])
     if not recipient_ids:
-        return
+        return None
     start_local = meeting["start_time"].astimezone(TEAM_TZ)
     # The reason is deliberately not in the push: it can be sensitive and a lock
     # screen is public. Recipients read it on the Meetings page.
-    body = f"{absentee['display_name']} will miss {meeting['meeting_purpose'] or 'Team meeting'} · {_short_date(start_local.date())}"
-    await notify_users(
-        recipient_ids, "meeting_absence", "Absence reported", body, "/meetings",
+    who = absentee["display_name"] or "Someone"
+    body = f"{who} will miss {meeting['meeting_purpose'] or 'Team meeting'} · {_short_date(start_local.date())}"
+    return OutboxPush(
+        "meeting_absence", "Absence reported", body, "/meetings",
         f"absence-{meeting['id']}-{absentee['user_id']}",
+        # Past the meeting's end the news is moot; otherwise the usual expiry.
+        min(meeting["end_time"], datetime.now(timezone.utc) + PUSH_EXPIRY),
+        recipient_ids,
     )
-
-
-def notify_meeting_absence(meeting, absentee: dict) -> None:
-    """Tell the absentee's lead(s) (or, for a lead, the captain(s)) about a new absence.
-
-    ``absentee`` carries ``user_id``, ``display_name`` and ``role``. Fire-and-forget.
-    """
-    fire_and_forget(_notify_absence(meeting, absentee))
 
 
 # ── Reminders ──────────────────────────────────────────────────────────────────
@@ -184,6 +290,7 @@ def due_meeting_reminders(meetings, now: datetime) -> list[Reminder]:
                 body=f"{_relative_day(start_local.date(), today)} · {_clock(start_local)} – {_clock(end_local)}",
                 url="/dashboard",
                 tag=f"meeting-{m['id']}",
+                expires_at=start,
             )
         )
     return reminders
@@ -232,20 +339,22 @@ def due_event_reminders(events: list[dict], now: datetime) -> list[Reminder]:
         # Ends at local midnight, not at `start`: past midnight it's no longer
         # "tomorrow", even if the event itself starts later that day.
         if eve_at <= now_local < day_start:
-            reminders.append(Reminder(f"{base_key}:eve", "Event tomorrow", where, url, f"event-{base_key}"))
+            reminders.append(Reminder(f"{base_key}:eve", "Event tomorrow", where, url, f"event-{base_key}", day_start))
 
         morning_at = datetime.combine(start_day, EVENT_MORNING_TIME, TEAM_TZ)
         day_end = day_start + timedelta(days=1)
         if morning_at <= now_local < day_end:
-            reminders.append(Reminder(f"{base_key}:day", "Event today", where, url, f"event-{base_key}"))
+            reminders.append(Reminder(f"{base_key}:day", "Event today", where, url, f"event-{base_key}", day_end))
     return reminders
 
 
 async def send_due_reminders(now: datetime) -> int:
-    """One reminder sweep: claim and send every due meeting/event reminder.
+    """One reminder sweep: claim and queue every due meeting/event reminder.
 
-    Returns how many reminders went out. Skipped entirely without VAPID keys,
-    so a misconfigured deploy doesn't burn every claim on sends that no-op.
+    Returns how many reminders were queued. Each claim commits together with
+    its queued push, so a crash can't burn a claim without the push being owed.
+    Skipped entirely without VAPID keys, so a misconfigured deploy doesn't burn
+    every claim on sends that no-op.
     """
     if not VAPID_PRIVATE_KEY:
         return 0
@@ -255,25 +364,28 @@ async def send_due_reminders(now: datetime) -> int:
     due = [("meeting_reminder", r) for r in due_meeting_reminders(meetings, now)]
     due += [("event_reminder", r) for r in due_event_reminders(events, now)]
 
-    sent = 0
-    for category, reminder in due:
-        if not await db.claim_push_reminder(reminder.key):
-            continue
+    queued = 0
+    for category, r in due:
+        push = OutboxPush(category, r.title, r.body, r.url, r.tag, r.expires_at)  # user_ids=None: everyone
         try:
-            await _notify_everyone(category, reminder)
-            sent += 1
+            if await db.claim_reminder_and_enqueue(r.key, push):
+                queued += 1
         except Exception as e:
-            logger.warning("reminder %s failed: %s", reminder.key, e)
+            logger.warning("reminder %s failed: %s", r.key, e)
     await db.prune_push_reminders()
-    return sent
+    if queued:
+        kick_outbox()
+    return queued
 
 
 __all__ = [
     "fire_and_forget",
-    "notify_users",
-    "notify_users_later",
+    "drain_outbox",
+    "kick_outbox",
+    "queue_push",
+    "queue_push_later",
     "notify_task_assigned",
-    "notify_meeting_absence",
+    "absence_push",
     "due_meeting_reminders",
     "due_event_reminders",
     "parse_event_start",

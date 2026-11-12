@@ -114,7 +114,7 @@ def test_event_external_url_falls_back_to_events_page_and_bad_rows_are_skipped()
 
 @pytest.fixture
 def sweep(monkeypatch):
-    state = {"claimed": set(), "sent": [], "meetings": [], "events": []}
+    state = {"claimed": set(), "queued": [], "meetings": [], "events": [], "kicks": 0}
 
     async def list_meetings(start, end):
         return state["meetings"]
@@ -122,44 +122,49 @@ def sweep(monkeypatch):
     async def get_events():
         return state["events"]
 
-    async def claim(key):
+    async def claim_and_enqueue(key, push):
         if key in state["claimed"]:
             return False
         state["claimed"].add(key)
+        state["queued"].append(push)
         return True
-
-    async def subs_for_roles(roles, category):
-        return [{"endpoint": f"https://push.example/{category}", "p256dh": "p", "auth": "a"}]
-
-    async def send(deliveries, title, body, url=None, tag=None):
-        state["sent"].append((deliveries[0]["endpoint"], title))
 
     async def prune():
         pass
 
+    def kick():
+        state["kicks"] += 1
+
     monkeypatch.setattr(push_notify, "VAPID_PRIVATE_KEY", "test-key")
     monkeypatch.setattr(db, "list_meetings_starting_between", list_meetings)
     monkeypatch.setattr(db, "get_events", get_events)
-    monkeypatch.setattr(db, "claim_push_reminder", claim)
-    monkeypatch.setattr(db, "get_push_subscriptions_for_roles", subs_for_roles)
-    monkeypatch.setattr(db, "send_web_push", send)
+    monkeypatch.setattr(db, "claim_reminder_and_enqueue", claim_and_enqueue)
     monkeypatch.setattr(db, "prune_push_reminders", prune)
+    monkeypatch.setattr(push_notify, "kick_outbox", kick)
     return state
 
 
-async def test_sweep_sends_each_reminder_once_under_its_category(sweep):
+async def test_sweep_queues_each_reminder_once_under_its_category(sweep):
     now = _local(2026, 3, 19, 18, 0)
-    sweep["meetings"] = [_meeting(_local(2026, 3, 20, 9, 0))]
+    meeting_start = _local(2026, 3, 20, 9, 0)
+    sweep["meetings"] = [_meeting(meeting_start)]
     sweep["events"] = [EVENT]
 
     assert await push_notify.send_due_reminders(now) == 2
-    assert sorted(sweep["sent"]) == [
-        ("https://push.example/event_reminder", "Event tomorrow"),
-        ("https://push.example/meeting_reminder", "Team meeting"),
+    queued = sorted(sweep["queued"], key=lambda p: p.category)
+    assert [(p.category, p.title) for p in queued] == [
+        ("event_reminder", "Event tomorrow"),
+        ("meeting_reminder", "Team meeting"),
     ]
+    assert all(p.user_ids is None for p in queued)  # everyone
+    # Stale once the thing starts: the meeting at its start, the eve push at midnight.
+    assert queued[1].expires_at == meeting_start
+    assert queued[0].expires_at == _local(2026, 3, 20, 0, 0)
+    assert sweep["kicks"] == 1
     # The next tick finds the same reminders due but already claimed.
     assert await push_notify.send_due_reminders(now + timedelta(minutes=5)) == 0
-    assert len(sweep["sent"]) == 2
+    assert len(sweep["queued"]) == 2
+    assert sweep["kicks"] == 1
 
 
 async def test_sweep_is_skipped_without_vapid_key(sweep, monkeypatch):

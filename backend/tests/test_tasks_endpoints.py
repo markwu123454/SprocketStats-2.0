@@ -241,7 +241,7 @@ def store(monkeypatch):
     ):
         monkeypatch.setattr(db, name, getattr(fake, name))
     monkeypatch.setattr(
-        push_notify, "notify_users_later",
+        push_notify, "queue_push_later",
         lambda user_ids, category, title, body, url=None, tag=None: fake.pushes.append(
             (user_ids, category, title, body)
         ),
