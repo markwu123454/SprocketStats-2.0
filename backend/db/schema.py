@@ -28,6 +28,25 @@ _MEETING_ABSENCES_DDL = """
     )
 """
 
+# Durable queue for automated category pushes; see db.push_outbox. One row per
+# recipient device, deleted once the push service accepts it.
+_PUSH_OUTBOX_DDL = """
+    CREATE TABLE IF NOT EXISTS push_outbox (
+        id              BIGSERIAL   PRIMARY KEY,
+        subscription_id UUID        NOT NULL REFERENCES push_subscriptions(id) ON DELETE CASCADE,
+        category        TEXT        NOT NULL,
+        title           TEXT        NOT NULL,
+        body            TEXT        NOT NULL,
+        url             TEXT,
+        tag             TEXT,
+        attempts        INTEGER     NOT NULL DEFAULT 0,
+        next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        expires_at      TIMESTAMPTZ NOT NULL,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS push_outbox_next_attempt_idx ON push_outbox (next_attempt_at);
+"""
+
 
 async def _create_offline_code_functions(conn) -> None:
     """Install the checksum helpers required by ``users.offline_code``."""
@@ -334,15 +353,17 @@ async def init_db():
                         PRIMARY KEY (user_id, category)
                     )
                 """)
-                # Dedup ledger for the automated reminder sweep (core.push_reminders):
-                # a key is claimed before its push goes out, so overlapping sweeps or
-                # several server processes never send the same reminder twice.
+                # Dedup ledger for the automated reminder sweep (core.push_notify):
+                # a key is claimed in the same transaction that queues its push, so
+                # overlapping sweeps or several server processes never queue the same
+                # reminder twice.
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS push_reminders_sent (
                         key        TEXT        PRIMARY KEY,
                         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
                     )
                 """)
+                await conn.execute(_PUSH_OUTBOX_DDL)
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS user_tags (
                         user_id     TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -876,6 +897,10 @@ async def _migration_0010_meeting_absences(conn) -> None:
     await conn.execute(_MEETING_ABSENCES_DDL)
 
 
+async def _migration_0011_push_outbox(conn) -> None:
+    await conn.execute(_PUSH_OUTBOX_DDL)
+
+
 # Append-only: never edit or renumber a migration that has shipped. Each must
 # be idempotent against init_db's current schema, because a fresh database
 # gets that schema first and then runs every migration.
@@ -890,6 +915,7 @@ _MIGRATIONS = [
     (8, _migration_0008_electrical_into_mechanical),
     (9, _migration_0009_into_manufacturing),
     (10, _migration_0010_meeting_absences),
+    (11, _migration_0011_push_outbox),
 ]
 
 

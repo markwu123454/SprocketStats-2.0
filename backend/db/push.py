@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
 import asyncpg
+import requests
 from fastapi import HTTPException
 from pywebpush import WebPushException, webpush
 
@@ -150,36 +151,6 @@ async def get_push_subscriptions_for_roles(
             raise
 
 
-async def get_push_subscriptions_for_users(user_ids: list[str], category: str) -> list[asyncpg.Record]:
-    """Subscriptions for specific active users, minus anyone opted out of ``category``.
-
-    For pushes aimed at named people (e.g. a task's new assignee) rather than
-    a role audience.
-    """
-    if not user_ids:
-        return []
-    async with db_connection(DB_NAME) as conn:
-        try:
-            return await conn.fetch(
-                """
-                SELECT s.id, s.user_id, s.endpoint, s.p256dh, s.auth
-                FROM push_subscriptions s
-                JOIN users u ON u.id = s.user_id
-                WHERE u.banned_at IS NULL
-                  AND s.user_id = ANY($1::text[])
-                  AND NOT EXISTS (
-                      SELECT 1 FROM push_opt_outs o
-                      WHERE o.user_id = s.user_id AND o.category = $2
-                  )
-                """,
-                user_ids,
-                category,
-            )
-        except Exception as e:
-            logger.error("get_push_subscriptions_for_users failed: %s", e)
-            raise
-
-
 async def get_push_opt_outs(user_id: str) -> set[str]:
     """Categories ``user_id`` has opted out of. Absent = opted in (the default)."""
     async with db_connection(DB_NAME) as conn:
@@ -220,25 +191,6 @@ async def set_push_preferences(user_id: str, prefs: dict[str, bool]) -> None:
         except Exception as e:
             logger.error("set_push_preferences failed: %s", e)
             raise HTTPException(status_code=500, detail="Failed to save notification preferences")
-
-
-async def claim_push_reminder(key: str) -> bool:
-    """Atomically mark reminder ``key`` as sent. Returns False if it already was.
-
-    The reminder sweep claims before sending, so concurrent sweeps (several
-    server processes, or overlapping ticks) never double-send. The trade-off is
-    at-most-once: a crash between claim and send drops that one reminder.
-    """
-    async with db_connection(DB_NAME) as conn:
-        try:
-            row = await conn.fetchrow(
-                "INSERT INTO push_reminders_sent (key) VALUES ($1) ON CONFLICT DO NOTHING RETURNING key",
-                key,
-            )
-            return row is not None
-        except Exception as e:
-            logger.error("claim_push_reminder failed: %s", e)
-            raise
 
 
 async def prune_push_reminders() -> None:
@@ -327,6 +279,34 @@ def _is_retryable(status_code: int | None) -> bool:
     return status_code is not None and (status_code == 429 or status_code >= 500)
 
 
+def _payload(title: str, body: str, url: str | None, tag: str | None, delivery_id=None) -> str:
+    message = {"title": title, "body": body}
+    if delivery_id is not None:
+        message["delivery_id"] = str(delivery_id)
+    if url:
+        message["url"] = url
+    if tag:
+        message["tag"] = tag
+    return json.dumps(message)
+
+
+async def _webpush(deliv: dict, payload: str) -> None:
+    """One blocking ``webpush`` call, on a worker thread. Raises on failure."""
+    await asyncio.to_thread(
+        webpush,
+        subscription_info={
+            "endpoint": deliv["endpoint"],
+            "keys": {"p256dh": deliv["p256dh"], "auth": deliv["auth"]},
+        },
+        data=payload,
+        vapid_private_key=VAPID_PRIVATE_KEY,
+        vapid_claims={"sub": VAPID_CLAIM_EMAIL},
+        ttl=PUSH_TTL_SECONDS,
+        headers=dict(PUSH_HEADERS),
+        timeout=PUSH_REQUEST_TIMEOUT_SECONDS,
+    )
+
+
 async def _send_one(deliv: dict, title: str, body: str, url: str | None = None, tag: str | None = None) -> None:
     """Send to a single device; retry transient errors, prune it if it's dead.
 
@@ -338,37 +318,20 @@ async def _send_one(deliv: dict, title: str, body: str, url: str | None = None, 
     down delivery to the rest of the audience -- but they still flip that
     device's delivery row to 'failed' so the sender can see it.
 
-    ``deliv["delivery_id"]`` is optional: Control Panel sends carry one (and
-    the service worker echoes it back via ``POST /push/delivered``), automated
-    category pushes don't track delivery and omit it. ``url`` (an in-app path)
-    is where tapping the notification lands; ``tag`` lets a newer push replace
-    an older one about the same thing instead of stacking.
+    Used for Control Panel sends, which carry ``deliv["delivery_id"]`` (the
+    service worker echoes it back via ``POST /push/delivered``). Automated
+    category pushes go through the outbox (``db.push_outbox``) and
+    ``send_push_once`` instead, which retries over minutes, not seconds.
+    ``url`` (an in-app path) is where tapping the notification lands; ``tag``
+    lets a newer push replace an older one about the same thing instead of
+    stacking.
     """
     delivery_id = deliv.get("delivery_id")
-    message = {"title": title, "body": body}
-    if delivery_id is not None:
-        message["delivery_id"] = str(delivery_id)
-    if url:
-        message["url"] = url
-    if tag:
-        message["tag"] = tag
-    payload = json.dumps(message)
+    payload = _payload(title, body, url, tag, delivery_id)
 
     for attempt in range(PUSH_MAX_RETRIES + 1):
         try:
-            await asyncio.to_thread(
-                webpush,
-                subscription_info={
-                    "endpoint": deliv["endpoint"],
-                    "keys": {"p256dh": deliv["p256dh"], "auth": deliv["auth"]},
-                },
-                data=payload,
-                vapid_private_key=VAPID_PRIVATE_KEY,
-                vapid_claims={"sub": VAPID_CLAIM_EMAIL},
-                ttl=PUSH_TTL_SECONDS,
-                headers=dict(PUSH_HEADERS),
-                timeout=PUSH_REQUEST_TIMEOUT_SECONDS,
-            )
+            await _webpush(deliv, payload)
             return
         except WebPushException as e:
             status_code = e.response.status_code if e.response is not None else None
@@ -386,6 +349,46 @@ async def _send_one(deliv: dict, title: str, body: str, url: str | None = None, 
         if delivery_id is not None:
             await _mark_delivery_failed(delivery_id)
         return
+
+
+# Outcomes of ``send_push_once``.
+PUSH_SENT = "sent"        # the push service accepted it; it now holds it up to PUSH_TTL_SECONDS
+PUSH_RETRY = "retry"      # transient (429/5xx, timeout, connection error): try again later
+PUSH_GONE = "gone"        # 404/410: the subscription is dead and has been pruned
+PUSH_REJECTED = "rejected"  # any other error: retrying won't help
+
+
+async def send_push_once(
+    deliv: dict, title: str, body: str, url: str | None = None, tag: str | None = None
+) -> tuple[str, float | None]:
+    """One send attempt to one device, with no retry. Returns ``(outcome, retry_after)``.
+
+    The caller (the outbox drain) owns retrying, so a failure here only
+    classifies the error. ``retry_after`` is the push service's ``Retry-After``
+    in seconds (capped like ``_retry_delay``) when it sent one with a retryable
+    error, else None.
+    """
+    try:
+        await _webpush(deliv, _payload(title, body, url, tag))
+        return PUSH_SENT, None
+    except WebPushException as e:
+        status_code = e.response.status_code if e.response is not None else None
+        if status_code in (404, 410):
+            await _prune_dead_endpoint(deliv["endpoint"])
+            return PUSH_GONE, None
+        # No response at all means the request never completed (network).
+        if status_code is None or _is_retryable(status_code):
+            has_hint = e.response is not None and e.response.headers.get("Retry-After")
+            return PUSH_RETRY, (_retry_delay(e.response, 0) if has_hint else None)
+        logger.warning("push rejected for %s: %s", deliv["endpoint"], e)
+        return PUSH_REJECTED, None
+    except requests.RequestException as e:
+        # Timeout / connection error before the push service answered.
+        logger.info("push transport error for %s: %s", deliv["endpoint"], e)
+        return PUSH_RETRY, None
+    except Exception as e:
+        logger.warning("push unexpected error for %s: %s", deliv["endpoint"], e)
+        return PUSH_REJECTED, None
 
 
 async def send_web_push(
@@ -570,10 +573,13 @@ __all__ = [
     "save_push_subscription",
     "delete_push_subscription",
     "get_push_subscriptions_for_roles",
-    "get_push_subscriptions_for_users",
     "get_push_opt_outs",
     "set_push_preferences",
-    "claim_push_reminder",
+    "send_push_once",
+    "PUSH_SENT",
+    "PUSH_RETRY",
+    "PUSH_GONE",
+    "PUSH_REJECTED",
     "prune_push_reminders",
     "create_delivery_logs",
     "send_web_push",

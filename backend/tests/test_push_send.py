@@ -157,3 +157,44 @@ async def test_send_web_push_is_a_noop_without_vapid_key(env, monkeypatch):
     monkeypatch.setattr(push, "VAPID_PRIVATE_KEY", None)
     await push.send_web_push([DELIV], "T", "B")
     assert rec.calls == []
+
+
+# ── send_push_once (the outbox's single attempt) ───────────────────────────────
+
+async def test_once_success(env):
+    rec = env["use"](Recorder(None))
+    assert await push.send_push_once(DELIV, "T", "B", "/x", "tag") == (push.PUSH_SENT, None)
+    payload = json.loads(rec.calls[0]["data"])
+    assert payload == {"title": "T", "body": "B", "url": "/x", "tag": "tag"}  # no delivery_id
+
+
+@pytest.mark.parametrize("status", [429, 500, 503])
+async def test_once_transient_is_retry_without_sleeping(env, status):
+    rec = env["use"](Recorder(FakeResponse(status)))
+    assert await push.send_push_once(DELIV, "T", "B") == (push.PUSH_RETRY, None)
+    assert len(rec.calls) == 1 and env["sleeps"] == []
+
+
+async def test_once_passes_retry_after_hint(env):
+    env["use"](Recorder(FakeResponse(429, {"Retry-After": "12"})))
+    assert await push.send_push_once(DELIV, "T", "B") == (push.PUSH_RETRY, 12.0)
+
+
+async def test_once_network_error_is_retry(env):
+    def boom(**kwargs):
+        raise push.requests.ConnectionError("reset")
+    env["use"](boom)
+    assert await push.send_push_once(DELIV, "T", "B") == (push.PUSH_RETRY, None)
+
+
+@pytest.mark.parametrize("status", [404, 410])
+async def test_once_gone_prunes(env, status):
+    env["use"](Recorder(FakeResponse(status)))
+    assert await push.send_push_once(DELIV, "T", "B") == (push.PUSH_GONE, None)
+    assert env["pruned"] == [DELIV["endpoint"]]
+
+
+async def test_once_other_4xx_is_rejected(env):
+    env["use"](Recorder(FakeResponse(400)))
+    assert await push.send_push_once(DELIV, "T", "B") == (push.PUSH_REJECTED, None)
+    assert env["pruned"] == [] and env["failed"] == []

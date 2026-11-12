@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 import db
 from core.permissions import can_view_absence, has_absence_view, role_requires_approval, tracks_attendance
 from core.discord_notify import discord_configured, notify_meetings_created
-from core.push_notify import notify_meeting_absence
+from core.push_notify import absence_push, kick_outbox
 from core.security import require_access, require_active
 
 logger = logging.getLogger(__name__)
@@ -150,15 +150,23 @@ async def attendance_overview(user: dict = Depends(require_active)):
 @router.put("/{meeting_id}/absence")
 async def report_absence(meeting_id: str, body: AbsenceWrite, user: dict = Depends(require_active)):
     meeting = await _open_meeting(meeting_id)
-    _, created = await db.upsert_meeting_absence(meeting_id, user["sub"], body.reason)
+    # Built up front so it can be queued in the same transaction as the absence
+    # (and so survive a restart); only queued if the absence turns out new.
+    push = None
+    try:
+        me = await db.get_user(user["sub"])
+        if me is not None:
+            push = await absence_push(
+                meeting, {"user_id": user["sub"], "display_name": me["display_name"], "role": me["role"]}
+            )
+    except Exception as e:
+        logger.warning("absence push for %s not built: %s", meeting_id, e)
+    _, created = await db.upsert_meeting_absence(meeting_id, user["sub"], body.reason, push=push)
+    if created and push is not None:
+        kick_outbox()
     mine = next(
         r for r in await db.list_meeting_absences([meeting_id]) if r["user_id"] == user["sub"]
     )
-    if created:
-        notify_meeting_absence(
-            meeting,
-            {"user_id": user["sub"], "display_name": mine["display_name"], "role": mine["role"]},
-        )
     return _absence_json(mine)
 
 
