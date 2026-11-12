@@ -54,7 +54,7 @@ PUSH_EXPIRY = timedelta(hours=24)
 # n waits OUTBOX_RETRY_BASE_SECONDS * 2**(n-1), capped, or the push service's
 # Retry-After if longer.
 OUTBOX_BATCH_SIZE = 100
-OUTBOX_LEASE_SECONDS = 120.0
+OUTBOX_LEASE_SECONDS = 300.0  # > worst-case batch time: 100 sends on a ~12-32 thread pool, 10s timeout each
 OUTBOX_RETRY_BASE_SECONDS = 30.0
 OUTBOX_RETRY_MAX_SECONDS = 1800.0
 
