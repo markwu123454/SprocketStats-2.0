@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 import { ChevronLeft, Download, X } from "lucide-react"
 import { AgGridReact } from "ag-grid-react"
 import type { ColDef, ValueFormatterParams } from "ag-grid-community"
+import { useBootstrapped } from "@/contexts/bootstrapContext"
 import RoleAudienceSelect, { type RoleMeta } from "@/components/RoleAudienceSelect"
 import Checkbox from "@/components/ui/Checkbox"
 import Button from "@/components/ui/Button"
@@ -103,8 +104,8 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
     const navigate = useNavigate()
     const gridRef = useRef<AgGridReact<ResponseRow>>(null)
 
-    const [catalog, setCatalog] = useState<RoleMeta[]>([])
-    const [roleLabels, setRoleLabels] = useState<Record<string, string>>({})
+    const [catalog, setCatalog] = useBootstrapped<RoleMeta[]>("roles", [])
+    const roleLabels = useMemo<Record<string, string>>(() => Object.fromEntries(catalog.map(c => [c.value, c.label])), [catalog])
     const [detail, setDetail] = useState<NotificationDetail | null>(null)
     const [detailLoading, setDetailLoading] = useState(!isNew)
     const [tab, setTab] = useState<Tab>(isNew ? "settings" : "overview")
@@ -127,10 +128,9 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
             if (res.ok) {
                 const cat = await res.json() as RoleMeta[]
                 setCatalog(cat)
-                setRoleLabels(Object.fromEntries(cat.map(c => [c.value, c.label])))
             }
         })()
-    }, [])
+    }, [setCatalog])
 
     const loadDetail = useCallback(async () => {
         if (!id) return

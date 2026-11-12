@@ -60,7 +60,7 @@ export default function DashboardPage() {
     const [currentEvent]            = useBootstrapped<EventInfo | null>("current_event", null)
     const [eventKeys]               = useBootstrapped<string[]>("event_keys", [])
     const [codeVisible, setCodeVisible] = useState(false)
-    const [tasks, setTasks] = useState<Task[] | null>(null)
+    const [tasks, setTasks] = useBootstrapped<Task[] | null>("tasks", null)
 
     const canViewTasks = can(user.permissions, "tasks.view")
 
@@ -105,9 +105,9 @@ export default function DashboardPage() {
         let cancelled = false
         fetchTasks()
             .then(data => { if (!cancelled) setTasks(data) })
-            .catch(() => { if (!cancelled) setTasks([]) })
+            .catch(() => { if (!cancelled) setTasks(prev => prev ?? []) })
         return () => { cancelled = true }
-    }, [canViewTasks])
+    }, [canViewTasks, setTasks])
 
     const now = new Date()
     const sorted = (meetings ?? [])

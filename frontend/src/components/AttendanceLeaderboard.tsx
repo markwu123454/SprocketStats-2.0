@@ -4,6 +4,7 @@ import Button from "@/components/ui/Button"
 import Notice from "@/components/ui/Notice"
 import Skeleton from "@/components/ui/Skeleton"
 import EmptyState from "@/components/ui/EmptyState"
+import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { cardClass, typeTitle } from "@/lib/uiClasses"
 
 interface LeaderboardRow {
@@ -20,7 +21,10 @@ function formatSecondsClocked(totalSeconds: number): string {
 }
 
 export default function AttendanceLeaderboard() {
-    const [rows, setRows] = useState<LeaderboardRow[]>([])
+    // Seeded from /bootstrap: null means no data yet. The fetch below still runs and
+    // silently refreshes; a failed refresh keeps seeded data on screen.
+    const [seededRows, setRows] = useBootstrapped<LeaderboardRow[] | null>("attendance_leaderboard", null)
+    const rows = seededRows ?? []
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(false)
     const [attempt, setAttempt] = useState(0)
@@ -34,7 +38,7 @@ export default function AttendanceLeaderboard() {
             .catch(() => { if (!controller.signal.aborted) setError(true) })
             .finally(() => { if (!controller.signal.aborted) setLoading(false) })
         return () => controller.abort()
-    }, [attempt])
+    }, [attempt, setRows])
     const maxSeconds = Math.max(1, ...rows.map(row => row.total_seconds))
 
     return <section className={`${cardClass} theme-bg backdrop-blur-sm`} aria-labelledby="attendance-leaderboard-title">
@@ -42,8 +46,8 @@ export default function AttendanceLeaderboard() {
             <Clock size={18} className="theme-text-contrast" aria-hidden="true" />
             <h2 id="attendance-leaderboard-title" className={`${typeTitle} theme-text`}>Attendance leaderboard</h2>
         </div>
-        {loading ? <div role="status" aria-label="Loading attendance leaderboard" className="flex flex-col gap-3"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
-            : error ? <Notice>Couldn't load the leaderboard. <Button variant="text" onClick={() => setAttempt(value => value + 1)}>Try again</Button></Notice>
+        {loading && seededRows === null ? <div role="status" aria-label="Loading attendance leaderboard" className="flex flex-col gap-3"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
+            : error && seededRows === null ? <Notice>Couldn't load the leaderboard. <Button variant="text" onClick={() => setAttempt(value => value + 1)}>Try again</Button></Notice>
             : rows.length === 0 ? <EmptyState>No hours logged yet. Time clocked at meetings will appear here.</EmptyState>
             : <ol className="flex flex-col gap-1">
                 {rows.map((row, i) => <li key={row.user_id} className="rounded-lg p-3 flex flex-col gap-2"

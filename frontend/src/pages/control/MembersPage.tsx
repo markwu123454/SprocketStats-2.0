@@ -192,7 +192,7 @@ export default function MembersPage() {
         const tagMap = bTagMap ?? {}
         return bMembers.map(m => ({ ...m, tags: tagMap[m.id] ?? [], _orig: snapshot(m) }))
     })
-    const [catalog, setCatalog] = useState<RoleCatalogEntry[]>([])
+    const [catalog, setCatalog] = useBootstrapped<RoleCatalogEntry[]>("roles", [])
 
     // Captains, Mentors and the Scouting Lead (control_panel.members) edit anyone,
     // role included. Leads edit within their moderation scope — their subteam's
@@ -243,7 +243,7 @@ export default function MembersPage() {
         } finally {
             setLoading(false)
         }
-    }, [])
+    }, [setCatalog])
 
     useEffect(() => { void load() }, [load])
 

@@ -6,6 +6,7 @@ import Button from "@/components/ui/Button"
 import Notice from "@/components/ui/Notice"
 import Skeleton from "@/components/ui/Skeleton"
 import EmptyState from "@/components/ui/EmptyState"
+import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { focusRing, typeBadge, typeH1, typeH2 } from "@/lib/uiClasses"
 
 const API = import.meta.env.VITE_BACKEND_URL
@@ -73,8 +74,9 @@ function exportCsv(rows: NotificationSummary[], roleLabels: Record<string, strin
 export default function NotificationsPage() {
     const navigate = useNavigate()
     const [notifications, setNotifications] = useState<NotificationSummary[]>([])
-    const [roleOptions, setRoleOptions] = useState<string[]>([])
-    const [roleLabels, setRoleLabels] = useState<Record<string, string>>({})
+    const [roleCatalog, setRoleCatalog] = useBootstrapped<{ value: string, label: string }[]>("roles", [])
+    const roleOptions = useMemo(() => roleCatalog.map(c => c.value), [roleCatalog])
+    const roleLabels = useMemo<Record<string, string>>(() => Object.fromEntries(roleCatalog.map(c => [c.value, c.label])), [roleCatalog])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
 
@@ -95,15 +97,14 @@ export default function NotificationsPage() {
             setNotifications(await nRes.json() as NotificationSummary[])
             if (rRes.ok) {
                 const catalog = await rRes.json() as { value: string, label: string }[]
-                setRoleOptions(catalog.map(c => c.value))
-                setRoleLabels(Object.fromEntries(catalog.map(c => [c.value, c.label])))
+                setRoleCatalog(catalog)
             }
         } catch {
             setError("Couldn't load notifications")
         } finally {
             setLoading(false)
         }
-    }, [])
+    }, [setRoleCatalog])
 
     useEffect(() => { void load() }, [load])
 
