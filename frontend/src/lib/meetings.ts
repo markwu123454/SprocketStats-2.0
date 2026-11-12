@@ -1,7 +1,7 @@
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react"
 
 import { useBootstrapped } from "../contexts/bootstrapContext"
-import type { RoleCatalogEntry } from "@/lib/permissions"
+import { getPerm, type PermPolicy, type RoleCatalogEntry } from "./permissions"
 
 export const MEETINGS_API = `${import.meta.env.VITE_BACKEND_URL}/meeting-hours`
 
@@ -98,6 +98,24 @@ export function absencesByMeeting(list: MeetingAbsence[]): Map<string, MeetingAb
     }
     for (const group of grouped.values()) group.sort((a, b) => a.display_name.localeCompare(b.display_name))
     return grouped
+}
+
+/**
+ * Whether this user sees other members' absences (leads, captains, mentors).
+ * The server applies the exact rule -- a lead only gets their own subteam --
+ * so this only decides whether to show the UI for them.
+ */
+export function canViewOthersAbsences(permissions: PermPolicy | null | undefined): boolean {
+    return ["lead", "captain", "mentor"].includes(getPerm(permissions, "level") as string)
+}
+
+/** One meeting's absences, split into the user's own report and everyone else's (sorted by name). */
+export function meetingAbsencesFor(absences: MeetingAbsence[], meetingId: string, userId: string): { mine?: MeetingAbsence, others: MeetingAbsence[] } {
+    const forMeeting = absencesByMeeting(absences).get(meetingId) ?? []
+    return {
+        mine: forMeeting.find(absence => absence.user_id === userId),
+        others: forMeeting.filter(absence => absence.user_id !== userId),
+    }
 }
 
 export function useMeetingAbsences(revision = 0) {
