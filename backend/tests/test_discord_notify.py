@@ -35,10 +35,10 @@ def test_single_meeting_pings_role_with_local_timestamps():
     body = meetings_created_message([meeting(START)], ROLE, "https://app.example/")
     ts = int(START.timestamp())
     assert body["content"].splitlines() == [
-        f"<@&{ROLE}> New meeting: **Build Session**",
-        f"<t:{ts}:F> – <t:{ts + 4 * 3600}:t>",
-        "<https://app.example/meetings>",
-    ]
+    f"<@&{ROLE}> New meeting: **Build Session**. If you will be absent, click the link to report it.",
+    f"<t:{ts}:F> – <t:{ts + 4 * 3600}:t>",
+    "<https://app.example/meetings>",
+]
     assert body["allowed_mentions"] == {"parse": [], "roles": [ROLE]}
 
 
