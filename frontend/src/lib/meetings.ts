@@ -11,6 +11,23 @@ export interface Meeting {
     end_time: string
     meeting_purpose: string | null
     agenda: string
+    /** How much time at the meeting is worth: 1 (the default) up to 2. */
+    hours_multiplier?: number
+}
+
+export const MIN_HOURS_MULTIPLIER = 1
+export const MAX_HOURS_MULTIPLIER = 2
+
+/** A meeting's hours multiplier, kept inside the allowed range (1 when unset). */
+export function hoursMultiplier(meeting: { hours_multiplier?: number | null }): number {
+    const value = meeting.hours_multiplier
+    if (typeof value !== "number" || !Number.isFinite(value)) return MIN_HOURS_MULTIPLIER
+    return Math.min(MAX_HOURS_MULTIPLIER, Math.max(MIN_HOURS_MULTIPLIER, value))
+}
+
+/** "×1.5", "×2.0", "×1.25". */
+export function multiplierLabel(multiplier: number): string {
+    return `×${multiplier.toFixed(2).replace(/0$/, "")}`
 }
 
 export function meetingDate(iso: string): string {

@@ -17,6 +17,7 @@ import Skeleton from "@/components/ui/Skeleton"
 import EmptyState from "@/components/ui/EmptyState"
 import { isDirtyVs, useDiscardGuard } from "@/lib/useDiscardGuard"
 import { focusRing, inputClass, typeBadge, typeH2, typeTitle } from "@/lib/uiClasses"
+import { hoursMultiplier, MAX_HOURS_MULTIPLIER, MIN_HOURS_MULTIPLIER, multiplierLabel } from "@/lib/meetings"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -25,6 +26,7 @@ interface MeetingRow {
     start_time: string
     end_time: string
     meeting_purpose: string | null
+    hours_multiplier?: number
 }
 
 function localDateKey(d: Date): string {
@@ -102,6 +104,18 @@ function expandOccurrences(first: Date, untilKey: string, stepDays: number): Dat
     return out
 }
 
+/** ×1.0 to ×2.0 in tenths: how much an hour at the meeting counts for. */
+const MULTIPLIER_OPTIONS = Array.from({ length: Math.round((MAX_HOURS_MULTIPLIER - MIN_HOURS_MULTIPLIER) * 10) + 1 }, (_, i) => {
+    const value = MIN_HOURS_MULTIPLIER + i / 10
+    const worth = value.toFixed(1).replace(/\.0$/, "")
+    return { value: value.toFixed(1), label: `${multiplierLabel(value)} · 1 hour counts as ${worth} ${value === 1 ? "hour" : "hours"}` }
+})
+
+/** A stored multiplier snapped to the nearest option the form offers. */
+function multiplierOf(row: { hours_multiplier?: number }): number {
+    return Math.round(hoursMultiplier(row) * 10) / 10
+}
+
 const DEFAULT_START = "15:30"
 const DEFAULT_END = "18:30"
 
@@ -133,6 +147,7 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
     const [justAdded, setJustAdded] = useState(false)
     const [repeat, setRepeat] = useState<Repeat>("none")
     const [repeatUntil, setRepeatUntil] = useState(() => localDateKey(new Date()))
+    const [multiplier, setMultiplier] = useState(MIN_HOURS_MULTIPLIER)
     // New meetings ping the team's Discord role; offered only when the server has a webhook configured.
     const [discordEnabled, setDiscordEnabled] = useState(false)
     const [notifyDiscord, setNotifyDiscord] = useState(true)
@@ -140,8 +155,9 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
     // The values the form opened with (set wherever the form is reset or loaded with a meeting); dirty = anything differs.
     const [baseline, setBaseline] = useState(() => ({
         description: "", dateKey: localDateKey(new Date()), startTime: DEFAULT_START, endTime: DEFAULT_END, repeat: "none" as Repeat,
+        multiplier: MIN_HOURS_MULTIPLIER,
     }))
-    const confirmDiscard = useDiscardGuard(isDirtyVs({ description, dateKey, startTime, endTime, repeat }, baseline))
+    const confirmDiscard = useDiscardGuard(isDirtyVs({ description, dateKey, startTime, endTime, repeat, multiplier }, baseline))
 
     const load = useCallback(async () => {
         setLoading(true)
@@ -176,9 +192,10 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
         setStartTime(DEFAULT_START)
         setEndTime(DEFAULT_END)
         setRepeat("none")
+        setMultiplier(MIN_HOURS_MULTIPLIER)
         setNotifyDiscord(true)
         setSelected(new Set())
-        setBaseline({ description: "", dateKey: localDateKey(new Date()), startTime: DEFAULT_START, endTime: DEFAULT_END, repeat: "none" })
+        setBaseline({ description: "", dateKey: localDateKey(new Date()), startTime: DEFAULT_START, endTime: DEFAULT_END, repeat: "none", multiplier: MIN_HOURS_MULTIPLIER })
     }, [])
 
     const updateDescription = (v: string) => { setDescription(v); setJustAdded(false) }
@@ -208,6 +225,7 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
     const total = useMemo(() => diffHoursMinutes(startTime, endTime), [startTime, endTime])
     const rawMinutes = useMemo(() => rawMinutesDiff(startTime, endTime), [startTime, endTime])
     const timeRangeInvalid = rawMinutes <= 0
+    const creditedMinutes = Math.round((total.h * 60 + total.m) * multiplier)
     const stepDays = REPEAT_OPTIONS.find(o => o.value === repeat)?.days ?? 0
     const isRecurring = mode === "add" && repeat !== "none"
     const occurrences = useMemo(
@@ -234,6 +252,7 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
                             start_time: combineDateAndTime(day, startTime).toISOString(),
                             end_time: combineDateAndTime(day, endTime).toISOString(),
                             meeting_purpose: description.trim(),
+                            hours_multiplier: multiplier,
                         }),
                     })
                 }))
@@ -252,12 +271,14 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
                         end_time: combineDateAndTime(d, endTime).toISOString(),
                     })),
                     meeting_purpose: description.trim(),
+                    hours_multiplier: multiplier,
                     notify_discord: discordEnabled && notifyDiscord,
                 }
                 : {
                     start_time: combineDateAndTime(date, startTime).toISOString(),
                     end_time: combineDateAndTime(date, endTime).toISOString(),
                     meeting_purpose: description.trim(),
+                    hours_multiplier: multiplier,
                     // Ignored on edit (PUT); only creating a meeting announces it.
                     ...(isEdit ? {} : { notify_discord: discordEnabled && notifyDiscord }),
                 }
@@ -292,7 +313,8 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
         setDateKey(localDateKey(start))
         setStartTime(toHHMM(start))
         setEndTime(toHHMM(end))
-        setBaseline({ description: row.meeting_purpose ?? "", dateKey: localDateKey(start), startTime: toHHMM(start), endTime: toHHMM(end), repeat })
+        setMultiplier(multiplierOf(row))
+        setBaseline({ description: row.meeting_purpose ?? "", dateKey: localDateKey(start), startTime: toHHMM(start), endTime: toHHMM(end), repeat, multiplier: multiplierOf(row) })
         setJustAdded(false)
         scrollToForm()
     }
@@ -319,7 +341,8 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
         setDescription(first.meeting_purpose ?? "")
         setStartTime(toHHMM(new Date(first.start_time)))
         setEndTime(toHHMM(new Date(first.end_time)))
-        setBaseline({ description: first.meeting_purpose ?? "", dateKey, startTime: toHHMM(new Date(first.start_time)), endTime: toHHMM(new Date(first.end_time)), repeat })
+        setMultiplier(multiplierOf(first))
+        setBaseline({ description: first.meeting_purpose ?? "", dateKey, startTime: toHHMM(new Date(first.start_time)), endTime: toHHMM(new Date(first.end_time)), repeat, multiplier: multiplierOf(first) })
         setJustAdded(false)
         scrollToForm()
     }
@@ -381,7 +404,7 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
                 {/* Date picker (inline calendar) */}
                 {mode === "bulk" ? (
                     <p className="text-xs theme-subtext-color -mt-1">
-                        Each meeting keeps its own date — the description and times below are applied to all {selected.size} selected.
+                        Each meeting keeps its own date — the description, hours multiplier and times below are applied to all {selected.size} selected.
                     </p>
                 ) : (
                     <DatePicker label="Meeting date" value={dateKey} onChange={selectDate} markedDates={scheduledSet} disabled={saving} />
@@ -406,6 +429,16 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
                         )}
                     </div>
                 )}
+
+                {/* How much an hour at this meeting is worth toward attendance hours */}
+                <Dropdown
+                    value={multiplier.toFixed(1)}
+                    onChange={(v) => { setMultiplier(Number(v)); setJustAdded(false) }}
+                    options={MULTIPLIER_OPTIONS}
+                    label="Hours multiplier"
+                    className="min-w-0"
+                    triggerClassName={`${DROPDOWN_TRIGGER} w-full h-11`}
+                />
 
                 {mode === "add" && discordEnabled && (
                     <label className="inline-flex items-center gap-2.5 min-h-11 -my-2 pl-0.5 text-sm theme-text cursor-pointer self-start">
@@ -435,6 +468,7 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
                     ) : (
                         <p className="text-sm theme-text">
                             Total <span className="font-mono font-bold theme-text-contrast">{total.h}h {String(total.m).padStart(2, "0")}m</span>
+                            {multiplier > 1 && <span className="theme-subtext-color"> · counts as {Math.floor(creditedMinutes / 60)}h {String(creditedMinutes % 60).padStart(2, "0")}m</span>}
                             {isRecurring && <span className="theme-subtext-color"> · {occurrences.length} {occurrences.length === 1 ? "meeting" : "meetings"}</span>}
                         </p>
                     )}
@@ -530,6 +564,11 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
                                     >
                                         {Math.floor(durMinutes / 60)}h {String(durMinutes % 60).padStart(2, "0")}m
                                     </span>
+                                    {hoursMultiplier(m) > 1 && (
+                                        <span className="font-mono text-xs font-bold theme-subtext-color whitespace-nowrap" title="Hours multiplier">
+                                            {multiplierLabel(hoursMultiplier(m))}
+                                        </span>
+                                    )}
                                 </div>
                                 <div className="order-2 md:order-3 flex items-center shrink-0">
                                     <Button

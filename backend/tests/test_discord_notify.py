@@ -139,9 +139,9 @@ def api(monkeypatch):
                 "meeting_purpose": purpose, "agenda": ""}
 
     monkeypatch.setattr(account_state, "assert_active", AsyncMock())
-    monkeypatch.setattr(db, "create_meeting_hours", AsyncMock(side_effect=lambda _u, s, e, p: row(s, e, p)))
+    monkeypatch.setattr(db, "create_meeting_hours", AsyncMock(side_effect=lambda _u, s, e, p, _m=1.0: row(s, e, p)))
     monkeypatch.setattr(db, "create_meeting_hours_batch",
-                        AsyncMock(side_effect=lambda _u, slots, p: [row(s, e, p) for s, e in slots]))
+                        AsyncMock(side_effect=lambda _u, slots, p, _m=1.0: [row(s, e, p) for s, e in slots]))
     notify = MagicMock()
     monkeypatch.setattr(meeting_hours, "notify_meetings_created", notify)
     app = FastAPI()

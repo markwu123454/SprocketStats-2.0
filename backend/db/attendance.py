@@ -1,6 +1,6 @@
 import asyncpg
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import HTTPException
 
@@ -9,24 +9,6 @@ from .connection import DB_NAME, db_connection
 logger = logging.getLogger(__name__)
 
 KIOSK_SESSION_MAX_AGE = timedelta(hours=12)
-
-
-async def create_attendance_entry(
-    user_id: str, source: str | None, checkin_time: datetime, checkout_time: datetime
-) -> asyncpg.Record:
-    async with db_connection(DB_NAME) as conn:
-        try:
-            return await conn.fetchrow(
-                """
-                INSERT INTO attendance (user_id, checkin_time, checkout_time, source)
-                VALUES ($1, $2, $3, $4)
-                RETURNING *
-                """,
-                user_id, checkin_time, checkout_time, source,
-            )
-        except Exception as e:
-            logger.error("create_attendance_entry failed: %s", e)
-            raise HTTPException(status_code=500, detail="Failed to save attendance")
 
 
 async def toggle_kiosk_attendance(user_id: str) -> str | None:
@@ -127,6 +109,35 @@ async def list_all_attendance() -> list[asyncpg.Record]:
             raise HTTPException(status_code=500, detail="Failed to fetch attendance")
 
 
+async def list_meeting_checkins() -> list[asyncpg.Record]:
+    """Every attendance entry clipped to each meeting it overlaps.
+
+    One row per (meeting, entry) pair with the overlapping span as
+    ``seg_start``/``seg_end``, ordered so a single sweep can merge a member's
+    overlapping entries. An entry still open counts up to now; abandoned open
+    entries (older than the kiosk limit) are skipped, as everywhere else.
+    """
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetch(
+                """
+                SELECT m.id AS meeting_id, a.user_id,
+                       GREATEST(a.checkin_time, m.start_time) AS seg_start,
+                       LEAST(COALESCE(a.checkout_time, now()), m.end_time) AS seg_end
+                FROM meeting_hours m
+                JOIN attendance a
+                  ON a.checkin_time < m.end_time
+                 AND COALESCE(a.checkout_time, now()) > m.start_time
+                WHERE a.checkout_time IS NOT NULL
+                   OR a.checkin_time > now() - INTERVAL '12 hours'
+                ORDER BY m.id, a.user_id, seg_start
+                """
+            )
+        except Exception as e:
+            logger.error("list_meeting_checkins failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to fetch attendance")
+
+
 QR_CODE_TTL = timedelta(seconds=30)
 
 
@@ -205,8 +216,8 @@ __all__ = [
     "claim_kiosk_qr_code",
     "set_kiosk_qr_result",
     "list_kiosk_qr_results",
-    "create_attendance_entry",
     "toggle_kiosk_attendance",
     "list_attendance_for_user",
     "list_all_attendance",
+    "list_meeting_checkins",
 ]

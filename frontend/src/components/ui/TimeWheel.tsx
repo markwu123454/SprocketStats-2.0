@@ -44,8 +44,8 @@ const fieldStyle = { background: "color-mix(in oklch, var(--theme-button-bg) 60%
 /**
  * Drag-to-set time picker: 5-minute slots from 6:00 AM to 11:55 PM, with
  * momentum scrolling (pointer drag or wheel) that snaps to the nearest slot.
- * Shared by every page that needs a start/end time input (AttendancePage's
- * clock in/out, the admin Meeting Hours editor) so their physics never drift.
+ * Shared by every page that needs a start/end time input (the admin Meeting
+ * Hours editor) so their physics never drift.
  */
 export function TimeWheel({ label, value, onChange }: { label: string, value: string, onChange: (v: string) => void }) {
     const wheelRef = useRef<HTMLDivElement>(null)

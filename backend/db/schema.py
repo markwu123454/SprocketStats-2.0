@@ -901,6 +901,18 @@ async def _migration_0011_push_outbox(conn) -> None:
     await conn.execute(_PUSH_OUTBOX_DDL)
 
 
+async def _migration_0012_meeting_hours_multiplier(conn) -> None:
+    """How much time at a meeting is worth: x1.0 (the default) up to x2.0."""
+    await conn.execute(
+        "ALTER TABLE meeting_hours ADD COLUMN IF NOT EXISTS hours_multiplier DOUBLE PRECISION NOT NULL DEFAULT 1.0"
+    )
+    await conn.execute("ALTER TABLE meeting_hours DROP CONSTRAINT IF EXISTS meeting_hours_multiplier_range")
+    await conn.execute(
+        "ALTER TABLE meeting_hours ADD CONSTRAINT meeting_hours_multiplier_range "
+        "CHECK (hours_multiplier >= 1.0 AND hours_multiplier <= 2.0)"
+    )
+
+
 # Append-only: never edit or renumber a migration that has shipped. Each must
 # be idempotent against init_db's current schema, because a fresh database
 # gets that schema first and then runs every migration.
@@ -916,6 +928,7 @@ _MIGRATIONS = [
     (9, _migration_0009_into_manufacturing),
     (10, _migration_0010_meeting_absences),
     (11, _migration_0011_push_outbox),
+    (12, _migration_0012_meeting_hours_multiplier),
 ]
 
 

@@ -8,7 +8,7 @@ import { useOnboardedUser } from "@/contexts/authContext"
 import { MeetingAbsenceRow } from "@/components/meetings/MeetingAbsence"
 import { can } from "@/lib/permissions"
 import { focusRing } from "@/lib/uiClasses"
-import { absencesByMeeting, canViewOthersAbsences, meetingDate, meetingTime, relativeDayLabel, upcomingMeetings, useMeetingAbsences, useMeetings, useRoleLabels } from "@/lib/meetings"
+import { absencesByMeeting, canViewOthersAbsences, hoursMultiplier, meetingDate, meetingTime, multiplierLabel, relativeDayLabel, upcomingMeetings, useMeetingAbsences, useMeetings, useRoleLabels } from "@/lib/meetings"
 
 const CARD_BG = "bg-[color-mix(in_oklch,var(--theme-bg)_92%,transparent)]"
 const eyebrow = "text-[11px] font-bold tracking-[0.1em] uppercase"
@@ -63,7 +63,7 @@ export default function MeetingsPage() {
                                 <span className="sr-only">{meetingDate(meeting.start_time)}</span>
                                 {isNext && <p className={`${eyebrow} theme-text-contrast`}>{live ? "Live now" : `Next · ${relativeDayLabel(meeting.start_time, now)}`}</p>}
                                 <h2 className="text-[19px] font-bold theme-h1-color break-words my-1">{meeting.meeting_purpose || "Team meeting"}</h2>
-                                <p className="text-sm theme-subtext-color">{meetingTime(meeting)}{!isNext && !hasAgenda && " · No agenda"}</p>
+                                <p className="text-sm theme-subtext-color">{meetingTime(meeting)}{hoursMultiplier(meeting) > 1 && ` · ${multiplierLabel(hoursMultiplier(meeting))} hours`}{!isNext && !hasAgenda && " · No agenda"}</p>
                                 {(isNext || hasAgenda) && <div className="mt-3 border-t border-dashed theme-border pt-2.5 text-[13px] theme-subtext-color">
                                     {hasAgenda
                                         ? <><p>Agenda</p><p className="mt-1 text-sm theme-text whitespace-pre-wrap break-words">{meeting.agenda}</p></>
