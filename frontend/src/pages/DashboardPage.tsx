@@ -2,7 +2,7 @@ import {useEffect, useState, type ReactNode} from "react"
 import { Link } from "react-router-dom"
 import { useOnboardedUser } from "@/contexts/authContext"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
-import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks, UserX } from "lucide-react"
+import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks, LogIn, UserX } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
 import Skeleton from "@/components/ui/Skeleton"
 import { focusRing } from "@/lib/uiClasses"
@@ -24,6 +24,12 @@ interface MeetingHours {
     meeting_purpose: string | null
 }
 
+interface AttendanceEntry {
+    id: number
+    checkin_time: string
+    checkout_time: string | null
+}
+
 function formatClockTime(iso: string): string {
     return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
 }
@@ -32,6 +38,12 @@ function formatMeetingDay(iso: string): string {
     const d = new Date(iso)
     if (d.toDateString() === new Date().toDateString()) return "Today"
     return d.toLocaleDateString("en-US", { weekday: "long" })
+}
+
+function formatCheckoutDay(iso: string): string {
+    const d = new Date(iso)
+    if (d.toDateString() === new Date().toDateString()) return "today"
+    return `on ${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
 }
 
 // Parses a "YYYY-MM-DD" date as a LOCAL date (never UTC) so due dates don't
@@ -63,6 +75,7 @@ export default function DashboardPage() {
     const [eventKeys]               = useBootstrapped<string[]>("event_keys", [])
     const [codeVisible, setCodeVisible] = useState(false)
     const [tasks, setTasks] = useBootstrapped<Task[] | null>("tasks", null)
+    const [attendance, setAttendance] = useState<AttendanceEntry[] | null>(null)
 
     const canViewTasks = can(user.permissions, "tasks.view")
 
@@ -102,6 +115,17 @@ export default function DashboardPage() {
         return () => { cancelled = true }
     }, [setMeetings])
 
+    // The backend already drops abandoned open entries, so an open one here
+    // means the member is checked in right now.
+    useEffect(() => {
+        let cancelled = false
+        fetch(`${API}/attendance/me`, { credentials: "include" })
+            .then(res => (res.ok ? res.json() : []))
+            .then((data: AttendanceEntry[]) => { if (!cancelled) setAttendance(data) })
+            .catch(() => { if (!cancelled) setAttendance([]) })
+        return () => { cancelled = true }
+    }, [])
+
     useEffect(() => {
         if (!canViewTasks) return
         let cancelled = false
@@ -110,6 +134,13 @@ export default function DashboardPage() {
             .catch(() => { if (!cancelled) setTasks(prev => prev ?? []) })
         return () => { cancelled = true }
     }, [canViewTasks, setTasks])
+
+    const openEntry = attendance?.find(a => a.checkout_time === null)
+    const lastCheckout = (attendance ?? [])
+        .map(a => a.checkout_time)
+        .filter((t): t is string => t !== null)
+        .sort((a, b) => Date.parse(a) - Date.parse(b))
+        .at(-1)
 
     const now = new Date()
     const sorted = (meetings ?? [])
@@ -202,6 +233,37 @@ export default function DashboardPage() {
                     )}
                     <span className="mt-auto flex items-center gap-1 text-sm font-semibold theme-text-contrast">{myAbsence ? "Change on Meetings" : "View meetings"}<ChevronRight size={16} aria-hidden="true" /></span>
                 </Link>
+
+                {/* Kiosk check-in status */}
+                <div className="rounded-xl border p-5 flex flex-col gap-3 backdrop-blur-sm" style={cardStyle}>
+                    <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium theme-text opacity-70">Attendance</span>
+                        <LogIn size={18} className="theme-text-contrast opacity-80" />
+                    </div>
+
+                    {attendance === null ? (
+                        <>
+                            <Skeleton className="h-6 w-2/3" />
+                            <Skeleton className="h-4 w-1/2" />
+                        </>
+                    ) : (
+                        <>
+                            <p className="flex items-center gap-2 text-lg font-semibold theme-text">
+                                <span className="inline-block size-2.5 rounded-full" aria-hidden="true"
+                                    style={{ background: openEntry ? "#22c55e" : "#9ca3af" }} />
+                                {openEntry ? "Checked in" : "Checked out"}
+                            </p>
+                            <p className="text-sm theme-subtext-color">
+                                {openEntry
+                                    // Open entries are at most 12 hours old, so the time alone is enough.
+                                    ? `Since ${formatClockTime(openEntry.checkin_time)}`
+                                    : lastCheckout
+                                        ? `Last checked out ${formatCheckoutDay(lastCheckout)} at ${formatClockTime(lastCheckout)}`
+                                        : "Check in at a kiosk when you arrive."}
+                            </p>
+                        </>
+                    )}
+                </div>
 
                 {/* Who's out -- leads/captains/mentors only, and only when someone is */}
                 {target && showOthersAbsent && (

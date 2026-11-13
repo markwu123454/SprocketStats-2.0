@@ -11,6 +11,8 @@ interface LeaderboardRow {
     user_id: string
     name: string
     total_seconds: number
+    /** Older seeded payloads may lack it; treat missing as checked out. */
+    checked_in?: boolean
     is_current_user: boolean
 }
 
@@ -53,7 +55,11 @@ export default function AttendanceLeaderboard() {
                 {rows.map((row, i) => <li key={row.user_id} className="rounded-lg p-3 flex flex-col gap-2"
                     style={row.is_current_user ? { background: "var(--theme-button-bg)" } : undefined}>
                     <div className="flex items-center justify-between gap-3 text-sm">
-                        <span className="theme-text min-w-0 break-words"><span className="theme-subtext-color mr-2">{i + 1}</span>{row.name}{row.is_current_user ? " · You" : ""}</span>
+                        <span className="theme-text min-w-0 break-words"><span className="theme-subtext-color mr-2">{i + 1}</span><span
+                            className="inline-block size-2 rounded-full mr-2 align-middle"
+                            style={{ background: row.checked_in ? "#22c55e" : "#9ca3af" }}
+                            role="img" aria-label={row.checked_in ? "Checked in" : "Checked out"}
+                            title={row.checked_in ? "Checked in" : "Checked out"} />{row.name}{row.is_current_user ? " · You" : ""}</span>
                         <span className="font-semibold theme-text shrink-0">{formatSecondsClocked(row.total_seconds)} <span className="theme-subtext-color font-normal">hrs</span></span>
                     </div>
                     <div className="h-1 rounded-full theme-button-bg overflow-hidden" aria-hidden="true">

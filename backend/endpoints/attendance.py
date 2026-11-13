@@ -45,6 +45,9 @@ async def get_leaderboard(user: dict = Depends(get_current_user)):
     names: dict[str, str] = {}
     totals: dict[str, float] = {}
     open_interval: dict[str, tuple[datetime, datetime]] = {}
+    # An entry still open (abandoned ones are already filtered out) means the
+    # member is checked in right now.
+    checked_in: set[str] = set()
 
     def close_interval(uid: str) -> None:
         start, end = open_interval.pop(uid)
@@ -55,6 +58,8 @@ async def get_leaderboard(user: dict = Depends(get_current_user)):
         names[uid] = row["display_name"] or row["given_name"] or "Unknown User"
         start = row["checkin_time"]
         end = row["checkout_time"] or now
+        if row["checkout_time"] is None:
+            checked_in.add(uid)
 
         current = open_interval.get(uid)
         if current is None:
@@ -81,6 +86,7 @@ async def get_leaderboard(user: dict = Depends(get_current_user)):
             "user_id": uid,
             "name": names[uid],
             "total_seconds": seconds,
+            "checked_in": uid in checked_in,
             "is_current_user": uid == user["sub"],
         }
         for uid, seconds in ranked
