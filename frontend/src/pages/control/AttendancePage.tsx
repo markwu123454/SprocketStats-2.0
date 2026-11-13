@@ -10,7 +10,7 @@ import { focusRing, inputClass, typeH2 } from "@/lib/uiClasses"
 import { useIsMobile } from "@/lib/useIsMobile"
 import { meetingTime, useRoleLabels } from "@/lib/meetings"
 import {
-    meetingsWithMisses, memberMatch, teamAttendance, useAttendance,
+    attendanceRate, meetingsWithMisses, memberMatch, teamAttendance, teamAttendanceRate, useAttendance,
     type AbsenceScope, type MeetingMisses, type MemberAttendance,
 } from "@/lib/attendance"
 
@@ -33,11 +33,30 @@ function reportedAt(iso: string): string {
     return `${shortDate(iso)}, ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
 }
 
+function percent(rate: number): string {
+    return `${Math.round(rate * 100)}%`
+}
+
+/** Seconds as hours to one decimal: "12 h", "7.5 h". */
+function hours(seconds: number): string {
+    return `${(seconds / 3600).toFixed(1).replace(/\.0$/, "")} h`
+}
+
 function summaryLine(row: MemberAttendance, scope: AbsenceScope): string {
     const n = row.missed.length
-    return scope === "past"
-        ? `Missed ${n} of ${row.expected.length} meetings since joining ${shortDate(row.member.created_at)}`
-        : `${n} upcoming ${n === 1 ? "absence" : "absences"} reported`
+    if (scope !== "past") return `${n} upcoming ${n === 1 ? "absence" : "absences"} reported`
+    const rate = attendanceRate(row)
+    const missed = `Missed ${n} of ${row.expected.length} meetings since joining ${shortDate(row.member.created_at)}`
+    return rate === null ? missed
+        : `Attended ${percent(rate)} of meeting hours (${hours(row.earnedSeconds)} of ${hours(row.possibleSeconds)}) · ${missed}`
+}
+
+/** What the page counts, spelled out around the day the attendance system went live. */
+function rulesLine(activeFrom: string | undefined): string {
+    const base = "Hours attended as a share of meeting hours, counted from when each member joined."
+    if (!activeFrom) return base
+    const day = new Date(activeFrom).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    return `${base} Meetings before ${day} count in full; from then on, hours come from check-ins and not checking in is an absence.`
 }
 
 export default function AttendancePage() {
@@ -63,6 +82,8 @@ export default function AttendancePage() {
     const selected = team.find(r => r.member.user_id === memberId)
     const filtered = selected && !isMobile ? selected : undefined
     const meetings = useMemo(() => meetingsWithMisses(filtered ? [filtered] : team, scope), [team, filtered, scope])
+    // Null until there is a finished meeting to measure against.
+    const teamRate = useMemo(() => scope === "past" ? teamAttendanceRate(team) : null, [team, scope])
 
     // Search re-ranks by match quality; without one, the most-missed order stands.
     const visibleMembers = useMemo(() => {
@@ -85,7 +106,7 @@ export default function AttendancePage() {
     return (
         <ControlSectionLayout title="Attendance">
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 -mt-3">
-                <p className="text-sm theme-subtext-color">Absences members reported for team meetings, counted from when each member joined.</p>
+                <p className="text-sm theme-subtext-color">{rulesLine(data.active_from)}</p>
                 <div className="flex flex-wrap gap-2 shrink-0 w-full sm:w-auto">
                     {isMobile && (
                         <div className={`${SEGMENTS} w-full sm:w-auto`} role="tablist" aria-label="View">
@@ -106,8 +127,12 @@ export default function AttendancePage() {
                 </div>
             </div>
 
-            {/* Reserved: team-wide hours attended as a % of meeting hours goes
-                here once check-ins feed `memberAttendance` (see lib/attendance). */}
+            {teamRate !== null && !error && !loading && (
+                <div className={`${CARD} px-4 py-3 flex items-baseline gap-3`}>
+                    <span className="text-2xl font-extrabold tabular-nums theme-text-contrast">{percent(teamRate)}</span>
+                    <span className="text-sm theme-subtext-color">of meeting hours attended across these members</span>
+                </div>
+            )}
 
             {error ? (
                 <div className={`${CARD} p-4`}>
@@ -137,6 +162,7 @@ export default function AttendancePage() {
                             <ul className="flex flex-col md:overflow-y-auto md:min-h-0">
                                 {visibleMembers.map(row => {
                                     const { member, missed, expected } = row
+                                    const rate = scope === "past" ? attendanceRate(row) : null
                                     const active = !isMobile && member.user_id === memberId
                                     return (
                                         <li key={member.user_id}>
@@ -147,12 +173,17 @@ export default function AttendancePage() {
                                                 <span className="flex-1 min-w-0">
                                                     <span className="block text-sm font-semibold theme-text truncate">{member.display_name}</span>
                                                     <span className="block text-xs theme-subtext-color truncate">
-                                                        {roleOf(member.role)}{row.lastMissed ? ` · last ${shortDate(row.lastMissed)}` : ""}
+                                                        {roleOf(member.role)}{row.lastMissed ? ` · last missed ${shortDate(row.lastMissed)}` : ""}
                                                     </span>
                                                 </span>
                                                 <span className="shrink-0 text-right tabular-nums">
-                                                    <span className={`block text-sm font-bold ${missed.length ? "theme-text-contrast" : "theme-subtext-color"}`}>{missed.length}</span>
-                                                    {scope === "past" && <span className="block text-[11px] theme-subtext-color">of {expected.length}</span>}
+                                                    {rate !== null ? <>
+                                                        <span className="block text-sm font-bold theme-text-contrast">{percent(rate)}</span>
+                                                        <span className="block text-[11px] theme-subtext-color">{missed.length} of {expected.length} missed</span>
+                                                    </> : <>
+                                                        <span className={`block text-sm font-bold ${missed.length ? "theme-text-contrast" : "theme-subtext-color"}`}>{missed.length}</span>
+                                                        {scope === "past" && <span className="block text-[11px] theme-subtext-color">of {expected.length}</span>}
+                                                    </>}
                                                 </span>
                                             </button>
                                         </li>
@@ -178,7 +209,7 @@ export default function AttendancePage() {
                                 <div className={`${CARD} p-4`}>
                                     <EmptyState>{filtered
                                         ? `${filtered.member.display_name} hasn't missed ${scope === "past" ? "a past" : "an upcoming"} meeting.`
-                                        : scope === "past" ? "No absences were reported for past meetings." : "No one has reported an absence for an upcoming meeting."}</EmptyState>
+                                        : scope === "past" ? "No one missed a past meeting." : "No one has reported an absence for an upcoming meeting."}</EmptyState>
                                 </div>
                             ) : meetings.map(entry => <MeetingCard key={entry.meeting.id} entry={entry} showCount={!filtered} roleOf={roleOf}/>)}
                         </section>

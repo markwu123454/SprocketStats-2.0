@@ -16,6 +16,9 @@ from fastapi.testclient import TestClient
 
 import db
 import core.push_notify as push_notify
+from core.attendance_rules import (
+    ATTENDANCE_ACTIVE_FROM, hours_multiplier, meeting_checkin_seconds, multiplier_bonus_seconds,
+)
 from core.permissions import absence_push_roles, can_view_absence, has_absence_view, tracks_attendance
 from core.security import require_active
 from endpoints import meeting_hours
@@ -104,6 +107,8 @@ def setup(monkeypatch):
     monkeypatch.setattr(db, "upsert_meeting_absence", upsert)
     monkeypatch.setattr(db, "delete_meeting_absence", delete)
     monkeypatch.setattr(db, "list_meeting_absences", list_absences)
+    checkins: list[dict] = []
+    monkeypatch.setattr(db, "list_meeting_checkins", AsyncMock(side_effect=lambda: list(checkins)))
     monkeypatch.setattr(db, "list_active_members", AsyncMock(return_value=[
         {"id": uid, "display_name": name, "role": role, "created_at": NOW - timedelta(days=30), "approved_by": "captain-1"}
         for uid, (name, role) in USERS.items()
@@ -127,6 +132,7 @@ def setup(monkeypatch):
         app.dependency_overrides[require_active] = lambda: {"sub": user_id, "role": USERS[user_id][1]}
         return TestClient(app)
 
+    notify.checkins = checkins
     return client, absences, notify
 
 
@@ -333,3 +339,77 @@ def test_attendance_captain_sees_every_tracked_member(setup):
     client, _, _ = setup
     ids = [m["user_id"] for m in client("captain-1").get("/meeting-hours/attendance").json()["members"]]
     assert set(ids) == {"me", "cad-mate", "cad-lead", "prog-member", "captain-1"}
+
+
+def _span(user_id, start_min, end_min, meeting_id=PAST_ID):
+    """A db.list_meeting_checkins row: minutes from the start of the past meeting."""
+    start = NOW - timedelta(days=2)
+    return {"meeting_id": uuid.UUID(meeting_id), "user_id": user_id,
+            "seg_start": start + timedelta(minutes=start_min), "seg_end": start + timedelta(minutes=end_min)}
+
+
+def test_checkin_seconds_merges_overlapping_spans():
+    rows = [
+        # Logged twice, overlapping: 0-60 and 30-90 is 90 minutes, not 120.
+        _span("a", 0, 60), _span("a", 30, 90),
+        # A span swallowed by an earlier one adds nothing; a later gap does.
+        _span("b", 0, 60), _span("b", 10, 20), _span("b", 100, 120),
+        _span("a", 0, 30, FUTURE_ID),
+    ]
+    assert meeting_checkin_seconds(rows) == {
+        (PAST_ID, "a"): 90 * 60,
+        (PAST_ID, "b"): 80 * 60,
+        (FUTURE_ID, "a"): 30 * 60,
+    }
+
+
+def test_attendance_reports_checkins_for_visible_members(setup):
+    client, _, notify = setup
+    notify.checkins += [_span("cad-mate", 0, 120), _span("prog-member", 0, 60)]
+    body = client("cad-lead").get("/meeting-hours/attendance").json()
+    # The programming member is outside the CAD lead's view...
+    assert body["checkins"] == [{"meeting_id": PAST_ID, "user_id": "cad-mate", "seconds": 7200.0}]
+
+
+def test_attendance_reports_the_go_live_date(setup):
+    client, _, _ = setup
+    body = client("captain-1").get("/meeting-hours/attendance").json()
+    assert body["checkins"] == []
+    assert datetime.fromisoformat(body["active_from"]) == ATTENDANCE_ACTIVE_FROM
+    assert (ATTENDANCE_ACTIVE_FROM.year, ATTENDANCE_ACTIVE_FROM.month, ATTENDANCE_ACTIVE_FROM.day) == (2026, 11, 15)
+    assert ATTENDANCE_ACTIVE_FROM.hour == 0 and ATTENDANCE_ACTIVE_FROM.utcoffset() is not None
+
+
+# ── hours multiplier ───────────────────────────────────────────────────────────
+
+def test_hours_multiplier_defaults_and_clamps():
+    assert hours_multiplier({}) == 1.0
+    assert hours_multiplier({"hours_multiplier": None}) == 1.0
+    assert hours_multiplier({"hours_multiplier": 1.5}) == 1.5
+    assert hours_multiplier({"hours_multiplier": 9}) == 2.0
+    assert hours_multiplier({"hours_multiplier": 0.2}) == 1.0
+
+
+def test_multiplier_bonus_is_the_extra_on_top():
+    meetings = [{"id": uuid.UUID(PAST_ID), "hours_multiplier": 1.5}, {"id": uuid.UUID(FUTURE_ID)}]
+    rows = [_span("a", 0, 60), _span("b", 0, 120), _span("a", 0, 60, FUTURE_ID)]
+    # x1.5: half an hour extra per hour. The x1.0 meeting adds nothing.
+    assert multiplier_bonus_seconds(meetings, rows) == {"a": 30 * 60, "b": 60 * 60}
+
+
+def test_meetings_carry_their_multiplier(setup):
+    client, _, _ = setup
+    meetings = client("captain-1").get("/meeting-hours/attendance").json()["meetings"]
+    assert {m["hours_multiplier"] for m in meetings} == {1.0}
+
+
+@pytest.mark.parametrize("value, ok", [(1.0, True), (1.5, True), (2.0, True), (0.9, False), (2.1, False)])
+def test_multiplier_must_be_between_one_and_two(value, ok):
+    body = {"start_time": "2026-11-20T23:30:00Z", "end_time": "2026-11-21T02:30:00Z", "hours_multiplier": value}
+    for model in (meeting_hours.MeetingHoursWrite, meeting_hours.MeetingHoursCreate):
+        if ok:
+            assert model(**body).hours_multiplier == value
+        else:
+            with pytest.raises(ValueError):
+                model(**body)
+    assert meeting_hours.MeetingHoursWrite(**{k: v for k, v in body.items() if k != "hours_multiplier"}).hours_multiplier == 1.0

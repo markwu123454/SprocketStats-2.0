@@ -4,14 +4,19 @@
 // what the viewer may see (leads: their subteam, captains/mentors: everyone)
 // and to members expected at meetings. Everything here is pure shaping.
 //
-// Built to grow: today a member "missed" a meeting only if they reported an
-// absence. Meeting check-ins will later join the payload, at which point
-// `missedMeeting` also counts "never checked in", and hours attended can be
-// shown against `meetingSeconds` as a percentage. Every count on the page
-// flows through `memberAttendance`, so that change lands in one place.
+// The attendance system went live on a fixed date the backend reports as
+// `active_from` (core/attendance_rules.py):
+//   * A meeting starting on or after it requires a check-in. Once it is over,
+//     a member who never checked in missed it, and they earn hours only for
+//     the time they were checked in.
+//   * A meeting before it predates the kiosk: everyone is credited its full
+//     length, and only a reported absence shows as a miss.
+// Hours are weighted by each meeting's multiplier (x1.0 to x2.0), and a
+// member's attendance is hours earned as a share of hours possible. Every
+// count on the page flows through `memberAttendance`.
 
 import { useCallback, useEffect, useState } from "react"
-import { MEETINGS_API, type Meeting, type MeetingAbsence } from "./meetings"
+import { hoursMultiplier, MEETINGS_API, type Meeting, type MeetingAbsence } from "./meetings"
 
 export type AbsenceScope = "past" | "upcoming"
 
@@ -23,10 +28,20 @@ export interface AttendanceMember {
     created_at: string
 }
 
+/** How long one member was checked in during one meeting (capped at its length). */
+export interface MeetingCheckin {
+    meeting_id: string
+    user_id: string
+    seconds: number
+}
+
 export interface AttendanceData {
     meetings: Meeting[]
     members: AttendanceMember[]
     absences: MeetingAbsence[]
+    checkins?: MeetingCheckin[]
+    /** When the attendance system went live; meetings from then on require a check-in. */
+    active_from?: string
 }
 
 export function useAttendance() {
@@ -67,20 +82,66 @@ function meetingSecondsOf(meeting: Meeting): number {
     return Math.max(0, (Date.parse(meeting.end_time) - Date.parse(meeting.start_time)) / 1000)
 }
 
-const absenceKey = (meetingId: string, userId: string) => `${meetingId}|${userId}`
+const pairKey = (meetingId: string, userId: string) => `${meetingId}|${userId}`
 
 /** Absences indexed by meeting + member, for O(1) "did they report one?" lookups. */
 export function indexAbsences(absences: MeetingAbsence[]): Map<string, MeetingAbsence> {
-    return new Map(absences.map(a => [absenceKey(a.meeting_id, a.user_id), a]))
+    return new Map(absences.map(a => [pairKey(a.meeting_id, a.user_id), a]))
+}
+
+export interface AttendanceIndex {
+    absences: Map<string, MeetingAbsence>
+    /** Seconds checked in, by meeting + member. */
+    checkins: Map<string, number>
+    /** Epoch ms the attendance system went live; Infinity when the backend didn't say. */
+    activeFrom: number
+}
+
+export function indexAttendance(data: AttendanceData): AttendanceIndex {
+    const activeFrom = data.active_from ? Date.parse(data.active_from) : NaN
+    return {
+        absences: indexAbsences(data.absences),
+        checkins: new Map((data.checkins ?? []).map(c => [pairKey(c.meeting_id, c.user_id), c.seconds])),
+        activeFrom: Number.isNaN(activeFrom) ? Infinity : activeFrom,
+    }
+}
+
+/** Seconds `member` was checked in during `meeting`, never more than its length. */
+export function checkedInSeconds(member: AttendanceMember, meeting: Meeting, index: AttendanceIndex): number {
+    return Math.min(index.checkins.get(pairKey(meeting.id, member.user_id)) ?? 0, meetingSecondsOf(meeting))
+}
+
+/** Whether `meeting` requires a check-in: it started once the attendance system was live. */
+export function requiresCheckin(meeting: Meeting, index: AttendanceIndex): boolean {
+    return Date.parse(meeting.start_time) >= index.activeFrom
 }
 
 /**
- * Whether `member` missed `meeting`. Today: they reported an absence. When
- * check-ins arrive this also becomes true for a past meeting with no check-in
- * overlapping it.
+ * Whether `member` missed `meeting`: the absence they reported, `true` for a
+ * no-show with no report, or null. Checking in to a finished meeting that
+ * requires it cancels an absence reported for it.
  */
-export function missedMeeting(member: AttendanceMember, meeting: Meeting, absences: Map<string, MeetingAbsence>): MeetingAbsence | true | null {
-    return absences.get(absenceKey(meeting.id, member.user_id)) ?? null
+export function missedMeeting(member: AttendanceMember, meeting: Meeting, index: AttendanceIndex, now: number): MeetingAbsence | true | null {
+    const absence = index.absences.get(pairKey(meeting.id, member.user_id)) ?? null
+    if (!isPastMeeting(meeting, now) || !requiresCheckin(meeting, index)) return absence
+    if (checkedInSeconds(member, meeting, index) > 0) return null
+    return absence ?? true
+}
+
+/**
+ * Hours `member` earned at a finished `meeting`, in seconds, after its
+ * multiplier: the time they were checked in, or the whole meeting if it
+ * predates the attendance system.
+ */
+export function earnedSeconds(member: AttendanceMember, meeting: Meeting, index: AttendanceIndex): number {
+    const seconds = requiresCheckin(meeting, index) ? checkedInSeconds(member, meeting, index) : meetingSecondsOf(meeting)
+    return seconds * hoursMultiplier(meeting)
+}
+
+export interface Miss {
+    meeting: Meeting
+    /** The report, or null for an unreported no-show. */
+    absence: MeetingAbsence | null
 }
 
 export interface MemberAttendance {
@@ -88,42 +149,57 @@ export interface MemberAttendance {
     /** Meetings in scope the member was expected at (started after their account existed). */
     expected: Meeting[]
     /** The subset they missed, with the absence report when there is one. */
-    missed: { meeting: Meeting, absence: MeetingAbsence | null }[]
-    /** Total length of `expected` -- the denominator for a future hours-attended %. */
-    meetingSeconds: number
-    missedSeconds: number
+    missed: Miss[]
+    /** Hours on offer across the finished `expected` meetings, in seconds, after multipliers. */
+    possibleSeconds: number
+    /** Hours the member earned at them (see `earnedSeconds`). */
+    earnedSeconds: number
     /** start_time of their latest missed meeting, if any. */
     lastMissed: string | null
 }
 
 export function memberAttendance(
-    member: AttendanceMember, meetings: Meeting[], absences: Map<string, MeetingAbsence>, scope: AbsenceScope, now: number,
+    member: AttendanceMember, meetings: Meeting[], index: AttendanceIndex, scope: AbsenceScope, now: number,
 ): MemberAttendance {
     const joined = Date.parse(member.created_at)
     const expected = meetings.filter(m => inScope(m, scope, now) && Date.parse(m.start_time) >= joined)
-    const missed: MemberAttendance["missed"] = []
+    const missed: Miss[] = []
+    let possible = 0
+    let earned = 0
     for (const meeting of expected) {
-        const hit = missedMeeting(member, meeting, absences)
+        if (isPastMeeting(meeting, now)) {
+            possible += meetingSecondsOf(meeting) * hoursMultiplier(meeting)
+            earned += earnedSeconds(member, meeting, index)
+        }
+        const hit = missedMeeting(member, meeting, index, now)
         if (hit) missed.push({ meeting, absence: hit === true ? null : hit })
     }
     const byStart = (a: Meeting, b: Meeting) => Date.parse(a.start_time) - Date.parse(b.start_time)
     const lastMissed = missed.length ? missed.map(x => x.meeting).sort(byStart)[missed.length - 1].start_time : null
-    return {
-        member,
-        expected,
-        missed,
-        meetingSeconds: expected.reduce((sum, m) => sum + meetingSecondsOf(m), 0),
-        missedSeconds: missed.reduce((sum, x) => sum + meetingSecondsOf(x.meeting), 0),
-        lastMissed,
-    }
+    return { member, expected, missed, possibleSeconds: possible, earnedSeconds: earned, lastMissed }
 }
 
-/** Every member's attendance in scope, most missed first, then by name. */
+/** Hours earned as a share of hours possible (0-1), or null with no finished meetings to measure. */
+export function attendanceRate(row: Pick<MemberAttendance, "possibleSeconds" | "earnedSeconds">): number | null {
+    return row.possibleSeconds > 0 ? row.earnedSeconds / row.possibleSeconds : null
+}
+
+/** `attendanceRate` over a whole set of members. */
+export function teamAttendanceRate(rows: MemberAttendance[]): number | null {
+    return attendanceRate({
+        possibleSeconds: rows.reduce((sum, r) => sum + r.possibleSeconds, 0),
+        earnedSeconds: rows.reduce((sum, r) => sum + r.earnedSeconds, 0),
+    })
+}
+
+/** Every member's attendance in scope: lowest share of hours first, then most missed, then by name. */
 export function teamAttendance(data: AttendanceData, scope: AbsenceScope, now: number): MemberAttendance[] {
-    const index = indexAbsences(data.absences)
+    const index = indexAttendance(data)
     return data.members
         .map(member => memberAttendance(member, data.meetings, index, scope, now))
-        .sort((a, b) => b.missed.length - a.missed.length || (a.member.display_name ?? "").localeCompare(b.member.display_name ?? ""))
+        .sort((a, b) => (attendanceRate(a) ?? 1) - (attendanceRate(b) ?? 1)
+            || b.missed.length - a.missed.length
+            || (a.member.display_name ?? "").localeCompare(b.member.display_name ?? ""))
 }
 
 export interface MeetingMisses {

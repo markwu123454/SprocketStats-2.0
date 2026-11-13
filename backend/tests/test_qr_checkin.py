@@ -91,3 +91,11 @@ def test_unknown_code_rejected(client):
     resp = client.post("/attendance/qr_checkin", json={"token": "nope"})
     assert resp.status_code == 410
     assert client.toggles == []
+
+
+def test_members_cannot_log_their_own_hours(client):
+    """Only a kiosk records attendance: there is no route to submit hours."""
+    resp = client.post("/attendance", json={
+        "checkin_time": "2026-11-20T23:30:00Z", "checkout_time": "2026-11-21T02:30:00Z", "source": "normal",
+    })
+    assert resp.status_code in (404, 405)

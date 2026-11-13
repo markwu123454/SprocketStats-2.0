@@ -6,6 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 import db
+from core.attendance_rules import (
+    ATTENDANCE_ACTIVE_FROM, MAX_HOURS_MULTIPLIER, MIN_HOURS_MULTIPLIER, hours_multiplier, meeting_checkin_seconds,
+)
 from core.permissions import can_view_absence, has_absence_view, role_requires_approval, tracks_attendance
 from core.discord_notify import discord_configured, notify_meetings_created
 from core.push_notify import absence_push, kick_outbox
@@ -21,6 +24,9 @@ require_meeting_agenda = require_access(permissions="control_panel.meeting_agend
 
 
 MAX_RECURRING_OCCURRENCES = 200
+
+# How much time at a meeting is worth: x1.0 (an hour is an hour) up to x2.0.
+HoursMultiplier = Field(default=MIN_HOURS_MULTIPLIER, ge=MIN_HOURS_MULTIPLIER, le=MAX_HOURS_MULTIPLIER)
 
 
 def _normalize_purpose(v: str | None) -> str | None:
@@ -40,6 +46,7 @@ class MeetingHoursWrite(BaseModel):
     start_time: datetime
     end_time: datetime
     meeting_purpose: str | None = None
+    hours_multiplier: float = HoursMultiplier
 
     @field_validator("meeting_purpose")
     @classmethod
@@ -122,9 +129,13 @@ async def attendance_overview(user: dict = Depends(require_active)):
     ``members`` is everyone the viewer may see who is expected at meetings
     (active, approved where required, an attendance-tracked role), with their
     account ``created_at`` -- the client only counts meetings from then on.
-    ``absences`` is limited to those members. Meeting check-ins will join this
-    payload as a further list so missed meetings and hours attended can be
-    derived from the same data.
+    ``absences`` is limited to those members.
+
+    ``checkins`` is how long each of those members was checked in during each
+    meeting (``seconds``, never more than the meeting's length).
+    ``active_from`` is when the attendance system went live (see
+    ``core.attendance_rules``): the client requires a check-in for meetings
+    starting on or after it, and credits earlier ones in full.
     """
     viewer_role = user.get("role")
     if not has_absence_view(viewer_role):
@@ -137,7 +148,14 @@ async def attendance_overview(user: dict = Depends(require_active)):
     ]
     member_ids = {m["id"] for m in members}
     absences = [a for a in await db.list_meeting_absences() if a["user_id"] in member_ids]
+    checkin_seconds = meeting_checkin_seconds(await db.list_meeting_checkins())
     return {
+        "active_from": ATTENDANCE_ACTIVE_FROM,
+        "checkins": [
+            {"meeting_id": meeting_id, "user_id": user_id, "seconds": seconds}
+            for (meeting_id, user_id), seconds in checkin_seconds.items()
+            if user_id in member_ids
+        ],
         "meetings": [_row_to_meeting(r) for r in await db.list_all_meeting_hours()],
         "members": sorted(
             ({"user_id": m["id"], "display_name": m["display_name"], "role": m["role"], "created_at": m["created_at"]}
@@ -193,7 +211,9 @@ async def discord_status(_: dict = Depends(require_meeting_time)):
 
 @router.post("")
 async def create_meeting(body: MeetingHoursCreate, user: dict = Depends(require_meeting_time)):
-    row = await db.create_meeting_hours(user["sub"], body.start_time, body.end_time, body.meeting_purpose)
+    row = await db.create_meeting_hours(
+        user["sub"], body.start_time, body.end_time, body.meeting_purpose, body.hours_multiplier
+    )
     if body.notify_discord:
         notify_meetings_created([row])
     return _row_to_meeting(row)
@@ -215,6 +235,7 @@ class MeetingHoursBatch(BaseModel):
 
     slots: list[MeetingSlot] = Field(min_length=1, max_length=MAX_RECURRING_OCCURRENCES)
     meeting_purpose: str | None = None
+    hours_multiplier: float = HoursMultiplier
     # One Discord message for the whole series, not one per date.
     notify_discord: bool = True
 
@@ -227,7 +248,7 @@ class MeetingHoursBatch(BaseModel):
 @router.post("/batch")
 async def create_meeting_batch(body: MeetingHoursBatch, user: dict = Depends(require_meeting_time)):
     rows = await db.create_meeting_hours_batch(
-        user["sub"], [(s.start_time, s.end_time) for s in body.slots], body.meeting_purpose
+        user["sub"], [(s.start_time, s.end_time) for s in body.slots], body.meeting_purpose, body.hours_multiplier
     )
     if body.notify_discord:
         notify_meetings_created(rows)
@@ -238,7 +259,9 @@ async def create_meeting_batch(body: MeetingHoursBatch, user: dict = Depends(req
 async def update_meeting(
     meeting_id: str, body: MeetingHoursWrite, _: dict = Depends(require_meeting_time)
 ):
-    row = await db.update_meeting_hours(meeting_id, body.start_time, body.end_time, body.meeting_purpose)
+    row = await db.update_meeting_hours(
+        meeting_id, body.start_time, body.end_time, body.meeting_purpose, body.hours_multiplier
+    )
     if row is None:
         raise HTTPException(status_code=404, detail="Meeting not found")
     return _row_to_meeting(row)
@@ -273,5 +296,6 @@ def _row_to_meeting(r) -> dict:
         "start_time": r["start_time"],
         "end_time": r["end_time"],
         "meeting_purpose": r["meeting_purpose"],
+        "hours_multiplier": hours_multiplier(r),
         "agenda": r["agenda"],
     }

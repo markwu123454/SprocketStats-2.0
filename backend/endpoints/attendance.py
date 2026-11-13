@@ -2,10 +2,11 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 import db
 from core import qr_events
+from core.attendance_rules import hours_multiplier, multiplier_bonus_seconds
 from core.security import get_current_user, require_active
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,13 @@ async def get_leaderboard(user: dict = Depends(get_current_user)):
     for uid in list(open_interval):
         close_interval(uid)
 
+    # Meetings worth more than x1.0 add their extra on top of the clock time.
+    meetings = await db.list_all_meeting_hours()
+    if any(hours_multiplier(m) > 1.0 for m in meetings):
+        for uid, bonus in multiplier_bonus_seconds(meetings, await db.list_meeting_checkins()).items():
+            if uid in totals:
+                totals[uid] += bonus
+
     ranked = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
     return [
         {
@@ -88,22 +96,9 @@ async def get_my_attendance(user: dict = Depends(get_current_user)):
     ]
 
 
-class ClockEntry(BaseModel):
-    checkin_time: datetime
-    checkout_time: datetime
-    source: str
-
-    @model_validator(mode="after")
-    def validate_range(self) -> "ClockEntry":
-        if self.checkout_time <= self.checkin_time:
-            raise ValueError("checkout_time must be after checkin_time")
-        return self
-
-
-@router.post("")
-async def submit_attendance(entry: ClockEntry, user: dict = Depends(require_active)):
-    row = await db.create_attendance_entry(user["sub"], entry.source, entry.checkin_time, entry.checkout_time)
-    return {"id": row["id"], "checkin_time": row["checkin_time"], "checkout_time": row["checkout_time"]}
+# Attendance is only ever recorded at a kiosk: a card tap, a code countersigned
+# there, or the QR below, which proves the member is standing at one. There is
+# deliberately no endpoint for a member to submit their own hours.
 
 
 class QrCheckinRequest(BaseModel):

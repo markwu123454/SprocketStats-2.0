@@ -66,18 +66,19 @@ async def list_meetings_starting_between(start: datetime, end: datetime) -> list
 
 
 async def create_meeting_hours(
-    created_by: str, start_time: datetime, end_time: datetime, meeting_purpose: str | None
+    created_by: str, start_time: datetime, end_time: datetime, meeting_purpose: str | None,
+    hours_multiplier: float = 1.0,
 ) -> asyncpg.Record:
     async with db_connection(DB_NAME) as conn:
         try:
             async with conn.transaction():
                 return await conn.fetchrow(
                     """
-                    INSERT INTO meeting_hours (created_by, start_time, end_time, meeting_purpose)
-                    VALUES ($1, $2, $3, $4)
+                    INSERT INTO meeting_hours (created_by, start_time, end_time, meeting_purpose, hours_multiplier)
+                    VALUES ($1, $2, $3, $4, $5)
                     RETURNING *
                     """,
-                    created_by, start_time, end_time, meeting_purpose,
+                    created_by, start_time, end_time, meeting_purpose, hours_multiplier,
                 )
         except Exception as e:
             logger.error("create_meeting_hours failed: %s", e)
@@ -85,7 +86,8 @@ async def create_meeting_hours(
 
 
 async def create_meeting_hours_batch(
-    created_by: str, slots: list[tuple[datetime, datetime]], meeting_purpose: str | None
+    created_by: str, slots: list[tuple[datetime, datetime]], meeting_purpose: str | None,
+    hours_multiplier: float = 1.0,
 ) -> list[asyncpg.Record]:
     """Insert every occurrence of a recurring meeting in one statement (so,
     atomically), in `slots` order."""
@@ -93,13 +95,14 @@ async def create_meeting_hours_batch(
         try:
             return await conn.fetch(
                 """
-                INSERT INTO meeting_hours (created_by, start_time, end_time, meeting_purpose)
-                SELECT $1, s.start_time, s.end_time, $4
+                INSERT INTO meeting_hours (created_by, start_time, end_time, meeting_purpose, hours_multiplier)
+                SELECT $1, s.start_time, s.end_time, $4, $5::double precision
                 FROM unnest($2::timestamptz[], $3::timestamptz[]) WITH ORDINALITY AS s(start_time, end_time, ord)
                 ORDER BY s.ord
                 RETURNING *
                 """,
                 created_by, [start for start, _ in slots], [end for _, end in slots], meeting_purpose,
+                hours_multiplier,
             )
         except Exception as e:
             logger.error("create_meeting_hours_batch failed: %s", e)
@@ -107,7 +110,8 @@ async def create_meeting_hours_batch(
 
 
 async def update_meeting_hours(
-    meeting_id: str, start_time: datetime, end_time: datetime, meeting_purpose: str | None
+    meeting_id: str, start_time: datetime, end_time: datetime, meeting_purpose: str | None,
+    hours_multiplier: float = 1.0,
 ) -> asyncpg.Record | None:
     async with db_connection(DB_NAME) as conn:
         try:
@@ -115,11 +119,11 @@ async def update_meeting_hours(
                 return await conn.fetchrow(
                     """
                     UPDATE meeting_hours
-                    SET start_time = $2, end_time = $3, meeting_purpose = $4
+                    SET start_time = $2, end_time = $3, meeting_purpose = $4, hours_multiplier = $5
                     WHERE id = $1
                     RETURNING *
                     """,
-                    meeting_id, start_time, end_time, meeting_purpose,
+                    meeting_id, start_time, end_time, meeting_purpose, hours_multiplier,
                 )
         except Exception as e:
             logger.error("update_meeting_hours failed: %s", e)
