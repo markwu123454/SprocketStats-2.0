@@ -5,6 +5,7 @@ import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks, LogIn, UserX } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
 import Skeleton from "@/components/ui/Skeleton"
+import Button from "@/components/ui/Button"
 import { focusRing } from "@/lib/uiClasses"
 import ActiveEventCard from "@/components/events/ActiveEventCard"
 import NextMeetingAbsencesCard from "@/components/meetings/NextMeetingAbsences"
@@ -76,6 +77,8 @@ export default function DashboardPage() {
     const [codeVisible, setCodeVisible] = useState(false)
     const [tasks, setTasks] = useBootstrapped<Task[] | null>("tasks", null)
     const [attendance, setAttendance] = useState<AttendanceEntry[] | null>(null)
+    const [checkingOut, setCheckingOut] = useState(false)
+    const [checkoutError, setCheckoutError] = useState(false)
 
     const canViewTasks = can(user.permissions, "tasks.view")
 
@@ -136,6 +139,22 @@ export default function DashboardPage() {
     }, [canViewTasks, setTasks])
 
     const openEntry = attendance?.find(a => a.checkout_time === null)
+
+    // Only checking out is offered here; checking in still happens at a kiosk.
+    // A 409 means the session was already closed elsewhere, so refetch either way.
+    function checkOut() {
+        setCheckingOut(true)
+        setCheckoutError(false)
+        fetch(`${API}/attendance/checkout`, { method: "POST", credentials: "include" })
+            .then(res => {
+                if (!res.ok && res.status !== 409) throw new Error(String(res.status))
+                return fetch(`${API}/attendance/me`, { credentials: "include" })
+            })
+            .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+            .then((data: AttendanceEntry[]) => setAttendance(data))
+            .catch(() => setCheckoutError(true))
+            .finally(() => setCheckingOut(false))
+    }
     const lastCheckout = (attendance ?? [])
         .map(a => a.checkout_time)
         .filter((t): t is string => t !== null)
@@ -261,6 +280,14 @@ export default function DashboardPage() {
                                         ? `Last checked out ${formatCheckoutDay(lastCheckout)} at ${formatClockTime(lastCheckout)}`
                                         : "Check in at a kiosk when you arrive."}
                             </p>
+                            {openEntry && (
+                                <Button variant="outlined" className="mt-auto self-start" onClick={checkOut} disabled={checkingOut}>
+                                    {checkingOut ? "Checking out…" : "Check out"}
+                                </Button>
+                            )}
+                            {checkoutError && (
+                                <p role="alert" className="text-sm" style={{ color: "var(--theme-danger)" }}>Couldn't check out. Try again.</p>
+                            )}
                         </>
                     )}
                 </div>

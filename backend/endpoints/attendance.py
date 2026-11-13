@@ -105,6 +105,17 @@ async def get_my_attendance(user: dict = Depends(get_current_user)):
 # Attendance is only ever recorded at a kiosk: a card tap, a code countersigned
 # there, or the QR below, which proves the member is standing at one. There is
 # deliberately no endpoint for a member to submit their own hours.
+#
+# Checking *out* is the one exception: it can only end a session a kiosk
+# started, so it can shorten logged time but never add to it.
+
+
+@router.post("/checkout")
+async def checkout(user: dict = Depends(require_active)):
+    row = await db.checkout_attendance(user["sub"])
+    if row is None:
+        raise HTTPException(status_code=409, detail="You're not checked in")
+    return {"id": row["id"], "checkin_time": row["checkin_time"], "checkout_time": row["checkout_time"]}
 
 
 class QrCheckinRequest(BaseModel):
