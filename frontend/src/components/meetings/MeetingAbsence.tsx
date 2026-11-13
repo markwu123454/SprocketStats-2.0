@@ -37,10 +37,15 @@ function AbsenceSheet({ meeting, existing, onClose, onSaved }: { meeting: Meetin
     }
 
     async function submit() {
+        const trimmed = reason.trim()
+        if (!trimmed) {
+            setError("Please enter a reason.")
+            return
+        }
         setSaving(true)
         setError("")
         try {
-            await reportAbsence(meeting.id, reason.trim())
+            await reportAbsence(meeting.id, trimmed)
             onSaved()
             onClose()
         } catch (err) {
@@ -55,7 +60,7 @@ function AbsenceSheet({ meeting, existing, onClose, onSaved }: { meeting: Meetin
             <Button variant="text" size="footer" className={existing ? "" : "ml-auto"} disabled={saving} onClick={async () => {
                 if (!dirty || await askDiscard()) onClose()
             }}>Cancel</Button>
-            <Button type="submit" form={formId} size="footer" disabled={saving}>{saving ? "Saving…" : existing ? "Save" : "Report absence"}</Button>
+            <Button type="submit" form={formId} size="footer" disabled={saving || !reason.trim()}>{saving ? "Saving…" : existing ? "Save" : "Report absence"}</Button>
         </FormFooter>
     }>
         <form id={formId} className="flex flex-col gap-3 pt-2" onSubmit={event => { event.preventDefault(); void submit() }}>
@@ -65,8 +70,8 @@ function AbsenceSheet({ meeting, existing, onClose, onSaved }: { meeting: Meetin
             </div>
             <label htmlFor={fieldId} className={fieldLabelClass}>Reason</label>
             <textarea id={fieldId} className={`${inputClass} w-full min-h-28 resize-y`} value={reason} maxLength={MAX_REASON} disabled={saving}
-                aria-describedby={helpId} onChange={event => setReason(event.target.value)} />
-            <p id={helpId} className={helperClass}>Optional. Your lead, captains and mentors can see this. {reason.length}/{MAX_REASON} characters.</p>
+                required aria-describedby={helpId} onChange={event => { setReason(event.target.value); if (error) setError("") }} />
+            <p id={helpId} className={helperClass}>Required. Your lead, captains and mentors can see this. {reason.length}/{MAX_REASON} characters.</p>
             {error && <Notice>{error}</Notice>}
         </form>
     </Sheet>

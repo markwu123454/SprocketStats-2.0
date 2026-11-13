@@ -64,13 +64,14 @@ MAX_ABSENCE_REASON = 500
 
 
 class AbsenceWrite(BaseModel):
-    # Required key (so the client always sends it) but may be blank.
     reason: str = Field(max_length=MAX_ABSENCE_REASON + 1000)
 
     @field_validator("reason")
     @classmethod
     def _clean_reason(cls, v: str) -> str:
         v = v.strip()
+        if not v:
+            raise ValueError("Reason is required")
         if len(v) > MAX_ABSENCE_REASON:
             raise ValueError(f"Reason must be {MAX_ABSENCE_REASON} characters or fewer")
         return v

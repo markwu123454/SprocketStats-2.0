@@ -169,10 +169,10 @@ def test_no_recipients_queues_nothing(setup):
     assert notify.queued == [] and not notify.kick.called
 
 
-def test_blank_reason_accepted_missing_key_and_too_long_rejected(setup):
+def test_blank_reason_missing_key_and_too_long_rejected(setup):
     client = setup[0]("me")
-    assert _put(client, body={"reason": ""}).json()["reason"] == ""
-    assert _put(client, body={"reason": "   "}).status_code == 200
+    assert _put(client, body={"reason": ""}).status_code == 422
+    assert _put(client, body={"reason": "   "}).status_code == 422
     assert _put(client, body={}).status_code == 422
     assert _put(client, body={"reason": "x" * 500}).status_code == 200
     assert _put(client, body={"reason": "x" * 501}).status_code == 422
