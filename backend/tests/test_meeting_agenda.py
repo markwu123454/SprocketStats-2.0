@@ -60,3 +60,20 @@ def test_agenda_validation_and_missing_meeting(setup):
     assert client.patch("/meeting-hours/missing/agenda", json={"agenda": "Plan"}).status_code == 404
     assert client.patch("/meeting-hours/meeting-1/agenda", json={"agenda": "x" * 10001}).status_code == 422
     assert client.patch("/meeting-hours/meeting-1/agenda", json={}).status_code == 422
+
+
+def test_scouting_member_cannot_access_control_panel_or_set_meeting_times(setup):
+    from core.permissions import can, get_permissions_for_role
+
+    perms = get_permissions_for_role("scouting_member")
+    assert perms["control_panel"] == {"view": False}
+    for cap in ("control_panel.view", "control_panel.meeting_time", "control_panel.meeting_agenda", "control_panel.upcoming_event"):
+        assert can(perms, cap) is False
+
+    client_for, row = setup
+    client = client_for("scouting_member")
+    assert client.get("/meeting-hours").status_code == 200
+    assert client.post("/meeting-hours", json={"start_time": row["start_time"], "end_time": row["end_time"]}).status_code == 403
+    assert client.put("/meeting-hours/meeting-1", json={"start_time": row["start_time"], "end_time": row["end_time"]}).status_code == 403
+    assert client.delete("/meeting-hours/meeting-1").status_code == 403
+    assert client.patch("/meeting-hours/meeting-1/agenda", json={"agenda": "No"}).status_code == 403
