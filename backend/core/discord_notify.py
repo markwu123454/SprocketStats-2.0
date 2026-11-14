@@ -25,6 +25,7 @@ from datetime import datetime
 
 import httpx
 
+from core.attendance_rules import hours_multiplier
 from core.push_notify import TEAM_TZ, fire_and_forget
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,15 @@ def _time_range(start: datetime, end: datetime) -> str:
     return f"{_ts(start, 'F')} – {_ts(end, 't' if same_day else 'f')}"
 
 
+def _multiplier_note(meeting: dict) -> str:
+    """" · ×1.5 hours" when the meeting counts extra, else nothing (matches the app)."""
+    value = hours_multiplier(meeting)
+    if value <= 1.0:
+        return ""
+    label = f"{value:.2f}"
+    return f" · ×{label[:-1] if label.endswith('0') else label} hours"
+
+
 def _cadence(starts: list[datetime]) -> str | None:
     days = {(b.astimezone(TEAM_TZ).date() - a.astimezone(TEAM_TZ).date()).days for a, b in zip(starts, starts[1:])}
     return _CADENCE.get(days.pop()) if len(days) == 1 else None
@@ -79,7 +89,7 @@ def meetings_created_message(meetings: list[dict], role_id: str, frontend_url: s
     """The webhook JSON body announcing ``meetings`` (one, or one series).
 
     ``meetings`` are rows with ``start_time``/``end_time`` (aware datetimes)
-    and ``meeting_purpose``. Pure, so it's testable without Discord.
+    and ``meeting_purpose`` (plus optional ``hours_multiplier``). Pure, so it's testable without Discord.
     """
     ordered = sorted(meetings, key=lambda m: m["start_time"])
     first, last = ordered[0], ordered[-1]
@@ -87,12 +97,12 @@ def meetings_created_message(meetings: list[dict], role_id: str, frontend_url: s
     mention = f"<@&{role_id}>"
 
     if len(ordered) == 1:
-        lines = [f"{mention} New meeting: **{name}**. If you will be absent, click the link to report it.", _time_range(first["start_time"], first["end_time"])]
+        lines = [f"{mention} New meeting: **{name}**. If you will be absent, click the link to report it.", _time_range(first["start_time"], first["end_time"]) + _multiplier_note(first)]
     else:
         cadence = _cadence([m["start_time"] for m in ordered])
         lines = [
             f"{mention} New {cadence + ' ' if cadence else ''}meetings: **{name}** · {len(ordered)} dates",
-            f"First: {_time_range(first['start_time'], first['end_time'])}",
+            f"First: {_time_range(first['start_time'], first['end_time'])}{_multiplier_note(first)}",
             f"Last: {_ts(last['start_time'], 'D')}",
         ]
     if frontend_url:
