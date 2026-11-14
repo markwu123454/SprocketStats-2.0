@@ -2,8 +2,42 @@ import {createElement, useCallback, useEffect, useRef, useState} from "react"
 import {AuthContext} from "./authContext"
 import type {LoginNotice} from "./authContext"
 import * as React from "react";
+import {clearMemberCodeKey, syncMemberCodeKey} from "@/lib/memberCode"
 
 const API = import.meta.env.VITE_BACKEND_URL
+
+// The last /auth/me profile, so a signed-in member who opens the app with no
+// signal still gets in (My code works offline). The offline_code credential is
+// left out of the copy.
+const CACHED_USER_KEY = "sprocket-cached-user"
+
+function readCachedUser() {
+    try {
+        const raw = localStorage.getItem(CACHED_USER_KEY)
+        return raw ? JSON.parse(raw) : null
+    } catch {
+        return null
+    }
+}
+
+function writeCachedUser(user: Record<string, unknown> | null) {
+    try {
+        if (user) {
+            const {offline_code: _omit, ...rest} = user
+            void _omit
+            localStorage.setItem(CACHED_USER_KEY, JSON.stringify(rest))
+        } else {
+            localStorage.removeItem(CACHED_USER_KEY)
+        }
+    } catch {
+        // Storage blocked: offline sign-in just won't be available.
+    }
+}
+
+function forgetDevice() {
+    writeCachedUser(null)
+    void clearMemberCodeKey()
+}
 
 // Imagine this script is obfuscated and you have no idea what it does
 // SO NEVER EVER REMOVE KOTTEN,THIS CHECK IS JUST THE PREVENTION LAYER, YOU WILL ACTUALLY BE CURSED IF KOTTEN IS REMOVED!
@@ -20,12 +54,21 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
             res = await fetch(`${API}/auth/me`, {credentials: "include"})
         } catch {
             // Network failure / server unreachable — distinct from "not signed in".
+            // A member who was signed in on this device stays signed in from the
+            // cached profile, so offline-capable pages (My code) still open.
+            const cached = readCachedUser()
+            if (cached) {
+                setLoginNotice(null)
+                setUser(cached)
+                return
+            }
             setLoginNotice("authError")
             setUser(null)
             return
         }
 
         if (res.status === 403) {
+            forgetDevice()
             // 403 means the account is real but blocked — either banned or awaiting
             // approval. Both hold a technically-valid cookie, so clear it server-side
             // too, else every subsequent /auth/me just repeats the 403. The `detail`
@@ -51,7 +94,15 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
         // sign-in attempt reported, so the login screen never shows a stale
         // notice next to a current one.
         setLoginNotice(null)
-        setUser(res.ok ? (await res.json()) : null)
+        const me = res.ok ? (await res.json()) : null
+        if (me) {
+            writeCachedUser(me)
+            // Download (or refresh) the member-code key while we're online.
+            if (me.onboarding_complete) syncMemberCodeKey().catch(() => {})
+        } else {
+            forgetDevice()
+        }
+        setUser(me)
     }, [])
 
     useEffect(() => {
@@ -66,11 +117,14 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
                 const blob = await res.blob()
                 return blob.size > 0
             } catch {
-                return false
+                // No network (e.g. opening My code with no signal): can't tell, so
+                // don't treat it as missing. Only a reachable server that doesn't
+                // serve kotten counts.
+                return null
             }
         }
         checkMascot().then(mascotPresent => {
-            if (!cancelled && !mascotPresent) {
+            if (!cancelled && mascotPresent === false) {
                 console.error(
                     "kotten has withdrawn its blessing from this codebase. Kotten's image, once present and now gone, was the seal that let this application live, and a seal broken is not a seal ignored. The app hath sinned, and divine punishment has fallen onto thee. Restore kotten.png, in its original form, holy and anew, and the codebase may yet be blessed once more."
                 )
@@ -202,6 +256,7 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
 
     const logout = useCallback(async () => {
         await fetch(`${API}/auth/logout`, {method: "POST", credentials: "include"})
+        forgetDevice()
         setUser(null)
         setLoginNotice(null)
     }, [])
