@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 KIOSK_SESSION_MAX_AGE = timedelta(hours=12)
 
 
-async def toggle_kiosk_attendance(user_id: str) -> str | None:
+async def toggle_kiosk_attendance(user_id: str, source: str = "kiosk") -> str | None:
     """Atomically toggle one user's kiosk attendance state.
 
     Locking the user row serializes scans for the same member across every app
@@ -61,15 +61,38 @@ async def toggle_kiosk_attendance(user_id: str) -> str | None:
                 await conn.execute(
                     """
                     INSERT INTO attendance (user_id, checkin_time, checkout_time, source)
-                    VALUES ($1, $2, NULL, 'kiosk')
+                    VALUES ($1, $2, NULL, $3)
                     """,
                     user_id,
                     now,
+                    source,
                 )
                 return "checked_in"
         except Exception as e:
             logger.error("toggle_kiosk_attendance failed: %s", e)
             raise HTTPException(status_code=500, detail="Failed to update attendance")
+
+
+async def kiosk_attendance_status(user_id: str) -> str:
+    """``"checked_in"`` if the member has a live kiosk session, else ``"checked_out"``.
+    Sessions older than the kiosk limit count as over, the same as the toggle."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            open_now = await conn.fetchval(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM attendance
+                    WHERE user_id = $1 AND checkout_time IS NULL
+                      AND checkin_time > clock_timestamp() - $2::interval
+                )
+                """,
+                user_id,
+                KIOSK_SESSION_MAX_AGE,
+            )
+            return "checked_in" if open_now else "checked_out"
+        except Exception as e:
+            logger.error("kiosk_attendance_status failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to read attendance")
 
 
 async def checkout_attendance(user_id: str) -> asyncpg.Record | None:
@@ -249,6 +272,7 @@ __all__ = [
     "set_kiosk_qr_result",
     "list_kiosk_qr_results",
     "toggle_kiosk_attendance",
+    "kiosk_attendance_status",
     "checkout_attendance",
     "list_attendance_for_user",
     "list_all_attendance",

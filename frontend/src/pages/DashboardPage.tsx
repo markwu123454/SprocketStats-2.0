@@ -2,8 +2,9 @@ import {useEffect, useState, type ReactNode} from "react"
 import { Link } from "react-router-dom"
 import { useOnboardedUser } from "@/contexts/authContext"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
-import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks, LogIn, UserX } from "lucide-react"
+import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks, LogIn, QrCode, UserX } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
+import MyCodeDialog from "@/components/MyCodeDialog"
 import Skeleton from "@/components/ui/Skeleton"
 import Button from "@/components/ui/Button"
 import { focusRing } from "@/lib/uiClasses"
@@ -75,6 +76,7 @@ export default function DashboardPage() {
     const [currentEvent]            = useBootstrapped<EventInfo | null>("current_event", null)
     const [eventKeys]               = useBootstrapped<string[]>("event_keys", [])
     const [codeVisible, setCodeVisible] = useState(false)
+    const [showCode, setShowCode] = useState(false)
     const [tasks, setTasks] = useBootstrapped<Task[] | null>("tasks", null)
     const [attendance, setAttendance] = useState<AttendanceEntry[] | null>(null)
     const [checkingOut, setCheckingOut] = useState(false)
@@ -196,13 +198,22 @@ export default function DashboardPage() {
             {/* Header */}
             <div className="flex items-center gap-4">
                 <Avatar name={user.name} picture={user.picture} size={48} className="ring-2" />
-                <div>
+                <div className="flex-1 min-w-0">
                     <h1 className="text-2xl font-bold theme-text">
                         Welcome back, {user.display_name}
                     </h1>
                     <p className="text-sm theme-subtext-color">Here's your overview</p>
                 </div>
+                <button
+                    type="button"
+                    onClick={() => setShowCode(true)}
+                    aria-label="Show my code"
+                    className={`shrink-0 size-11 flex items-center justify-center rounded-xl border theme-border theme-button-bg theme-text-contrast ${focusRing}`}
+                >
+                    <QrCode size={22} aria-hidden="true" />
+                </button>
             </div>
+            {showCode && <MyCodeDialog onClose={() => setShowCode(false)} />}
 
             {/* Active event card -- only rendered when an event is currently happening,
                 or its check-in has opened ahead of it. There is no separate

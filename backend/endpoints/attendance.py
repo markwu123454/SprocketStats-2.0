@@ -1,11 +1,12 @@
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 import db
-from core import qr_events
+from core import member_codes, qr_events
 from core.attendance_rules import hours_multiplier, multiplier_bonus_seconds
 from core.security import get_current_user, require_active
 
@@ -116,6 +117,35 @@ async def checkout(user: dict = Depends(require_active)):
     if row is None:
         raise HTTPException(status_code=409, detail="You're not checked in")
     return {"id": row["id"], "checkin_time": row["checkin_time"], "checkout_time": row["checkout_time"]}
+
+
+@router.get("/code_key")
+async def get_code_key(response: Response, user: dict = Depends(require_active)):
+    """The secret this member's devices use to show their rotating code offline.
+
+    Downloaded once while signed in and online; every device of a member gets
+    the same secret until ``users.code_version`` is bumped. ``server_time`` lets
+    the phone correct its own clock.
+    """
+    row = await db.get_user(user["sub"])
+    if row is None:
+        raise HTTPException(status_code=404, detail="Member not found")
+    if not row["onboarding_complete"]:
+        raise HTTPException(status_code=403, detail="Onboarding incomplete")
+    code_number = await db.ensure_code_number(row["id"])
+    if code_number is None or code_number > member_codes.MAX_CODE_NUMBER:
+        # The code has room for a 4-digit number; only reachable past 9,999 accounts.
+        raise HTTPException(status_code=409, detail="This account can't use a member code")
+    secret = member_codes.member_secret(row["id"], row["code_version"])
+    response.headers["Cache-Control"] = "no-store"
+    return {
+        "member_id": row["id"],
+        "code_number": code_number,
+        "version": row["code_version"],
+        "secret": member_codes.secret_b64(secret),
+        "step_seconds": member_codes.STEP_SECONDS,
+        "server_time": time.time(),
+    }
 
 
 class QrCheckinRequest(BaseModel):

@@ -41,6 +41,39 @@ async def get_user(user_id: str) -> asyncpg.Record | None:
             raise HTTPException(status_code=500, detail="Failed to fetch user")
 
 
+async def get_user_by_code_number(code_number: int) -> asyncpg.Record | None:
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow("SELECT * FROM users WHERE code_number = $1", code_number)
+        except Exception as e:
+            logger.error("get_user_by_code_number failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to fetch user")
+
+
+async def ensure_code_number(user_id: str) -> int | None:
+    """The member's code number, assigning the next one on first use.
+
+    Concurrent first calls are safe: the loser's UPDATE re-checks the row after
+    the winner commits, matches nothing, and falls through to the SELECT.
+    """
+    async with db_connection(DB_NAME) as conn:
+        try:
+            assigned = await conn.fetchval(
+                """
+                UPDATE users SET code_number = nextval('users_code_number_seq')
+                WHERE id = $1 AND code_number IS NULL
+                RETURNING code_number
+                """,
+                user_id,
+            )
+            if assigned is not None:
+                return assigned
+            return await conn.fetchval("SELECT code_number FROM users WHERE id = $1", user_id)
+        except Exception as e:
+            logger.error("ensure_code_number failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to assign code number")
+
+
 async def get_user_by_offline_code(offline_code: str) -> asyncpg.Record | None:
     async with db_connection(DB_NAME) as conn:
         try:
@@ -266,6 +299,8 @@ async def unban_user(user_id: str) -> asyncpg.Record | None:
 __all__ = [
     "upsert_user",
     "get_user",
+    "get_user_by_code_number",
+    "ensure_code_number",
     "get_user_by_offline_code",
     "update_user_onboarding",
     "update_display_name",
