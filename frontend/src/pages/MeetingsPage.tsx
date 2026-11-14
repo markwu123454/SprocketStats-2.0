@@ -27,6 +27,7 @@ export default function MeetingsPage() {
         return () => window.clearInterval(timer)
     }, [])
     const upcoming = upcomingMeetings(meetings, now)
+    const days = groupByDay(upcoming)
     const canManage = can(user.permissions, "control_panel.meeting_time") || can(user.permissions, "control_panel.meeting_agenda")
 
     return (
@@ -47,19 +48,23 @@ export default function MeetingsPage() {
                     : upcoming.length === 0 ? <div className={`rounded-2xl border theme-border p-3.5 ${CARD_BG}`}><EmptyState>No upcoming meetings scheduled. Check back soon for the next team meeting.</EmptyState></div>
                     : <>
                     {absencesError && <Notice>Couldn't load absences. <Button variant="text" onClick={retryAbsences}>Try again</Button></Notice>}
-                    {upcoming.map((meeting, index) => {
-                        const isNext = index === 0
+                    {days.map((day, dayIndex) => {
+                        const firstDay = dayIndex === 0
+                        const dayStart = new Date(day[0].start_time)
+                        return <article key={day[0].id} className="flex gap-3.5">
+                            <div className={`w-14 shrink-0 self-start rounded-[14px] text-center py-2 ${firstDay ? "bg-[var(--theme-text-contrast)]" : `border theme-outline ${CARD_BG}`}`} aria-hidden="true">
+                                <div className={`${eyebrow} ${firstDay ? "text-[var(--theme-bg)]" : "theme-subtext-color"}`}>{dayStart.toLocaleDateString("en-US", { month: "short" })}</div>
+                                <div className={`text-[26px] font-extrabold leading-none ${firstDay ? "text-[var(--theme-bg)]" : "theme-text-contrast"}`}>{dayStart.getDate()}</div>
+                            </div>
+                            <div className="flex-1 min-w-0 flex flex-col gap-3.5">
+                    {day.map((meeting, index) => {
+                        const isNext = firstDay && index === 0
                         const start = new Date(meeting.start_time)
                         const live = start.getTime() <= now
                         const mine = grouped.get(meeting.id)?.find(absence => absence.user_id === user.id)
                         const others = (grouped.get(meeting.id) ?? []).filter(absence => absence.user_id !== user.id)
                         const hasAgenda = meeting.agenda.trim() !== ""
-                        return <article key={meeting.id} className="flex gap-3.5">
-                            <div className={`w-14 shrink-0 self-start rounded-[14px] text-center py-2 ${isNext ? "bg-[var(--theme-text-contrast)]" : `border theme-outline ${CARD_BG}`}`} aria-hidden="true">
-                                <div className={`${eyebrow} ${isNext ? "text-[var(--theme-bg)]" : "theme-subtext-color"}`}>{start.toLocaleDateString("en-US", { month: "short" })}</div>
-                                <div className={`text-[26px] font-extrabold leading-none ${isNext ? "text-[var(--theme-bg)]" : "theme-text-contrast"}`}>{start.getDate()}</div>
-                            </div>
-                            <div className={`flex-1 min-w-0 rounded-2xl border theme-border p-3.5 ${CARD_BG}`}>
+                        return <section key={meeting.id} className={`rounded-2xl border theme-border p-3.5 ${CARD_BG}`}>
                                 <span className="sr-only">{meetingDate(meeting.start_time)}</span>
                                 {isNext && <p className={`${eyebrow} theme-text-contrast`}>{live ? "Live now" : `Next · ${relativeDayLabel(meeting.start_time, now)}`}</p>}
                                 <h2 className="text-[19px] font-bold theme-h1-color break-words my-1">{meeting.meeting_purpose || "Team meeting"}</h2>
@@ -70,6 +75,8 @@ export default function MeetingsPage() {
                                         : <p>Agenda · none shared yet</p>}
                                 </div>}
                                 {!absencesLoading && !absencesError && <MeetingAbsenceRow meeting={meeting} mine={mine} others={canViewAbsences ? others : undefined} roleLabels={roleLabels} onChanged={() => setAbsenceRevision(value => value + 1)} />}
+                        </section>
+                    })}
                             </div>
                         </article>
                     })}
@@ -77,4 +84,16 @@ export default function MeetingsPage() {
             </div>
         </div>
     )
+}
+
+/** Groups already-sorted meetings into runs that share a local calendar date. */
+function groupByDay<T extends { start_time: string }>(meetings: T[]): T[][] {
+    const days: T[][] = []
+    let lastKey = ""
+    for (const meeting of meetings) {
+        const key = new Date(meeting.start_time).toDateString()
+        if (key === lastKey) days[days.length - 1].push(meeting)
+        else { days.push([meeting]); lastKey = key }
+    }
+    return days
 }

@@ -1,62 +1,36 @@
-import { useEffect, useId, useMemo, useState } from "react"
-import { ChevronDown, Search, X } from "lucide-react"
+import { useEffect, useId, useMemo, useRef, useState } from "react"
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom"
+import { ChevronLeft, Search } from "lucide-react"
 import ControlSectionLayout from "./ControlSectionLayout"
+import AbsenceCard from "@/components/attendance/AbsenceCard"
+import { MeetingStrip, RosterStrip, StripLegend } from "@/components/attendance/MeetingStrip"
 import Button from "@/components/ui/Button"
-import Notice from "@/components/ui/Notice"
-import Sheet from "@/components/ui/Sheet"
-import Skeleton from "@/components/ui/Skeleton"
 import EmptyState from "@/components/ui/EmptyState"
-import { focusRing, inputClass, typeH2 } from "@/lib/uiClasses"
+import Notice from "@/components/ui/Notice"
+import Skeleton from "@/components/ui/Skeleton"
+import { focusRing, typeBadge, typeH1, typeH2, typeTitle } from "@/lib/uiClasses"
 import { useIsMobile } from "@/lib/useIsMobile"
-import { meetingTime, useRoleLabels } from "@/lib/meetings"
+import { useTaskPoints } from "@/lib/useTaskPoints"
+import { useRoleLabels } from "@/lib/meetings"
 import {
-    attendanceRate, meetingsWithMisses, memberMatch, teamAttendance, teamAttendanceRate, useAttendance,
-    type AbsenceScope, type MeetingMisses, type MemberAttendance,
+    attendanceRate, memberMatch, pastStrip, pointsPerHour, reportedAbsences, teamAttendance, upcomingStrip, useAttendance,
+    type MemberAttendance,
 } from "@/lib/attendance"
 
-const CARD = "rounded-2xl border theme-border bg-[color-mix(in_oklch,var(--theme-bg)_92%,transparent)]"
-const SEGMENTS = "flex gap-1 p-1 rounded-xl border theme-border bg-[color-mix(in_oklch,var(--theme-bg)_92%,transparent)]"
-const segment = (on: boolean) =>
-    `min-h-9 px-3.5 rounded-lg text-sm font-semibold transition-colors ${focusRing} ${on ? "theme-accent-fill" : "theme-subtext-color hover:opacity-90"}`
-// A meeting card lists this many absentees before "Show all" -- with check-ins
-// counted, a meeting can have a dozen or more.
-const PREVIEW_MISSES = 3
-
-type MobileTab = "members" | "meetings"
+const PANEL = "rounded-2xl border theme-border theme-button-bg"
+const LABEL = `${typeH2} theme-subtext-color`
 
 function shortDate(iso: string): string {
     return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
 
-function reportedAt(iso: string): string {
-    const d = new Date(iso)
-    return `${shortDate(iso)}, ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+function percent(rate: number | null): string {
+    return rate === null ? "—" : `${Math.round(rate * 100)}%`
 }
 
-function percent(rate: number): string {
-    return `${Math.round(rate * 100)}%`
-}
-
-/** Seconds as hours to one decimal: "12 h", "7.5 h". */
-function hours(seconds: number): string {
-    return `${(seconds / 3600).toFixed(1).replace(/\.0$/, "")} h`
-}
-
-function summaryLine(row: MemberAttendance, scope: AbsenceScope): string {
-    const n = row.missed.length
-    if (scope !== "past") return `${n} upcoming ${n === 1 ? "absence" : "absences"} reported`
-    const rate = attendanceRate(row)
-    const missed = `Missed ${n} of ${row.expected.length} meetings since joining ${shortDate(row.member.created_at)}`
-    return rate === null ? missed
-        : `Attended ${percent(rate)} of meeting hours (${hours(row.earnedSeconds)} of ${hours(row.possibleSeconds)}) · ${missed}`
-}
-
-/** What the page counts, spelled out around the day the attendance system went live. */
-function rulesLine(activeFrom: string | undefined): string {
-    const base = "Hours attended as a share of meeting hours, counted from when each member joined."
-    if (!activeFrom) return base
-    const day = new Date(activeFrom).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-    return `${base} Meetings before ${day} count in full; from then on, hours come from check-ins and not checking in is an absence.`
+/** Task points per hour to one decimal, or a dash when it can't be worked out. */
+function pts(value: number | null): string {
+    return value === null ? "—" : value.toFixed(1)
 }
 
 export default function AttendancePage() {
@@ -64,12 +38,13 @@ export default function AttendancePage() {
     const roleLabels = useRoleLabels(true)
     const roleOf = (role: string) => roleLabels.get(role) ?? role
     const isMobile = useIsMobile()
-    const [scope, setScope] = useState<AbsenceScope>("past")
-    const [mobileTab, setMobileTab] = useState<MobileTab>("members")
-    // Desktop: filters the meetings column. Phones: opens the member sheet.
-    const [memberId, setMemberId] = useState<string | null>(null)
+    const taskPoints = useTaskPoints()
+    const navigate = useNavigate()
+    const location = useLocation()
+    const [params, setParams] = useSearchParams()
     const [query, setQuery] = useState("")
     const searchId = useId()
+    const memberParam = params.get("member")
 
     // A meeting moves from upcoming to past while the page is open.
     const [now, setNow] = useState(Date.now)
@@ -78,227 +53,220 @@ export default function AttendancePage() {
         return () => window.clearInterval(timer)
     }, [])
 
-    const team = useMemo(() => teamAttendance(data, scope, now), [data, scope, now])
-    const selected = team.find(r => r.member.user_id === memberId)
-    const filtered = selected && !isMobile ? selected : undefined
-    const meetings = useMemo(() => meetingsWithMisses(filtered ? [filtered] : team, scope), [team, filtered, scope])
-    // Null until there is a finished meeting to measure against.
-    const teamRate = useMemo(() => scope === "past" ? teamAttendanceRate(team) : null, [team, scope])
+    const team = useMemo(() => teamAttendance(data, "past", now), [data, now])
+    const upcomingById = useMemo(
+        () => new Map(teamAttendance(data, "upcoming", now).map(row => [row.member.user_id, row])),
+        [data, now],
+    )
 
-    // Search re-ranks by match quality; without one, the most-missed order stands.
-    const visibleMembers = useMemo(() => {
+    // Search re-ranks by match quality; without one, the roster order stands.
+    const visible = useMemo(() => {
         if (!query.trim()) return team
         return team
             .map(row => ({ row, score: memberMatch(query, row.member, roleLabels.get(row.member.role) ?? row.member.role) }))
-            .filter((x): x is { row: typeof x.row, score: number } => x.score !== null)
+            .filter((x): x is { row: MemberAttendance, score: number } => x.score !== null)
             .sort((a, b) => b.score - a.score)
             .map(x => x.row)
     }, [team, query, roleLabels])
 
-    function changeScope(next: AbsenceScope) {
-        setScope(next)
-        if (!isMobile) setMemberId(null)
+    const chosen = team.find(row => row.member.user_id === memberParam)
+    // Desktop always shows someone; phones show the list until a member is opened.
+    const selected = chosen ?? (isMobile ? undefined : visible[0] ?? team[0])
+
+    // Set when this visit pushed the member onto the history stack, so Back can pop it.
+    const pushed = useRef(false)
+    function select(id: string) {
+        if (isMobile) {
+            pushed.current = true
+            setParams({ member: id })
+        } else {
+            setParams({ member: id }, { replace: true })
+        }
+    }
+    function back() {
+        if (pushed.current && location.key !== "default") navigate(-1)
+        else setParams({}, { replace: true })
     }
 
-    const showMembers = !isMobile || mobileTab === "members"
-    const showMeetings = !isMobile || mobileTab === "meetings"
+    const pointsFor = (row: MemberAttendance): number | null =>
+        taskPoints === null ? null : pointsPerHour(taskPoints.get(row.member.user_id) ?? 0, row.earnedSeconds)
+
+    if (isMobile && chosen && !loading && !error) {
+        return (
+            <>
+                <header className="sticky top-0 z-10 flex items-center gap-1 min-h-14 px-2 border-b theme-border theme-bg">
+                    <button type="button" aria-label="Back to members" onClick={back}
+                        className={`inline-flex items-center justify-center w-11 h-11 rounded-full theme-text ${focusRing}`}>
+                        <ChevronLeft size={22} strokeWidth={2.2} aria-hidden="true"/>
+                    </button>
+                    <span className="text-base font-semibold theme-h1-color">Members</span>
+                </header>
+                <div className="px-4 pt-5 pb-8">
+                    <MemberDetail row={chosen} upcomingRow={upcomingById.get(chosen.member.user_id)} role={roleOf(chosen.member.role)}
+                        points={pointsFor(chosen)} phone/>
+                </div>
+            </>
+        )
+    }
 
     return (
-        <ControlSectionLayout title="Attendance">
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 -mt-3">
-                <p className="text-sm theme-subtext-color">{rulesLine(data.active_from)}</p>
-                <div className="flex flex-wrap gap-2 shrink-0 w-full sm:w-auto">
-                    {isMobile && (
-                        <div className={`${SEGMENTS} w-full sm:w-auto`} role="tablist" aria-label="View">
-                            {(["members", "meetings"] as const).map(t => (
-                                <button key={t} type="button" role="tab" aria-selected={mobileTab === t} onClick={() => setMobileTab(t)} className={`${segment(mobileTab === t)} flex-1`}>
-                                    {t === "members" ? "Members" : "Meetings"}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                    <div className={SEGMENTS} role="group" aria-label="Which meetings">
-                        {(["past", "upcoming"] as const).map(s => (
-                            <button key={s} type="button" aria-pressed={scope === s} onClick={() => changeScope(s)} className={segment(scope === s)}>
-                                {s === "past" ? "Past" : "Upcoming"}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
-
-            {teamRate !== null && !error && !loading && (
-                <div className={`${CARD} px-4 py-3 flex items-baseline gap-3`}>
-                    <span className="text-2xl font-extrabold tabular-nums theme-text-contrast">{percent(teamRate)}</span>
-                    <span className="text-sm theme-subtext-color">of meeting hours attended across these members</span>
-                </div>
-            )}
+        <ControlSectionLayout title="Attendance" wide>
 
             {error ? (
-                <div className={`${CARD} p-4`}>
+                <div className={`${PANEL} p-6`}>
                     <Notice>Couldn't load attendance. <Button variant="text" onClick={retry}>Try again</Button></Notice>
                 </div>
             ) : loading ? (
-                <div className="grid gap-4 md:grid-cols-[18rem_1fr]" role="status" aria-label="Loading attendance">
-                    <Skeleton className="h-64 rounded-2xl"/>
-                    <div className="hidden md:flex flex-col gap-3"><Skeleton className="h-28 rounded-2xl"/><Skeleton className="h-28 rounded-2xl"/></div>
+                <div role="status" aria-label="Loading attendance" className="flex flex-wrap items-start gap-6">
+                    <div className={`${PANEL} flex-[1_1_400px] min-w-0 p-4 md:p-6 flex flex-col gap-3`}>
+                        <Skeleton className="h-12 w-full rounded-xl"/>
+                        {Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-24 w-full rounded-xl"/>)}
+                    </div>
+                    <div className={`${PANEL} hidden md:flex flex-[999_1_520px] min-w-0 p-7 flex-col gap-6`}>
+                        <Skeleton className="h-14 w-2/3"/>
+                        <Skeleton className="h-20 w-full rounded-xl"/>
+                        <Skeleton className="h-4 w-full"/>
+                        <Skeleton className="h-28 w-full rounded-xl"/>
+                    </div>
                 </div>
-            ) : team.length === 0 ? (
-                <div className={`${CARD} p-4`}><EmptyState>No members to show yet.</EmptyState></div>
             ) : (
-                <div className="grid gap-4 md:grid-cols-[18rem_1fr] items-start">
-                    {showMembers && (
-                        <section className={`${CARD} p-2 flex flex-col md:sticky md:top-4 md:max-h-[calc(100vh-2rem)]`} aria-labelledby="attendance-members">
-                            <h2 id="attendance-members" className={`${typeH2} theme-subtext-color px-2 pt-2 pb-2`}>By member</h2>
-                            {/* Sticks while scrolling the roster on phones. */}
-                            <div className="sticky top-0 z-10 -mx-2 px-3 pb-2 pt-1 md:static md:mx-0 md:px-1 md:pt-0 rounded-t-xl bg-[color-mix(in_oklch,var(--theme-bg)_96%,transparent)] md:bg-transparent">
-                                <div className="relative">
-                                    <label htmlFor={searchId} className="sr-only">Search members</label>
-                                    <Search size={15} aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 theme-subtext-color pointer-events-none"/>
-                                    <input id={searchId} type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search name or role"
-                                        autoComplete="off" spellCheck={false} className={`${inputClass} w-full pl-9`}/>
-                                </div>
+                <div className="flex flex-wrap items-start gap-6">
+                    <section aria-labelledby="attendance-members" className={`${isMobile ? "" : PANEL} flex-[1_1_400px] min-w-0 md:p-6 flex flex-col gap-4`}>
+                        <h2 id="attendance-members" className={LABEL}>By member</h2>
+                        <div className="flex flex-col gap-1.5">
+                            <label htmlFor={searchId} className="text-sm font-semibold theme-h1-color">Search members</label>
+                            <div className="flex items-center gap-2.5 min-h-12 px-3.5 rounded-xl border theme-outline bg-[var(--theme-button-bg)] md:bg-[var(--theme-bg)] focus-within:ring-2 focus-within:ring-[var(--theme-text-contrast)]">
+                                <Search size={18} aria-hidden="true" className="shrink-0 theme-subtext-color"/>
+                                <input id={searchId} type="search" value={query} onChange={e => setQuery(e.target.value)}
+                                    placeholder="Name or role" autoComplete="off" spellCheck={false}
+                                    className="flex-1 min-w-0 border-0 bg-transparent theme-text text-base py-3 outline-none placeholder:text-[var(--theme-subtext-color)]"/>
                             </div>
-                            <ul className="flex flex-col md:overflow-y-auto md:min-h-0">
-                                {visibleMembers.map(row => {
-                                    const { member, missed, expected } = row
-                                    const rate = scope === "past" ? attendanceRate(row) : null
-                                    const active = !isMobile && member.user_id === memberId
-                                    return (
-                                        <li key={member.user_id}>
-                                            <button type="button" aria-pressed={isMobile ? undefined : active}
-                                                aria-haspopup={isMobile ? "dialog" : undefined}
-                                                onClick={() => setMemberId(active ? null : member.user_id)}
-                                                className={`w-full min-h-11 flex items-center gap-3 px-2 py-2 rounded-xl text-left transition-colors ${focusRing} ${active ? "bg-[color-mix(in_oklch,var(--theme-text-contrast)_14%,transparent)]" : "hover:bg-[color-mix(in_oklch,var(--theme-text-contrast)_6%,transparent)]"}`}>
-                                                <span className="flex-1 min-w-0">
-                                                    <span className="block text-sm font-semibold theme-text truncate">{member.display_name}</span>
-                                                    <span className="block text-xs theme-subtext-color truncate">
-                                                        {roleOf(member.role)}{row.lastMissed ? ` · last missed ${shortDate(row.lastMissed)}` : ""}
-                                                    </span>
-                                                </span>
-                                                <span className="shrink-0 text-right tabular-nums">
-                                                    {rate !== null ? <>
-                                                        <span className="block text-sm font-bold theme-text-contrast">{percent(rate)}</span>
-                                                        <span className="block text-[11px] theme-subtext-color">{missed.length} of {expected.length} missed</span>
-                                                    </> : <>
-                                                        <span className={`block text-sm font-bold ${missed.length ? "theme-text-contrast" : "theme-subtext-color"}`}>{missed.length}</span>
-                                                        {scope === "past" && <span className="block text-[11px] theme-subtext-color">of {expected.length}</span>}
-                                                    </>}
-                                                </span>
-                                            </button>
-                                        </li>
-                                    )
-                                })}
+                        </div>
+                        {team.length === 0 ? (
+                            <EmptyState>No members yet.</EmptyState>
+                        ) : (
+                            <ul className={`flex flex-col ${isMobile ? "gap-2.5" : "gap-1 -mx-2"}`}>
+                                {visible.map(row => (
+                                    <li key={row.member.user_id}>
+                                        <RosterRow row={row} role={roleOf(row.member.role)} points={pointsFor(row)} phone={isMobile}
+                                            active={!isMobile && row.member.user_id === selected?.member.user_id}
+                                            onSelect={() => select(row.member.user_id)}/>
+                                    </li>
+                                ))}
                             </ul>
-                            {visibleMembers.length === 0 && <p className="px-2 py-3 text-sm theme-subtext-color">No members match “{query.trim()}”.</p>}
-                        </section>
-                    )}
+                        )}
+                        {team.length > 0 && visible.length === 0 && (
+                            <p role="status" className="text-sm theme-subtext-color py-2">No members match. Try a different name or role.</p>
+                        )}
+                    </section>
 
-                    {showMeetings && (
-                        <section className="flex flex-col gap-3 min-w-0" aria-label="Meetings with absences">
-                            {filtered && (
-                                <div className={`${CARD} px-4 py-3 flex items-center gap-3`}>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-semibold theme-text truncate">{filtered.member.display_name}</p>
-                                        <p className="text-xs theme-subtext-color">{summaryLine(filtered, scope)}</p>
-                                    </div>
-                                    <Button variant="text" className="shrink-0" onClick={() => setMemberId(null)}><X size={14}/>Clear</Button>
-                                </div>
-                            )}
-                            {meetings.length === 0 ? (
-                                <div className={`${CARD} p-4`}>
-                                    <EmptyState>{filtered
-                                        ? `${filtered.member.display_name} hasn't missed ${scope === "past" ? "a past" : "an upcoming"} meeting.`
-                                        : scope === "past" ? "No one missed a past meeting." : "No one has reported an absence for an upcoming meeting."}</EmptyState>
-                                </div>
-                            ) : meetings.map(entry => <MeetingCard key={entry.meeting.id} entry={entry} showCount={!filtered} roleOf={roleOf}/>)}
+                    {!isMobile && selected && (
+                        <section aria-labelledby="attendance-member" className={`${PANEL} flex-[999_1_520px] min-w-0 p-7`}>
+                            <MemberDetail row={selected} upcomingRow={upcomingById.get(selected.member.user_id)} role={roleOf(selected.member.role)}
+                                points={pointsFor(selected)}/>
                         </section>
                     )}
                 </div>
-            )}
-
-            {isMobile && selected && (
-                <MemberSheet row={selected} scope={scope} roleOf={roleOf} onClose={() => setMemberId(null)}/>
             )}
         </ControlSectionLayout>
     )
 }
 
-/** Phones: one member's summary and missed meetings, opened from the roster. */
-function MemberSheet({ row, scope, roleOf, onClose }: { row: MemberAttendance, scope: AbsenceScope, roleOf: (role: string) => string, onClose: () => void }) {
-    const missed = [...row.missed].sort((a, b) => (scope === "past" ? -1 : 1) * (Date.parse(a.meeting.start_time) - Date.parse(b.meeting.start_time)))
+function RosterRow({ row, role, points, phone, active, onSelect }: {
+    row: MemberAttendance, role: string, points: number | null, phone: boolean, active: boolean, onSelect: () => void,
+}) {
+    const { member, missed, expected } = row
+    const counts = `${missed.length} of ${expected.length} missed`
+    const surface = phone
+        ? "min-h-12 border theme-border bg-[var(--theme-button-bg)] active:bg-[var(--theme-button-hover)]"
+        // Selected sits on the surface, like the stat tiles, with an accent name (navigation.md).
+        : active ? "border theme-border theme-bg" : "border border-transparent hover:bg-[var(--theme-button-hover)]"
     return (
-        <Sheet title={row.member.display_name} onClose={onClose}>
-            <div className="flex flex-col gap-3 pb-4">
-                <div>
-                    <p className="text-sm theme-subtext-color">{roleOf(row.member.role)}</p>
-                    <p className="text-sm font-semibold theme-text">{summaryLine(row, scope)}</p>
-                </div>
-                {missed.length > 0 && (
-                    <ul className="flex flex-col divide-y divide-[var(--theme-border)] border-t theme-border">
-                        {missed.map(({ meeting, absence }) => (
-                            <li key={meeting.id} className="py-3 min-w-0">
-                                <div className="flex items-baseline justify-between gap-3">
-                                    <p className="text-sm font-semibold theme-h1-color break-words min-w-0">{meeting.meeting_purpose || "Team meeting"}</p>
-                                    <p className="shrink-0 text-xs theme-subtext-color">{new Date(meeting.start_time).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</p>
-                                </div>
-                                {absence ? <>
-                                    <p className="text-sm theme-subtext-color break-words whitespace-pre-wrap">{absence.reason || "No reason given"}</p>
-                                    <p className="text-[11px] theme-subtext-color opacity-80">Reported {reportedAt(absence.created_at)}</p>
-                                </> : <p className="text-sm theme-subtext-color">Didn't check in</p>}
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </div>
-        </Sheet>
+        <button type="button" onClick={onSelect} aria-current={active ? "true" : undefined}
+            aria-label={phone ? `${member.display_name}, ${role}, ${percent(attendanceRate(row))}, ${counts}. Open details.` : undefined}
+            className={`w-full flex flex-col gap-2 px-4 py-3.5 rounded-xl text-left text-sm ${surface} ${focusRing}`}>
+            <span className="flex justify-between items-baseline gap-3">
+                <span className={`${typeTitle} ${active ? "theme-text-contrast" : "theme-h1-color"} min-w-0 break-words`}>{member.display_name}</span>
+                <span className="text-base font-bold theme-text-contrast">{percent(attendanceRate(row))}</span>
+            </span>
+            <span className="flex justify-between gap-3 text-[13px] theme-subtext-color">
+                <span className="min-w-0">{role} · {pts(points)} pts/hr{row.lastMissed ? ` · last missed ${shortDate(row.lastMissed)}` : ""}</span>
+                <span className="whitespace-nowrap">{counts}</span>
+            </span>
+            <RosterStrip past={pastStrip(row)}/>
+        </button>
     )
 }
 
-function MeetingCard({ entry: { meeting, misses }, showCount, roleOf }: { entry: MeetingMisses, showCount: boolean, roleOf: (role: string) => string }) {
-    const [expanded, setExpanded] = useState(false)
-    const listId = useId()
-    // Don't hide just one name behind a "+1 more".
-    const collapsible = misses.length > PREVIEW_MISSES + 1
-    const shown = collapsible && !expanded ? misses.slice(0, PREVIEW_MISSES) : misses
-    const start = new Date(meeting.start_time)
+function TodaySeparator() {
+    const today = new Date()
     return (
-        <article className={`${CARD} p-4 flex gap-3.5`}>
-            <div className="w-12 shrink-0 self-start rounded-[12px] border theme-outline text-center py-1.5" aria-hidden="true">
-                <div className="text-[10px] font-bold tracking-[.1em] uppercase theme-subtext-color">{start.toLocaleDateString("en-US", { month: "short" })}</div>
-                <div className="text-[22px] font-extrabold leading-none theme-text-contrast">{start.getDate()}</div>
-            </div>
-            <div className="flex-1 min-w-0">
-                <div className="flex items-baseline justify-between gap-3">
-                    <h3 className="text-base font-bold theme-h1-color break-words min-w-0">{meeting.meeting_purpose || "Team meeting"}</h3>
-                    {showCount && <span className="shrink-0 text-[13px] font-semibold theme-text-contrast">{misses.length} absent</span>}
+        <li role="separator" aria-label={`Today, ${today.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`}
+            className="list-none flex items-center gap-3 md:gap-3.5">
+            <span className="flex-1 h-px bg-[var(--theme-border)]"/>
+            <span className={`${typeBadge} theme-text-contrast`}>
+                Today · {today.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+            </span>
+            <span className="flex-1 h-px bg-[var(--theme-border)]"/>
+        </li>
+    )
+}
+
+/** One member: headline numbers, the meeting strip, and the absences they reported. */
+function MemberDetail({ row, upcomingRow, role, points, phone = false }: {
+    row: MemberAttendance, upcomingRow: MemberAttendance | undefined, role: string, points: number | null, phone?: boolean,
+}) {
+    const { member } = row
+    const Name = phone ? "h1" : "h2"
+    const Label = phone ? "h2" : "h3"
+    const absences = upcomingRow ? reportedAbsences(row, upcomingRow) : { upcoming: [], past: [] }
+    const total = row.expected.length
+    const tiles: [string, number][] = [["Meetings", total], ["Attended", total - row.missed.length], ["Missed", row.missed.length]]
+    const bigNumber = "text-[40px] md:text-5xl leading-none font-bold tracking-[-0.02em]"
+    return (
+        <div className="flex flex-col gap-5 md:gap-6">
+            <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-3.5 md:gap-y-4">
+                <div className="flex flex-col gap-0.5 min-w-0">
+                    <Name id="attendance-member" className={`${typeH1} theme-h1-color break-words`}>{member.display_name}</Name>
+                    <span className="theme-subtext-color">{role}</span>
                 </div>
-                <p className="text-sm theme-subtext-color">
-                    <span className="sr-only">{start.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}, </span>
-                    {start.toLocaleDateString("en-US", { weekday: "short" })} · {meetingTime(meeting)}
-                </p>
-                <ul id={listId} className="mt-2.5 flex flex-col border-t border-dashed theme-border">
-                    {shown.map(({ member, absence }) => (
-                        <li key={member.user_id} className="pt-2.5 min-w-0">
-                            <div className="flex flex-wrap items-baseline gap-x-2">
-                                <span className="text-sm font-semibold theme-text break-words">{member.display_name}</span>
-                                <span className="text-xs theme-subtext-color">{roleOf(member.role)}</span>
-                            </div>
-                            {absence ? <>
-                                <p className="text-sm theme-subtext-color break-words whitespace-pre-wrap">{absence.reason || "No reason given"}</p>
-                                <p className="text-[11px] theme-subtext-color opacity-80">Reported {reportedAt(absence.created_at)}</p>
-                            </> : <p className="text-sm theme-subtext-color">Didn't check in</p>}
-                        </li>
-                    ))}
-                </ul>
-                {collapsible && (
-                    <button type="button" aria-expanded={expanded} aria-controls={listId} onClick={() => setExpanded(v => !v)}
-                        className={`mt-2 -mb-2 min-h-11 inline-flex items-center gap-1 text-sm font-semibold theme-text-contrast rounded-lg ${focusRing}`}>
-                        {expanded ? "Show less" : `Show all ${misses.length}`}
-                        <ChevronDown size={15} aria-hidden="true" className={`transition-transform ${expanded ? "rotate-180" : ""}`}/>
-                    </button>
-                )}
+                <div className="flex flex-wrap gap-x-8 gap-y-3">
+                    <div className="flex flex-col gap-0.5">
+                        <span className={`${bigNumber} theme-text-contrast`}>{pts(points)}</span>
+                        <span className="theme-subtext-color">task points / hr</span>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                        <span className={`${bigNumber} theme-h1-color`}>{percent(attendanceRate(row))}</span>
+                        <span className="theme-subtext-color">of meeting hours</span>
+                    </div>
+                </div>
             </div>
-        </article>
+
+            <dl className="grid grid-cols-3 gap-2.5 md:grid-cols-[repeat(auto-fit,minmax(140px,1fr))] md:gap-3">
+                {tiles.map(([label, value]) => (
+                    <div key={label} className="min-w-0 px-3.5 py-3 md:px-4 md:py-3.5 rounded-xl border theme-border theme-bg">
+                        <dt className="text-[11px] md:text-xs font-semibold uppercase tracking-[0.08em] md:tracking-widest theme-subtext-color">{label}</dt>
+                        <dd className="mt-0.5 md:mt-1 text-[22px] md:text-2xl font-bold theme-h1-color">{value}</dd>
+                    </div>
+                ))}
+            </dl>
+
+            <div className="flex flex-col gap-2.5">
+                <Label className={LABEL}>Last 10 meetings, then upcoming</Label>
+                <MeetingStrip past={pastStrip(row)} upcoming={upcomingRow ? upcomingStrip(upcomingRow) : []}/>
+                <StripLegend/>
+            </div>
+
+            <Label className={LABEL}>Absences</Label>
+            {absences.upcoming.length === 0 && absences.past.length === 0 ? (
+                <p className="text-sm theme-subtext-color py-2 -mt-2">No absences for {member.display_name}.</p>
+            ) : (
+                <ul className="flex flex-col gap-3 md:gap-3.5 -mt-2">
+                    {absences.upcoming.map(({ meeting, absence }) => <AbsenceCard key={meeting.id} meeting={meeting} absence={absence!} upcoming/>)}
+                    {absences.upcoming.length > 0 && absences.past.length > 0 && <TodaySeparator/>}
+                    {absences.past.map(({ meeting, absence }) => <AbsenceCard key={meeting.id} meeting={meeting} absence={absence!} upcoming={false}/>)}
+                </ul>
+            )}
+        </div>
     )
 }
