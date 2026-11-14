@@ -72,6 +72,38 @@ async def toggle_kiosk_attendance(user_id: str) -> str | None:
             raise HTTPException(status_code=500, detail="Failed to update attendance")
 
 
+async def checkout_attendance(user_id: str) -> asyncpg.Record | None:
+    """Close the user's open kiosk session, if they have a live one.
+
+    Never opens a session: checking in still requires being at a kiosk.
+    Abandoned open entries (older than the kiosk limit) are left alone, the
+    same as the toggle treats them.
+
+    :returns: The closed entry, or ``None`` if the user wasn't checked in.
+    """
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow(
+                """
+                UPDATE attendance SET checkout_time = clock_timestamp()
+                WHERE id = (
+                    SELECT id FROM attendance
+                    WHERE user_id = $1 AND checkout_time IS NULL
+                      AND checkin_time > clock_timestamp() - $2::interval
+                    ORDER BY checkin_time DESC
+                    LIMIT 1
+                    FOR UPDATE
+                )
+                RETURNING id, checkin_time, checkout_time
+                """,
+                user_id,
+                KIOSK_SESSION_MAX_AGE,
+            )
+        except Exception as e:
+            logger.error("checkout_attendance failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to check out")
+
+
 async def list_attendance_for_user(user_id: str) -> list[asyncpg.Record]:
     async with db_connection(DB_NAME) as conn:
         try:
@@ -217,6 +249,7 @@ __all__ = [
     "set_kiosk_qr_result",
     "list_kiosk_qr_results",
     "toggle_kiosk_attendance",
+    "checkout_attendance",
     "list_attendance_for_user",
     "list_all_attendance",
     "list_meeting_checkins",
