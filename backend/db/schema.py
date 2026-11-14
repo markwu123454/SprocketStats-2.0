@@ -47,6 +47,43 @@ _PUSH_OUTBOX_DDL = """
     CREATE INDEX IF NOT EXISTS push_outbox_next_attempt_idx ON push_outbox (next_attempt_at);
 """
 
+# Shared by init_db and migration 13 (idempotent). A kiosk is registered when a
+# member allowed to authorize kiosks shows their code to its camera; the kiosk's
+# cookie then names the kiosk, not the person who set it up.
+_KIOSKS_DDL = """
+    CREATE TABLE IF NOT EXISTS kiosks (
+        id            TEXT        PRIMARY KEY,
+        authorized_by TEXT        NOT NULL REFERENCES users(id),
+        authorized_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        last_seen_at  TIMESTAMPTZ,
+        revoked_at    TIMESTAMPTZ
+    )
+"""
+
+# One row per phone-code appearance a kiosk sends. scan_id is made by the kiosk,
+# so a retried request is answered from here instead of toggling twice; it also
+# backs the per-member double-scan guard and serves as an audit log.
+_KIOSK_SCANS_DDL = """
+    CREATE TABLE IF NOT EXISTS kiosk_scans (
+        scan_id     UUID        PRIMARY KEY,
+        kiosk_id    TEXT        NOT NULL REFERENCES kiosks(id),
+        user_id     TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        method      TEXT        NOT NULL,
+        scanned_at  TIMESTAMPTZ NOT NULL,
+        received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        result      TEXT
+    );
+    CREATE INDEX IF NOT EXISTS kiosk_scans_user_idx ON kiosk_scans (user_id, received_at DESC);
+"""
+
+# Hands out users.code_number, the short number in a member's code. Assigned
+# the first time a member opens their code (db.ensure_code_number), not as a
+# column default: sign-in upserts users, and a default would burn a number on
+# every login. Shared by init_db and migration 14 (idempotent). Tying it to
+# the column (OWNED BY) is left to the migration: init_db runs first on an
+# existing database, before the column exists.
+_CODE_NUMBER_SEQ_DDL = "CREATE SEQUENCE IF NOT EXISTS users_code_number_seq MINVALUE 1"
+
 
 async def _create_offline_code_functions(conn) -> None:
     """Install the checksum helpers required by ``users.offline_code``."""
@@ -200,6 +237,8 @@ async def init_db():
                         approved_by         TEXT        REFERENCES users(id),
                         banned_at           TIMESTAMPTZ,
                         offline_code        TEXT        NOT NULL UNIQUE DEFAULT gen_offline_code(),
+                        code_version        INTEGER     NOT NULL DEFAULT 1,
+                        code_number         INTEGER     UNIQUE,
                         CONSTRAINT onboarded_fields_present CHECK (
                             NOT onboarding_complete
                             OR (
@@ -255,6 +294,9 @@ async def init_db():
                         result_status TEXT
                     )
                 """)
+                await conn.execute(_KIOSKS_DDL)
+                await conn.execute(_KIOSK_SCANS_DDL)
+                await conn.execute(_CODE_NUMBER_SEQ_DDL)
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS notifications (
                         id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -913,6 +955,24 @@ async def _migration_0012_meeting_hours_multiplier(conn) -> None:
     )
 
 
+async def _migration_0013_member_codes(conn) -> None:
+    """Rotating member codes: a per-member version that revokes every device's
+    copy of the code secret when bumped, plus registered kiosks and their scans.
+    Nothing is dropped; the old QR and offline-code kiosk flow keeps working."""
+    await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS code_version INTEGER NOT NULL DEFAULT 1")
+    await conn.execute(_KIOSKS_DDL)
+    await conn.execute(_KIOSK_SCANS_DDL)
+
+
+async def _migration_0014_member_code_numbers(conn) -> None:
+    """A short per-member number for member codes, so a code fits a 14x14 Data
+    Matrix instead of carrying the 21-digit account id. Left NULL until the
+    member first opens their code."""
+    await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS code_number INTEGER UNIQUE")
+    await conn.execute(_CODE_NUMBER_SEQ_DDL)
+    await conn.execute("ALTER SEQUENCE users_code_number_seq OWNED BY users.code_number")
+
+
 # Append-only: never edit or renumber a migration that has shipped. Each must
 # be idempotent against init_db's current schema, because a fresh database
 # gets that schema first and then runs every migration.
@@ -929,6 +989,8 @@ _MIGRATIONS = [
     (10, _migration_0010_meeting_absences),
     (11, _migration_0011_push_outbox),
     (12, _migration_0012_meeting_hours_multiplier),
+    (13, _migration_0013_member_codes),
+    (14, _migration_0014_member_code_numbers),
 ]
 
 

@@ -4,6 +4,7 @@ from .users import *
 from .meeting_hours import *
 from .meeting_absences import *
 from .attendance import *
+from .kiosks import *
 from .notifications import *
 from .push import *
 from .push_outbox import *
