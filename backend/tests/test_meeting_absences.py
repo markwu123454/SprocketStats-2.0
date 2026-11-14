@@ -376,8 +376,8 @@ def test_attendance_reports_the_go_live_date(setup):
     body = client("captain-1").get("/meeting-hours/attendance").json()
     assert body["checkins"] == []
     assert datetime.fromisoformat(body["active_from"]) == ATTENDANCE_ACTIVE_FROM
-    assert (ATTENDANCE_ACTIVE_FROM.year, ATTENDANCE_ACTIVE_FROM.month, ATTENDANCE_ACTIVE_FROM.day) == (2026, 11, 15)
-    assert ATTENDANCE_ACTIVE_FROM.hour == 0 and ATTENDANCE_ACTIVE_FROM.utcoffset() is not None
+    assert (ATTENDANCE_ACTIVE_FROM.year, ATTENDANCE_ACTIVE_FROM.month, ATTENDANCE_ACTIVE_FROM.day) == (2026, 11, 14)
+    assert ATTENDANCE_ACTIVE_FROM.hour == 17 and ATTENDANCE_ACTIVE_FROM.utcoffset() is not None
 
 
 # ── hours multiplier ───────────────────────────────────────────────────────────

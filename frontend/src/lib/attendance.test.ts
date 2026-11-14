@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-    attendanceRate, fuzzyScore, meetingsWithMisses, memberMatch, teamAttendance, teamAttendanceRate,
+    attendanceRate, fuzzyScore, memberMatch, pastStrip, pointsPerHour, reportedAbsences, teamAttendance, upcomingStrip,
     type AttendanceData, type AttendanceMember,
 } from "./attendance"
 import { hoursMultiplier, multiplierLabel, type Meeting, type MeetingAbsence } from "./meetings"
@@ -52,34 +52,11 @@ describe("teamAttendance", () => {
         expect(zed.possibleSeconds).toBe((2 + 2 + 3) * 3600)
         expect(zed.earnedSeconds).toBe(zed.possibleSeconds)
         expect(zed.lastMissed).toBe("2026-11-08T17:00:00Z")
-        expect(teamAttendanceRate(rows)).toBe(1)
     })
 
     it("treats a live meeting as upcoming", () => {
         const upcoming = teamAttendance(data, "upcoming", now)
         expect(upcoming.find(r => r.member.user_id === "u2")!.missed.map(x => x.meeting.id)).toEqual(["live"])
-    })
-})
-
-describe("meetingsWithMisses", () => {
-    it("groups misses by meeting, newest first for past", () => {
-        const list = meetingsWithMisses(teamAttendance(data, "past", now), "past")
-        expect(list.map(m => m.meeting.id)).toEqual(["recent", "old"])
-        expect(list[0].misses.map(m => m.member.display_name)).toEqual(["Amy", "Zed"])
-    })
-})
-
-describe("meetingsWithMisses ordering", () => {
-    it("lists reported absences before no-shows", () => {
-        const kid = member("k", "Aaron")
-        const rows = [{
-            member: kid, expected: [], possibleSeconds: 0, earnedSeconds: 0, lastMissed: null,
-            missed: [{ meeting: data.meetings[0], absence: null }],
-        }, {
-            member: member("z", "Zoe"), expected: [], possibleSeconds: 0, earnedSeconds: 0, lastMissed: null,
-            missed: [{ meeting: data.meetings[0], absence: absence("old", "z") }],
-        }]
-        expect(meetingsWithMisses(rows, "past")[0].misses.map(m => m.member.display_name)).toEqual(["Zoe", "Aaron"])
     })
 })
 
@@ -103,7 +80,7 @@ describe("fuzzyScore", () => {
 })
 
 describe("once the attendance system is live", () => {
-    // Live from Nov 6: "old" and "mid" (2h each) predate it. "recent" (3h, worth
+    // Live from Nov 6: "old" and "mid" (2h each) predate it and don't count. "recent" (3h, worth
     // double) and everything after require a check-in.
     const checkin = (meeting_id: string, user_id: string, hours: number) => ({ meeting_id, user_id, seconds: hours * 3600 })
     const live: AttendanceData = {
@@ -131,42 +108,30 @@ describe("once the attendance system is live", () => {
         expect(missedIds("u4")).toEqual([])
     })
 
-    it("never makes a no-show of a meeting before go-live", () => {
-        // Nobody checked in to "old" or "mid"; only Zed's report for "old" shows.
-        expect(missedIds("u1")).toEqual(["old"])
-        expect(missedIds("u2")).toEqual(["recent"])
-    })
-
-    it("counts meetings before go-live as full hours, even with an absence reported", () => {
-        // Zed: 2h + 2h in full, then all 3h of "recent" at x2.
-        expect(row("u1").possibleSeconds).toBe((2 + 2 + 3 * 2) * 3600)
-        expect(attendanceRate(row("u1"))).toBe(1)
+    it("doesn't count meetings before go-live, but still lists absences reported for them", () => {
+        // Zed reported an absence for "old": not a miss, but still in his absences list.
+        expect(missedIds("u1")).toEqual([])
+        const zedUpcoming = teamAttendance(live, "upcoming", now).find(r => r.member.user_id === "u1")!
+        expect(reportedAbsences(row("u1"), zedUpcoming).past.map(x => x.meeting.id)).toEqual(["old"])
+        expect(row("u1").expected.map(m => m.id)).toEqual(["recent"])
+        expect(row("u2").expected.map(m => m.id)).toEqual(["recent"])
     })
 
     it("earns hours only for time checked in after go-live, weighted by the multiplier", () => {
-        expect(attendanceRate(row("u2"))).toBe((2 + 2) / 10)             // skipped the x2 meeting
-        expect(attendanceRate(row("u4"))).toBe((2 + 2 + 1.5 * 2) / 10)   // half of it
-        // New Kid joined after "mid": the x2 meeting is all they had, and they skipped it.
-        expect(row("u3").possibleSeconds).toBe(6 * 3600)
+        expect(row("u1").possibleSeconds).toBe(3 * 2 * 3600)
+        expect(attendanceRate(row("u1"))).toBe(1)     // all of the x2 meeting
+        expect(attendanceRate(row("u2"))).toBe(0)     // skipped it
+        expect(attendanceRate(row("u4"))).toBe(0.5)   // half of it
         expect(attendanceRate(row("u3"))).toBe(0)
-        expect(teamAttendanceRate(rows)).toBe((10 + 4 + 0 + 7) / (10 + 10 + 6 + 10))
     })
 
     it("lists the lowest share of hours first", () => {
-        expect(rows.map(r => r.member.display_name)).toEqual(["New Kid", "Amy", "Perfect", "Zed"])
+        expect(rows.map(r => r.member.display_name)).toEqual(["Amy", "New Kid", "Perfect", "Zed"])
     })
 
     it("leaves live and future meetings to reported absences, with no rate", () => {
         const upcoming = teamAttendance(live, "upcoming", now)
         expect(upcoming.flatMap(r => r.missed.map(x => `${r.member.user_id}:${x.meeting.id}`))).toEqual(["u3:next"])
-        expect(teamAttendanceRate(upcoming)).toBeNull()
-    })
-
-    it("groups no-shows by meeting", () => {
-        const list = meetingsWithMisses(rows, "past")
-        expect(list.map(m => m.meeting.id)).toEqual(["recent", "old"])
-        // Reported first, then the unreported no-show.
-        expect(list[0].misses.map(m => [m.member.display_name, m.absence !== null])).toEqual([["Amy", true], ["New Kid", false]])
     })
 })
 
@@ -181,5 +146,52 @@ describe("hoursMultiplier", () => {
 
     it("labels a multiplier", () => {
         expect([1, 1.5, 1.25, 2].map(multiplierLabel)).toEqual(["×1.0", "×1.5", "×1.25", "×2.0"])
+    })
+})
+
+describe("pointsPerHour", () => {
+    it("divides points by hours earned", () => {
+        expect(pointsPerHour(9, 3 * 3600)).toBe(3)
+        expect(pointsPerHour(5, 2 * 3600)).toBe(2.5)
+    })
+
+    it("is null with no hours to divide by", () => {
+        expect(pointsPerHour(4, 0)).toBeNull()
+    })
+})
+
+describe("strips and reported absences", () => {
+    const hour = (i: number) => meeting(`m${i}`, `2026-10-${String(i + 1).padStart(2, "0")}T17:00:00Z`, `2026-10-${String(i + 1).padStart(2, "0")}T19:00:00Z`)
+    const future = (i: number) => meeting(`f${i}`, `2026-11-${String(i + 15).padStart(2, "0")}T17:00:00Z`, `2026-11-${String(i + 15).padStart(2, "0")}T19:00:00Z`)
+    const strip: AttendanceData = {
+        // 12 finished meetings (m0..m11) and 7 upcoming ones (f0..f6), listed out of order.
+        meetings: [...Array.from({ length: 12 }, (_, i) => hour(11 - i)), ...Array.from({ length: 7 }, (_, i) => future(6 - i))],
+        members: [member("u1", "Zed"), member("u2", "Amy")],
+        absences: [absence("m3", "u1"), absence("m4", "u1"), absence("f1", "u1"), absence("f9", "u1"), absence("f0", "u1")],
+    }
+    const t = Date.parse("2026-11-14T12:00:00Z")
+    const past = teamAttendance(strip, "past", t).find(r => r.member.user_id === "u1")!
+    const upcoming = teamAttendance(strip, "upcoming", t).find(r => r.member.user_id === "u1")!
+
+    it("shows the last 10 finished meetings, oldest first", () => {
+        // m2..m11; m3 and m4 were missed.
+        expect(pastStrip(past)).toEqual(["attended", "missed", "missed", "attended", "attended", "attended", "attended", "attended", "attended", "attended"])
+        expect(past.expected).toHaveLength(12)
+    })
+
+    it("shows fewer boxes when fewer meetings exist", () => {
+        const amy = teamAttendance({ ...strip, meetings: strip.meetings.slice(0, 2) }, "past", t).find(r => r.member.user_id === "u2")!
+        expect(pastStrip(amy)).toEqual(["attended", "attended"])
+    })
+
+    it("shows the next 5 meetings, soonest first, marking reported absences", () => {
+        expect(upcomingStrip(upcoming)).toEqual(["absent", "absent", "scheduled", "scheduled", "scheduled"])
+    })
+
+    it("lists reported absences only, latest first", () => {
+        const noShow = { ...past, missed: [...past.missed, { meeting: strip.meetings[0], absence: null }] }
+        const list = reportedAbsences(noShow, upcoming)
+        expect(list.past.map(x => x.meeting.id)).toEqual(["m4", "m3"])
+        expect(list.upcoming.map(x => x.meeting.id)).toEqual(["f1", "f0"])
     })
 })

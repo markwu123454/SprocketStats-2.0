@@ -55,6 +55,17 @@ def test_irregular_series_has_no_cadence_word():
     assert "New meetings: **Build Session** · 3 dates" in meetings_created_message(series, ROLE)["content"]
 
 
+def test_hours_multiplier_is_shown_only_when_it_applies():
+    ts = int(START.timestamp())
+    single = meetings_created_message([{**meeting(START), "hours_multiplier": 1.5}], ROLE)["content"]
+    assert single.splitlines()[1] == f"<t:{ts}:F> – <t:{ts + 4 * 3600}:t> · ×1.5 hours"
+    series = [{**meeting(START + timedelta(days=7 * i)), "hours_multiplier": 1.25} for i in range(3)]
+    assert "First: " in meetings_created_message(series, ROLE)["content"]
+    assert f"<t:{ts + 4 * 3600}:t> · ×1.25 hours" in meetings_created_message(series, ROLE)["content"]
+    assert "×" not in meetings_created_message([{**meeting(START), "hours_multiplier": 1.0}], ROLE)["content"]
+    assert "×" not in meetings_created_message([meeting(START)], ROLE)["content"]
+
+
 def test_meeting_name_cannot_inject_markdown_or_mentions():
     body = meetings_created_message([meeting(START, purpose="**Hi** @everyone")], ROLE)
     assert "\\*\\*Hi\\*\\* @everyone" in body["content"]

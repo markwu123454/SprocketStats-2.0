@@ -4,7 +4,7 @@ Control Panel attendance page.
   * ``ATTENDANCE_ACTIVE_FROM`` -- the day the attendance system went live.
     Meetings that start on or after it require a check-in: no check-in is an
     absence, and hours count only for the time actually checked in. Meetings
-    before it predate the kiosk, so everyone is credited their full length.
+    before it don't count toward attendance at all (the client ignores them).
   * A meeting's ``hours_multiplier`` (x1.0 to x2.0) scales how much the time
     spent at it is worth: at x2.0, one hour checked in counts as two.
 """
@@ -13,8 +13,9 @@ from datetime import datetime
 
 from core.push_notify import TEAM_TZ
 
-# Midnight in the team's timezone at the start of November 15, 2026.
-ATTENDANCE_ACTIVE_FROM = datetime(2026, 11, 15, tzinfo=TEAM_TZ)
+# The evening of November 14, 2026 (5:00 PM in the team's timezone), so that
+# night's meeting is the first one that requires a check-in.
+ATTENDANCE_ACTIVE_FROM = datetime(2026, 11, 14, 17, tzinfo=TEAM_TZ)
 
 MIN_HOURS_MULTIPLIER = 1.0
 MAX_HOURS_MULTIPLIER = 2.0

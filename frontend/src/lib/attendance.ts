@@ -9,8 +9,9 @@
 //   * A meeting starting on or after it requires a check-in. Once it is over,
 //     a member who never checked in missed it, and they earn hours only for
 //     the time they were checked in.
-//   * A meeting before it predates the kiosk: everyone is credited its full
-//     length, and only a reported absence shows as a miss.
+//   * A meeting before it doesn't count at all: no hours, no miss, no
+//     absence counted (a reported absence is still listed). Without a
+//     go-live date every meeting counts, in full.
 // Hours are weighted by each meeting's multiplier (x1.0 to x2.0), and a
 // member's attendance is hours earned as a share of hours possible. Every
 // count on the page flows through `memberAttendance`.
@@ -156,13 +157,23 @@ export interface MemberAttendance {
     earnedSeconds: number
     /** start_time of their latest missed meeting, if any. */
     lastMissed: string | null
+    /** Absences reported for meetings before go-live: listed, never counted. */
+    uncounted: Miss[]
 }
 
 export function memberAttendance(
     member: AttendanceMember, meetings: Meeting[], index: AttendanceIndex, scope: AbsenceScope, now: number,
 ): MemberAttendance {
+    // Counted from when the member joined, and never before the attendance system went live.
     const joined = Date.parse(member.created_at)
-    const expected = meetings.filter(m => inScope(m, scope, now) && Date.parse(m.start_time) >= joined)
+    const from = Math.max(joined, index.activeFrom === Infinity ? -Infinity : index.activeFrom)
+    const expected = meetings.filter(m => inScope(m, scope, now) && Date.parse(m.start_time) >= from)
+    const uncounted: Miss[] = []
+    for (const meeting of meetings) {
+        const start = Date.parse(meeting.start_time)
+        const absence = index.absences.get(pairKey(meeting.id, member.user_id))
+        if (absence && start >= joined && start < from && inScope(meeting, scope, now)) uncounted.push({ meeting, absence })
+    }
     const missed: Miss[] = []
     let possible = 0
     let earned = 0
@@ -176,7 +187,7 @@ export function memberAttendance(
     }
     const byStart = (a: Meeting, b: Meeting) => Date.parse(a.start_time) - Date.parse(b.start_time)
     const lastMissed = missed.length ? missed.map(x => x.meeting).sort(byStart)[missed.length - 1].start_time : null
-    return { member, expected, missed, possibleSeconds: possible, earnedSeconds: earned, lastMissed }
+    return { member, expected, missed, possibleSeconds: possible, earnedSeconds: earned, lastMissed, uncounted }
 }
 
 /** Hours earned as a share of hours possible (0-1), or null with no finished meetings to measure. */
@@ -184,12 +195,48 @@ export function attendanceRate(row: Pick<MemberAttendance, "possibleSeconds" | "
     return row.possibleSeconds > 0 ? row.earnedSeconds / row.possibleSeconds : null
 }
 
-/** `attendanceRate` over a whole set of members. */
-export function teamAttendanceRate(rows: MemberAttendance[]): number | null {
-    return attendanceRate({
-        possibleSeconds: rows.reduce((sum, r) => sum + r.possibleSeconds, 0),
-        earnedSeconds: rows.reduce((sum, r) => sum + r.earnedSeconds, 0),
-    })
+/**
+ * Task points earned per hour at meetings, or null with no hours to divide by.
+ * `earnedSeconds` is the member's past-scope total (already after multipliers).
+ */
+export function pointsPerHour(points: number, earnedSeconds: number): number | null {
+    return earnedSeconds > 0 ? points / (earnedSeconds / 3600) : null
+}
+
+/** How many finished meetings the strip shows, and how many scheduled ones follow. */
+export const STRIP_PAST = 10
+export const STRIP_UPCOMING = 5
+
+const byStartAsc = (a: Meeting, b: Meeting) => Date.parse(a.start_time) - Date.parse(b.start_time)
+
+/** The member's last finished meetings, oldest to newest: attended or missed. */
+export function pastStrip(past: MemberAttendance): ("attended" | "missed")[] {
+    const missed = new Set(past.missed.map(x => x.meeting.id))
+    return [...past.expected].sort(byStartAsc).slice(-STRIP_PAST)
+        .map(m => missed.has(m.id) ? "missed" : "attended")
+}
+
+/** The next meetings, soonest first: "absent" when the member reported an absence, else "scheduled". */
+export function upcomingStrip(upcoming: MemberAttendance): ("absent" | "scheduled")[] {
+    const reported = new Set(upcoming.missed.map(x => x.meeting.id))
+    return [...upcoming.expected].sort(byStartAsc).slice(0, STRIP_UPCOMING)
+        .map(m => reported.has(m.id) ? "absent" : "scheduled")
+}
+
+export interface ReportedAbsences {
+    /** Upcoming meetings with a reported absence, latest first. */
+    upcoming: Miss[]
+    /** Finished meetings with a reported absence (not bare no-shows), latest first. */
+    past: Miss[]
+}
+
+/** Only meetings where the member reported an absence, including uncounted ones before go-live. */
+export function reportedAbsences(past: MemberAttendance, upcoming: MemberAttendance): ReportedAbsences {
+    const latestFirst = (a: Miss, b: Miss) => byStartAsc(b.meeting, a.meeting)
+    return {
+        upcoming: upcoming.missed.filter(x => x.absence).sort(latestFirst),
+        past: [...past.missed.filter(x => x.absence), ...past.uncounted].sort(latestFirst),
+    }
 }
 
 /** Every member's attendance in scope: lowest share of hours first, then most missed, then by name. */
@@ -200,34 +247,6 @@ export function teamAttendance(data: AttendanceData, scope: AbsenceScope, now: n
         .sort((a, b) => (attendanceRate(a) ?? 1) - (attendanceRate(b) ?? 1)
             || b.missed.length - a.missed.length
             || (a.member.display_name ?? "").localeCompare(b.member.display_name ?? ""))
-}
-
-export interface MeetingMisses {
-    meeting: Meeting
-    misses: { member: AttendanceMember, absence: MeetingAbsence | null }[]
-}
-
-/**
- * Meetings in scope where someone in `rows` missed. Past
- * meetings come newest first, upcoming ones soonest first.
- */
-export function meetingsWithMisses(rows: MemberAttendance[], scope: AbsenceScope): MeetingMisses[] {
-    const byMeeting = new Map<string, MeetingMisses>()
-    for (const row of rows) {
-        for (const { meeting, absence } of row.missed) {
-            const entry = byMeeting.get(meeting.id) ?? { meeting, misses: [] }
-            entry.misses.push({ member: row.member, absence })
-            byMeeting.set(meeting.id, entry)
-        }
-    }
-    const dir = scope === "past" ? -1 : 1
-    const list = [...byMeeting.values()]
-    // Reported absences (they have a reason to read) first, then no-shows; each by name.
-    for (const entry of list) {
-        entry.misses.sort((a, b) => Number(!a.absence) - Number(!b.absence)
-            || (a.member.display_name ?? "").localeCompare(b.member.display_name ?? ""))
-    }
-    return list.sort((a, b) => dir * (Date.parse(a.meeting.start_time) - Date.parse(b.meeting.start_time)))
 }
 
 /**
