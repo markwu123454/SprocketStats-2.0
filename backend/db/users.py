@@ -191,7 +191,8 @@ async def list_all_users() -> list[asyncpg.Record]:
         try:
             return await conn.fetch(
                 """
-                SELECT id, email, name, display_name, role, grade, team_year, approved_by, banned_at
+                SELECT id, email, name, display_name, role, grade, team_year, approved_by, banned_at,
+                       kiosk_access_until, kiosk_access_no_end
                 FROM users
                 ORDER BY display_name ASC NULLS LAST, email ASC
                 """
@@ -296,6 +297,22 @@ async def unban_user(user_id: str) -> asyncpg.Record | None:
             raise HTTPException(status_code=500, detail="Failed to unban member")
 
 
+async def set_kiosk_access(user_id: str, until, no_end: bool) -> asyncpg.Record | None:
+    """Grant kiosk access until ``until`` (a tz-aware datetime), or with no end.
+    Passing ``until=None, no_end=False`` revokes it."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow(
+                "UPDATE users SET kiosk_access_until = $2, kiosk_access_no_end = $3 WHERE id = $1 RETURNING *",
+                user_id,
+                until,
+                no_end,
+            )
+        except Exception as e:
+            logger.error("set_kiosk_access failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to update kiosk access")
+
+
 __all__ = [
     "upsert_user",
     "get_user",
@@ -312,4 +329,5 @@ __all__ = [
     "unapprove_user",
     "ban_user",
     "unban_user",
+    "set_kiosk_access",
 ]

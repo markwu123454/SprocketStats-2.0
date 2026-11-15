@@ -973,6 +973,16 @@ async def _migration_0014_member_code_numbers(conn) -> None:
     await conn.execute("ALTER SEQUENCE users_code_number_seq OWNED BY users.code_number")
 
 
+async def _migration_0015_kiosk_access_grants(conn) -> None:
+    """Per-member kiosk access granted from the Members page, on top of the
+    roles whose policy already carries ``kiosk.authorize``. Access is live while
+    ``kiosk_access_no_end`` is set or ``kiosk_access_until`` is in the future."""
+    await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS kiosk_access_until TIMESTAMPTZ")
+    await conn.execute(
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS kiosk_access_no_end BOOLEAN NOT NULL DEFAULT false"
+    )
+
+
 # Append-only: never edit or renumber a migration that has shipped. Each must
 # be idempotent against init_db's current schema, because a fresh database
 # gets that schema first and then runs every migration.
@@ -991,6 +1001,7 @@ _MIGRATIONS = [
     (12, _migration_0012_meeting_hours_multiplier),
     (13, _migration_0013_member_codes),
     (14, _migration_0014_member_code_numbers),
+    (15, _migration_0015_kiosk_access_grants),
 ]
 
 

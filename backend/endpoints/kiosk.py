@@ -15,14 +15,13 @@ from pydantic import BaseModel, Field
 
 import db
 from core import member_codes, qr_events
-from core.permissions import role_requires_approval
-from core.security import JWT_ALGORITHM, JWT_SECRET
+from core.permissions import can_operate_kiosk, role_requires_approval
+from core.security import JWT_ALGORITHM, JWT_SECRET, require_active
 
 router = APIRouter()
 
 KIOSK_COOKIE_NAME = "kiosk_auth"
 KIOSK_TOKEN_PURPOSE = "attendance_kiosk"
-KIOSK_AUTHORIZED_ROLES = frozenset({"captain", "scouting_member", "scouting_lead"})
 
 
 class VerifyCodeRequest(BaseModel):
@@ -53,7 +52,8 @@ def _assert_active_user(user: dict) -> None:
 
 
 def _assert_kiosk_role(user: dict) -> None:
-    if user["role"] not in KIOSK_AUTHORIZED_ROLES:
+    # Role policy (kiosk.authorize) or a live per-member grant from the Members page.
+    if not can_operate_kiosk(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User cannot authorize an attendance kiosk",
@@ -423,7 +423,7 @@ async def authorize_kiosk(body: CodeScanRequest, request: Request, response: Res
     user = await _member_from_code(body)
     _assert_active_user(user)
     name = _display_name(user)
-    if user["role"] not in KIOSK_AUTHORIZED_ROLES:
+    if not can_operate_kiosk(user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"{name} can't authorize kiosks")
     kiosk_id = await db.create_kiosk(user["id"])
     _set_kiosk_cookie(response, _issue_registered_kiosk_token(kiosk_id, user["id"]))
@@ -436,6 +436,10 @@ async def scan_code(
         kiosk: dict = Depends(require_registered_kiosk),
 ) -> CodeScanResponse:
     """Check a member in or out from the code the kiosk's camera read."""
+    return await _record_scan(body, kiosk["kiosk_id"], source="kiosk_code")
+
+
+async def _record_scan(body: CodeScanRequest, kiosk_id: str, source: str) -> CodeScanResponse:
     stored = await db.get_kiosk_scan(body.scan_id)
     if stored is not None:
         return await _stored_scan(stored)
@@ -443,7 +447,7 @@ async def scan_code(
     user = await _member_from_code(body)
     _assert_active_user(user)
     scanned_at = datetime.fromtimestamp(body.scanned_at, tz=timezone.utc)
-    if not await db.claim_kiosk_scan(body.scan_id, kiosk["kiosk_id"], user["id"], "code", scanned_at):
+    if not await db.claim_kiosk_scan(body.scan_id, kiosk_id, user["id"], "code", scanned_at):
         stored = await db.get_kiosk_scan(body.scan_id)
         if stored is None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Scan already in progress")
@@ -455,8 +459,54 @@ async def scan_code(
         await db.finish_kiosk_scan(body.scan_id, "repeat")
         return CodeScanResponse(name=name, first_name=first, status=result, repeat=True)
 
-    result = await db.toggle_kiosk_attendance(user["id"], source="kiosk_code")
+    result = await db.toggle_kiosk_attendance(user["id"], source=source)
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
     await db.finish_kiosk_scan(body.scan_id, result)
     return CodeScanResponse(name=name, first_name=first, status=result)
+
+
+# --- Handheld scanner: a signed-in member's own phone acts as the kiosk -------
+#
+# Opening the scanner registers a kiosk row in that member's name, so scans are
+# recorded exactly like a kiosk's. Calls ride the member's session instead of a
+# kiosk cookie, and only the member who opened a scanner can scan with it.
+
+async def _require_kiosk_operator(session: dict = Depends(require_active)) -> dict:
+    user = await db.get_user(session["sub"])
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    _assert_active_user(user)
+    _assert_kiosk_role(user)
+    return dict(user)
+
+
+async def _own_scanner(kiosk_id: str, user: dict) -> None:
+    kiosk = await db.get_kiosk(kiosk_id)
+    if kiosk is None or kiosk["authorized_by"] != user["id"] or kiosk["revoked_at"] is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scanner closed. Open it again.")
+    await db.touch_kiosk(kiosk_id)
+
+
+@router.post("/scanner")
+async def open_scanner(user: dict = Depends(_require_kiosk_operator)) -> dict:
+    """Register the caller's phone as a kiosk for this scanning session."""
+    return {"kiosk_id": await db.create_kiosk(user["id"])}
+
+
+@router.post("/scanner/{kiosk_id}/scan", response_model=CodeScanResponse)
+async def scanner_scan(
+        kiosk_id: str,
+        body: CodeScanRequest,
+        user: dict = Depends(_require_kiosk_operator),
+) -> CodeScanResponse:
+    await _own_scanner(kiosk_id, user)
+    return await _record_scan(body, kiosk_id, source="scanner_code")
+
+
+@router.delete("/scanner/{kiosk_id}")
+async def close_scanner(kiosk_id: str, user: dict = Depends(_require_kiosk_operator)) -> dict:
+    kiosk = await db.get_kiosk(kiosk_id)
+    if kiosk is not None and kiosk["authorized_by"] == user["id"]:
+        await db.revoke_kiosk(kiosk_id)
+    return {"ok": True}

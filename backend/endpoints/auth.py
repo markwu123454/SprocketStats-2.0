@@ -11,7 +11,13 @@ from pydantic import BaseModel, field_validator, model_validator
 
 import db
 from core import account_state
-from core.permissions import STUDENT_EMAIL_DOMAIN, email_allowed_for_role, get_permissions_for_role, role_catalog
+from core.permissions import (
+    STUDENT_EMAIL_DOMAIN,
+    email_allowed_for_role,
+    get_permissions_for_role,
+    permissions_for_user,
+    role_catalog,
+)
 from core.security import (
     ROLES_WITHOUT_SCHOOL_INFO,
     VALID_GRADES,
@@ -168,7 +174,7 @@ async def me(user: dict = Depends(get_current_user)):
         "team_year": user.get("team_year"),
         "onboarding_complete": user.get("onboarding_complete", False),
         "offline_code": row["offline_code"] if row else None,
-        "permissions": get_permissions_for_role(user.get("role")),
+        "permissions": permissions_for_user({**dict(row), "role": user.get("role")}) if row else get_permissions_for_role(user.get("role")),
         "pending_notifications": [
             {
                 "id": str(n["id"]),

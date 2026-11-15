@@ -2,9 +2,10 @@ import {useEffect, useState, type ReactNode} from "react"
 import { Link } from "react-router-dom"
 import { useOnboardedUser } from "@/contexts/authContext"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
-import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks, LogIn, QrCode, UserX } from "lucide-react"
+import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks, LogIn, QrCode, ScanLine, UserX } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
 import MyCodeDialog from "@/components/MyCodeDialog"
+import ScannerDialog from "@/components/ScannerDialog"
 import Skeleton from "@/components/ui/Skeleton"
 import Button from "@/components/ui/Button"
 import { focusRing } from "@/lib/uiClasses"
@@ -77,12 +78,14 @@ export default function DashboardPage() {
     const [eventKeys]               = useBootstrapped<string[]>("event_keys", [])
     const [codeVisible, setCodeVisible] = useState(false)
     const [showCode, setShowCode] = useState(false)
+    const [showScanner, setShowScanner] = useState(false)
     const [tasks, setTasks] = useBootstrapped<Task[] | null>("tasks", null)
     const [attendance, setAttendance] = useState<AttendanceEntry[] | null>(null)
     const [checkingOut, setCheckingOut] = useState(false)
     const [checkoutError, setCheckoutError] = useState(false)
 
     const canViewTasks = can(user.permissions, "tasks.view")
+    const canScan = can(user.permissions, "kiosk.authorize")
 
     // The bootstrap schedule is a snapshot from app load -- refetch so a
     // check-in time an editor set since then is picked up.
@@ -204,6 +207,16 @@ export default function DashboardPage() {
                     </h1>
                     <p className="text-sm theme-subtext-color">Here's your overview</p>
                 </div>
+                {canScan && (
+                    <button
+                        type="button"
+                        onClick={() => setShowScanner(true)}
+                        aria-label="Open check-in scanner"
+                        className={`shrink-0 size-11 flex items-center justify-center rounded-xl border theme-border theme-button-bg theme-text-contrast ${focusRing}`}
+                    >
+                        <ScanLine size={22} aria-hidden="true" />
+                    </button>
+                )}
                 <button
                     type="button"
                     onClick={() => setShowCode(true)}
@@ -214,6 +227,7 @@ export default function DashboardPage() {
                 </button>
             </div>
             {showCode && <MyCodeDialog onClose={() => setShowCode(false)} />}
+            {showScanner && <ScannerDialog onClose={() => setShowScanner(false)} />}
 
             {/* Active event card -- only rendered when an event is currently happening,
                 or its check-in has opened ahead of it. There is no separate
