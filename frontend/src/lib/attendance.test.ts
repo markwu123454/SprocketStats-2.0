@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-    attendanceRate, fuzzyScore, memberMatch, pastStrip, pointsPerHour, reportedAbsences, teamAttendance, upcomingStrip,
+    attendanceGroups, attendanceRate, fuzzyScore, groupSummary, meetingMetrics, memberMatch, memberTotals, pastStrip, pointsPerHour, reportedAbsences, teamAttendance, upcomingStrip,
     type AttendanceData, type AttendanceMember,
 } from "./attendance"
 import { hoursMultiplier, multiplierLabel, type Meeting, type MeetingAbsence } from "./meetings"
@@ -193,5 +193,59 @@ describe("strips and reported absences", () => {
         const list = reportedAbsences(noShow, upcoming)
         expect(list.past.map(x => x.meeting.id)).toEqual(["m4", "m3"])
         expect(list.upcoming.map(x => x.meeting.id)).toEqual(["f1", "f0"])
+    })
+})
+
+describe("attendanceGroups", () => {
+    const people: AttendanceMember[] = [
+        { ...member("s1", "Scout"), role: "scouting_member", subteam: "scouting", level: "member" },
+        { ...member("s2", "Scout Lead"), role: "scouting_lead", subteam: "scouting", level: "lead" },
+        { ...member("c1", "Designer"), role: "cad_member", subteam: "cad", level: "member" },
+        { ...member("p2", "Prog Lead"), role: "programming_lead", subteam: "programming", level: "lead" },
+        { ...member("k1", "Cap"), role: "captain", subteam: null, level: "captain" },
+    ]
+
+    it("gives a subteam-only viewer one group per subteam, in board order", () => {
+        const groups = attendanceGroups({ meetings: [], absences: [], members: people })
+        expect(groups.map(g => g.id)).toEqual(["cad", "programming", "scouting"])
+        expect(groups.find(g => g.id === "scouting")!.members.map(m => m.user_id)).toEqual(["s1", "s2"])
+    })
+
+    it("adds leads and captains for whole-team viewers", () => {
+        const groups = attendanceGroups({ meetings: [], absences: [], members: people, team_wide: true })
+        expect(groups.map(g => g.id)).toEqual(["cad", "programming", "scouting", "leads", "captains"])
+        expect(groups.find(g => g.id === "leads")!.members.map(m => m.user_id)).toEqual(["s2", "p2"])
+        expect(groups.find(g => g.id === "leads")!.subteam).toBe(false)
+    })
+})
+
+describe("groupSummary", () => {
+    const group = { id: "cad", label: "CAD", subteam: true, members: data.members }
+    const summary = groupSummary(data, group, now)
+
+    it("splits finished meetings from upcoming ones", () => {
+        expect(summary.meetings.map(g => g.meeting.id)).toEqual(["old", "mid", "recent", "live", "next"])
+        expect(summary.firstUpcoming).toBe(3)
+    })
+
+    it("marks each member, leaving meetings before they joined uncounted", () => {
+        // Members sort by name: Amy, New Kid, Perfect, Zed.
+        const old = summary.meetings[0]
+        expect(old.marks).toEqual(["attended", null, "attended", "absent"])
+        expect(old.expected).toBe(3)
+        const next = summary.meetings[4]
+        expect(next.marks).toEqual(["scheduled", "absent", "scheduled", "scheduled"])
+        expect(summary.absentAhead).toBe(2) // Amy at "live", New Kid at "next"
+    })
+
+    it("totals each member over the finished meetings", () => {
+        expect(memberTotals(summary, 3)).toEqual({ missed: 0, absent: 2 })
+    })
+
+    it("builds the metrics for a past meeting", () => {
+        const metrics = meetingMetrics(summary, 2, "CAD")
+        expect(metrics.tag).toBe("Past meeting")
+        expect(metrics.tiles[0]).toMatchObject({ title: "Attendance", value: "50%" })
+        expect(metrics.groups.find(g => g.mark === "absent")!.names.map(n => n.name)).toEqual(["Amy", "Zed"])
     })
 })

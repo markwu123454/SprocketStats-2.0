@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { hoursMultiplier, MEETINGS_API, type Meeting, type MeetingAbsence } from "./meetings"
+import { TASK_BUCKETS, bucketLabel } from "./taskBuckets"
 
 export type AbsenceScope = "past" | "upcoming"
 
@@ -27,6 +28,10 @@ export interface AttendanceMember {
     role: string
     /** Account creation; meetings before this don't count for the member. */
     created_at: string
+    /** The role's subteam slug ("scouting", "cad", ...), or null for team-wide roles. */
+    subteam?: string | null
+    /** The role's level ("member", "lead", "captain"). */
+    level?: string | null
 }
 
 /** How long one member was checked in during one meeting (capped at its length). */
@@ -43,6 +48,8 @@ export interface AttendanceData {
     checkins?: MeetingCheckin[]
     /** When the attendance system went live; meetings from then on require a check-in. */
     active_from?: string
+    /** The viewer oversees the whole team (captains, mentors, the Scouting Lead), not one subteam. */
+    team_wide?: boolean
 }
 
 export function useAttendance() {
@@ -283,3 +290,217 @@ export function memberMatch(query: string, member: AttendanceMember, roleLabel: 
     // A name hit outranks an equally good role hit.
     return Math.max(name ?? -Infinity, (role ?? -Infinity) - 1)
 }
+
+
+// ── Groups: subteams, and for whole-team viewers the leads and captains ──────
+
+export interface AttendanceGroup {
+    /** A subteam slug, or "leads" / "captains". */
+    id: string
+    label: string
+    /** Whether this is a subteam (whose lead being out is worth flagging). */
+    subteam: boolean
+    members: AttendanceMember[]
+}
+
+/**
+ * The groups the viewer can pick from. Each subteam holds its members and its
+ * lead, in the task-board order. Whole-team viewers also get every lead as one
+ * group, and the captains when there are any. Empty groups are left out.
+ */
+export function attendanceGroups(data: AttendanceData): AttendanceGroup[] {
+    const slugs: string[] = TASK_BUCKETS.filter(b => b !== "general")
+    for (const m of data.members) if (m.subteam && !slugs.includes(m.subteam)) slugs.push(m.subteam)
+    const groups: AttendanceGroup[] = slugs.map(slug => ({
+        id: slug, label: bucketLabel(slug), subteam: true, members: data.members.filter(m => m.subteam === slug),
+    }))
+    if (data.team_wide) {
+        groups.push({ id: "leads", label: "Leads", subteam: false, members: data.members.filter(m => m.level === "lead") })
+        groups.push({ id: "captains", label: "Captains", subteam: false, members: data.members.filter(m => m.level === "captain") })
+    }
+    return groups.filter(g => g.members.length > 0)
+}
+
+/** Where `member` belongs when no group was picked: their subteam, else the first group holding them. */
+export function homeGroup(groups: AttendanceGroup[], member: AttendanceMember): AttendanceGroup | undefined {
+    return groups.find(g => g.id === member.subteam) ?? groups.find(g => g.members.some(m => m.user_id === member.user_id))
+}
+
+/**
+ * One member at one meeting. Past: attended, missed (no notice) or absent
+ * (reported ahead of time). Upcoming: scheduled or absent. null when the
+ * meeting doesn't count for them (before they joined or before go-live).
+ */
+export type MeetingMark = "attended" | "missed" | "absent" | "scheduled" | null
+
+export function meetingMark(member: AttendanceMember, meeting: Meeting, index: AttendanceIndex, now: number): MeetingMark {
+    const from = Math.max(Date.parse(member.created_at), index.activeFrom === Infinity ? -Infinity : index.activeFrom)
+    if (Date.parse(meeting.start_time) < from) return null
+    const hit = missedMeeting(member, meeting, index, now)
+    if (!isPastMeeting(meeting, now)) return hit ? "absent" : "scheduled"
+    if (hit === null) return "attended"
+    return hit === true ? "missed" : "absent"
+}
+
+/** How many finished meetings the subteam view reaches back, and how many scheduled ones it looks ahead. */
+export const GROUP_PAST = 30
+export const GROUP_UPCOMING = 3
+
+export interface GroupMeeting {
+    meeting: Meeting
+    past: boolean
+    /** One mark per group member, in `members` order. */
+    marks: MeetingMark[]
+    /** Members the meeting counts for. */
+    expected: number
+    attended: number
+    missed: number
+    absent: number
+}
+
+export interface GroupSummary {
+    members: AttendanceMember[]
+    /** Finished meetings (oldest first), then upcoming ones (soonest first). */
+    meetings: GroupMeeting[]
+    /** Index into `meetings` of the first upcoming one (= meetings.length when none). */
+    firstUpcoming: number
+    /** Hours earned as a share of hours possible across the group, or null. */
+    rate: number | null
+    /** No-shows and reported absences at finished meetings. */
+    missed: number
+    absent: number
+    /** Reported absences at the upcoming meetings shown. */
+    absentAhead: number
+    /** Average headcount share at the finished meetings shown (0-1), or null. */
+    averageTurnout: number | null
+}
+
+export function groupSummary(data: AttendanceData, group: AttendanceGroup, now: number): GroupSummary {
+    const index = indexAttendance(data)
+    const members = [...group.members].sort((a, b) => (a.display_name ?? "").localeCompare(b.display_name ?? ""))
+    const sorted = [...data.meetings].sort(byStartAsc)
+    const shape = (meeting: Meeting): GroupMeeting => {
+        const marks = members.map(m => meetingMark(m, meeting, index, now))
+        const count = (k: MeetingMark) => marks.filter(x => x === k).length
+        return {
+            meeting, past: isPastMeeting(meeting, now), marks,
+            expected: marks.filter(x => x !== null).length,
+            attended: count("attended"), missed: count("missed"), absent: count("absent"),
+        }
+    }
+    const past = sorted.filter(m => isPastMeeting(m, now)).map(shape).filter(g => g.expected > 0).slice(-GROUP_PAST)
+    const upcoming = sorted.filter(m => !isPastMeeting(m, now)).slice(0, GROUP_UPCOMING).map(shape)
+
+    let possible = 0, earned = 0, missed = 0, absent = 0
+    for (const m of members) {
+        const row = memberAttendance(m, data.meetings, index, "past", now)
+        possible += row.possibleSeconds
+        earned += row.earnedSeconds
+        for (const miss of row.missed) if (miss.absence) absent++; else missed++
+    }
+    const turnouts = past.map(g => g.attended / g.expected)
+    return {
+        members,
+        meetings: [...past, ...upcoming],
+        firstUpcoming: past.length,
+        rate: possible > 0 ? earned / possible : null,
+        missed, absent,
+        absentAhead: upcoming.reduce((n, g) => n + g.absent, 0),
+        averageTurnout: turnouts.length ? turnouts.reduce((a, b) => a + b, 0) / turnouts.length : null,
+    }
+}
+
+/** A member's totals over the meetings a group summary shows: no-shows and reported absences at finished ones. */
+export function memberTotals(summary: GroupSummary, memberIndex: number): { missed: number, absent: number } {
+    let missed = 0, absent = 0
+    for (const g of summary.meetings) {
+        if (!g.past) continue
+        if (g.marks[memberIndex] === "missed") missed++
+        else if (g.marks[memberIndex] === "absent") absent++
+    }
+    return { missed, absent }
+}
+
+// ── Subteam view: labels, dates and the metrics for one meeting ──────────────
+
+const MARK_LABEL: Record<NonNullable<MeetingMark>, string> = {
+    attended: "Attended", missed: "Missed", absent: "Absent ahead of time", scheduled: "Scheduled",
+}
+
+/** Spoken name for one mark ("Not counted" for a meeting before the member joined or before go-live). */
+export function markLabel(mark: MeetingMark): string {
+    return mark === null ? "Not counted" : MARK_LABEL[mark]
+}
+
+export const weekday = (iso: string) => new Date(iso).toLocaleDateString("en-US", { weekday: "short" })
+export const monthDay = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+export const numericDay = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "numeric", day: "numeric" })
+export const pct = (part: number, whole: number) => whole > 0 ? Math.round(part / whole * 100) : 0
+
+/** "today", "tomorrow" or "in N days", by calendar day. */
+export function inDays(iso: string, now: number): string {
+    const day = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime() }
+    const n = Math.round((day(Date.parse(iso)) - day(now)) / 86400000)
+    return n <= 0 ? "today" : n === 1 ? "tomorrow" : `in ${n} days`
+}
+
+export interface PersonChip {
+    userId: string
+    name: string
+    /** Open this person, focused on the given meeting's absence when there is one. */
+    meetingId?: string
+}
+
+export interface MeetingMetrics {
+    when: string
+    tag: string
+    purpose: string | null
+    note: string
+    tiles: { title: string, value: string, sub: string }[]
+    groups: { title: string, mark: NonNullable<MeetingMark>, names: PersonChip[] }[]
+}
+
+/** The numbers and the names for one meeting of a group summary. */
+export function meetingMetrics(summary: GroupSummary, i: number, groupLabel: string): MeetingMetrics {
+    const g = summary.meetings[i]
+    const n = g.expected
+    const who = (mark: MeetingMark): PersonChip[] => summary.members
+        .filter((_, k) => g.marks[k] === mark)
+        .map(m => ({ userId: m.user_id, name: m.display_name, meetingId: mark === "missed" || mark === "absent" ? g.meeting.id : undefined }))
+    const avg = summary.averageTurnout === null ? null : Math.round(summary.averageTurnout * 100)
+    const when = `${weekday(g.meeting.start_time)} ${monthDay(g.meeting.start_time)}`
+    if (g.past) {
+        const here = pct(g.attended, n)
+        const diff = avg === null ? null : here - avg
+        return {
+            when, tag: "Past meeting", purpose: g.meeting.meeting_purpose,
+            note: diff === null ? "" : `${diff >= 0 ? "+" : ""}${diff} pts vs the ${groupLabel} average (${avg}%)`,
+            tiles: [
+                { title: "Attendance", value: `${here}%`, sub: `${g.attended} of ${n} present` },
+                { title: "Missed", value: String(g.missed), sub: "no notice given" },
+                { title: "Absent ahead", value: String(g.absent), sub: "told the team early" },
+                { title: "Meeting", value: `${i + 1} of ${summary.firstUpcoming}`, sub: "shown here" },
+            ],
+            groups: [
+                { title: "Attended", mark: "attended", names: who("attended") },
+                { title: "Missed", mark: "missed", names: who("missed") },
+                { title: "Absent ahead", mark: "absent", names: who("absent") },
+            ],
+        }
+    }
+    const coming = n - g.absent
+    return {
+        when, tag: "Upcoming", purpose: g.meeting.meeting_purpose,
+        note: "Expected turnout from absences reported so far",
+        tiles: [
+            { title: "Expected", value: `${pct(coming, n)}%`, sub: `${coming} of ${n} coming` },
+            { title: "Absent ahead", value: String(g.absent), sub: "already reported" },
+            { title: `${groupLabel} avg`, value: avg === null ? "—" : `${avg}%`, sub: `last ${summary.firstUpcoming} meetings` },
+        ],
+        groups: [
+            { title: "Scheduled", mark: "scheduled", names: who("scheduled") },
+            { title: "Absent ahead", mark: "absent", names: who("absent") },
+        ],
+    }
+}
+

@@ -295,17 +295,27 @@ def tracks_attendance(role: str | None) -> bool:
     return bool(get_perm(get_permissions_for_role(role), "attendance.view"))
 
 
+def sees_whole_team(role: str | None) -> bool:
+    """Return whether ``role`` oversees attendance for the whole team rather
+    than one subteam: captains, mentors, and any lead whose moderation scope is
+    ``all`` (the Scouting Lead)."""
+    perms = get_permissions_for_role(role)
+    if get_perm(perms, "level") in ("captain", "mentor"):
+        return True
+    return get_perm(perms, "level") == "lead" and get_perm(perms, "can_moderate.scope") == "all"
+
+
 def can_view_absence(viewer_role: str | None, absentee_role: str | None) -> bool:
     """Return whether a viewer may see an absence reported by ``absentee_role``.
 
-    Captains and mentors see everyone's; leads see absentees in their own
-    subteam. A user's own absence is always visible to them, but that is the
-    endpoint's concern, not this helper's.
+    Whole-team roles (see :func:`sees_whole_team`) see everyone's; other leads
+    see absentees in their own subteam. A user's own absence is always visible
+    to them, but that is the endpoint's concern, not this helper's.
     """
+    if sees_whole_team(viewer_role):
+        return True
     viewer = get_permissions_for_role(viewer_role)
     level = get_perm(viewer, "level")
-    if level in ("captain", "mentor"):
-        return True
     if level == "lead":
         subteam = get_perm(viewer, "subteam")
         return subteam is not None and get_perm(get_permissions_for_role(absentee_role), "subteam") == subteam
@@ -408,6 +418,7 @@ __all__ = [
     "can_edit_authored",
     "has_absence_view",
     "can_view_absence",
+    "sees_whole_team",
     "tracks_attendance",
     "absence_push_roles",
     "role_catalog",

@@ -8,12 +8,12 @@ function reportedAt(iso: string): string {
     return `${day}, ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
 }
 
-/** One reported absence. Upcoming meetings get a dashed border; finished ones a solid one. */
-export default function AbsenceCard({ meeting, absence, upcoming }: { meeting: Meeting, absence: MeetingAbsence, upcoming: boolean }) {
+/** One reported absence. Upcoming meetings get a dashed border; finished ones a solid one; the one opened from the subteam view is highlighted. */
+export default function AbsenceCard({ meeting, absence, upcoming, focused = false }: { meeting: Meeting, absence: MeetingAbsence, upcoming: boolean, focused?: boolean }) {
     const start = new Date(meeting.start_time)
     const dash = upcoming ? "border-dashed" : "border-solid"
     return (
-        <li className={`list-none flex gap-3.5 md:gap-4 md:flex-wrap items-start px-4 py-3.5 md:px-[18px] md:py-4 rounded-xl border theme-bg ${upcoming ? "border-dashed theme-outline" : "theme-border"}`}>
+        <li className={`list-none flex gap-3.5 md:gap-4 md:flex-wrap items-start px-4 py-3.5 md:px-[18px] md:py-4 rounded-xl border ${focused ? "border-2 border-[var(--theme-text-contrast)] bg-[var(--ag-grid-selected-bg)]" : `theme-bg ${upcoming ? "border-dashed theme-outline" : "theme-border"}`}`}>
             <div aria-hidden="true" className={`flex flex-none flex-col items-center justify-center w-14 h-14 md:w-16 md:h-16 box-border rounded-xl border ${dash} theme-outline`}>
                 <span className={`${typeBadge} theme-subtext-color`}>{start.toLocaleDateString("en-US", { month: "short" })}</span>
                 <span className="text-[22px] md:text-2xl leading-none font-bold theme-h1-color">{start.getDate()}</span>

@@ -19,7 +19,7 @@ import core.push_notify as push_notify
 from core.attendance_rules import (
     ATTENDANCE_ACTIVE_FROM, credited_seconds_by_member, hours_multiplier, meeting_checkin_seconds,
 )
-from core.permissions import absence_push_roles, can_view_absence, has_absence_view, tracks_attendance
+from core.permissions import absence_push_roles, can_view_absence, has_absence_view, sees_whole_team, tracks_attendance
 from core.security import require_active
 from endpoints import meeting_hours
 from endpoints.meeting_hours import router
@@ -51,6 +51,14 @@ def test_captain_and_mentor_see_everyone():
     for viewer in ("captain", "mentor"):
         for absentee in ("cad_member", "programming_lead", "captain", "alumni"):
             assert can_view_absence(viewer, absentee)
+
+
+def test_scouting_lead_sees_whole_team():
+    assert sees_whole_team("scouting_lead")
+    for absentee in ("cad_member", "programming_lead", "captain", "scouting_member"):
+        assert can_view_absence("scouting_lead", absentee)
+    assert not sees_whole_team("cad_lead")
+    assert not sees_whole_team("scouting_member")
 
 
 def test_member_and_unknown_see_nobody():

@@ -1,4 +1,5 @@
 import { X } from "lucide-react"
+import type { MeetingMark } from "@/lib/attendance"
 
 // One box per meeting, oldest to newest. Shape carries the meaning, never colour alone:
 // filled = attended, hollow = missed, hollow with an X = absent ahead of time, dashed = scheduled.
@@ -60,5 +61,19 @@ export function StripLegend() {
             </span>
             <span className={item}><span aria-hidden="true" className={`box-border w-3.5 h-2 rounded-[2px] ${DASHED}`}/>Scheduled</span>
         </div>
+    )
+}
+
+/** One fixed-size box in the person grid, in the same shapes as the strips. */
+export function MarkBox({ mark, size = "md" }: { mark: MeetingMark, size?: "sm" | "md" }) {
+    const box = size === "sm" ? "w-[26px] h-3.5 rounded-[3px]" : "w-[34px] h-[18px] rounded-[4px]"
+    if (mark === null) return <span aria-hidden="true" className="w-1 h-1 rounded-full bg-[var(--theme-border)]"/>
+    if (mark === "attended") return <span aria-hidden="true" className={`block ${box} ${FILLED}`}/>
+    if (mark === "missed") return <span aria-hidden="true" className={`block box-border ${box} ${HOLLOW}`}/>
+    if (mark === "scheduled") return <span aria-hidden="true" className={`block box-border ${box} ${DASHED}`}/>
+    return (
+        <span aria-hidden="true" className={`box-border flex items-center justify-center ${box} border-2 border-[var(--theme-subtext-color)] theme-subtext-color`}>
+            <X size={size === "sm" ? 8 : 10} strokeWidth={3.5}/>
+        </span>
     )
 }
