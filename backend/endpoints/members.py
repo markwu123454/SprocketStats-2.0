@@ -1,5 +1,7 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 import db
 from core import account_state
@@ -260,6 +262,57 @@ async def unban_member(user_id: str, user: dict = Depends(require_roster_access)
     return {"id": row["id"], "banned_at": None}
 
 
+# Longest timed grant the Members page can hand out; anything longer is "No end".
+KIOSK_ACCESS_MAX_MINUTES = 60 * 24 * 365
+
+
+class KioskAccessGrant(BaseModel):
+    """``minutes`` from now, or ``None`` for access with no end."""
+
+    minutes: int | None = Field(default=None, ge=1, le=KIOSK_ACCESS_MAX_MINUTES)
+
+
+@router.post("/{user_id}/kiosk_access")
+async def grant_kiosk_access(user_id: str, body: KioskAccessGrant, user: dict = Depends(require_roster_access)):
+    """Let a member scan member codes and set up kiosks, for a while or with no end.
+
+    Adds ``kiosk.authorize`` on top of the member's role (see
+    :func:`permissions.can_operate_kiosk`). Applies immediately, not through the
+    roster's Save. Same moderation scope as approve/ban, and not on yourself.
+    Granting again replaces the previous grant.
+
+    :returns: ``{"id", "kiosk_access_until", "kiosk_access_no_end"}``.
+    """
+    await _authorize_moderation(user, user_id, self_error="You cannot change your own kiosk access")
+    no_end = body.minutes is None
+    until = None if no_end else datetime.now(timezone.utc) + timedelta(minutes=body.minutes)
+    row = await db.set_kiosk_access(user_id, until, no_end)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    return _kiosk_access_of(row) | {"id": row["id"]}
+
+
+@router.delete("/{user_id}/kiosk_access")
+async def revoke_kiosk_access(user_id: str, user: dict = Depends(require_roster_access)):
+    """End a member's kiosk grant now. Role-based kiosk access is unaffected.
+
+    :returns: ``{"id", "kiosk_access_until": None, "kiosk_access_no_end": False}``.
+    """
+    await _authorize_moderation(user, user_id, self_error="You cannot change your own kiosk access")
+    row = await db.set_kiosk_access(user_id, None, False)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    return _kiosk_access_of(row) | {"id": row["id"]}
+
+
+def _kiosk_access_of(r) -> dict:
+    until = r.get("kiosk_access_until")
+    return {
+        "kiosk_access_until": until.isoformat() if until else None,
+        "kiosk_access_no_end": bool(r.get("kiosk_access_no_end")),
+    }
+
+
 def _row_to_member(r, *, mask_email: bool = False) -> dict:
     """Shape a DB user record into the member row the grid consumes.
 
@@ -276,4 +329,5 @@ def _row_to_member(r, *, mask_email: bool = False) -> dict:
         "team_year": r["team_year"],
         "approved_by": r["approved_by"],
         "banned_at": r["banned_at"].isoformat() if r["banned_at"] else None,
+        **_kiosk_access_of(r),
     }

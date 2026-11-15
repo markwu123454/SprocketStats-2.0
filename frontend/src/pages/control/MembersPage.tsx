@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { Link } from "react-router-dom"
-import { Ban, Check, ChevronLeft, ChevronRight, Pencil, Plus, RotateCcw, Tag, X } from "lucide-react"
+import { Ban, Check, ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Plus, RotateCcw, ScanLine, Tag, X } from "lucide-react"
 import { useAuth } from "@/contexts/authContext"
 import { can, canModerate, getPerm, type RoleCatalogEntry } from "@/lib/permissions"
 import Dropdown from "@/components/ui/Dropdown"
@@ -11,7 +11,7 @@ import Sheet from "@/components/ui/Sheet"
 import Notice from "@/components/ui/Notice"
 import EmptyState from "@/components/ui/EmptyState"
 import Skeleton from "@/components/ui/Skeleton"
-import { fieldErrorClass, fieldLabelClass, focusRing, helperClass, inputClass, typeH2 } from "@/lib/uiClasses"
+import { fieldErrorClass, fieldLabelClass, focusRing, helperClass, inputClass, menuRowClass, typeH2 } from "@/lib/uiClasses"
 import { useDiscardGuard, useIsDirty } from "@/lib/useDiscardGuard"
 import { useIsMobile } from "@/lib/useIsMobile"
 
@@ -39,6 +39,11 @@ interface MemberRow {
     // Tags are not part of the Save/Reset cycle — add/remove calls the API
     // immediately and updates local state directly.
     tags: string[]
+    // Per-member kiosk grant (scan member codes + set up kiosks), on top of any
+    // role that already has kiosk.authorize. Like tags, it applies immediately
+    // through its own endpoint rather than the Save/Reset cycle.
+    kiosk_access_until: string | null
+    kiosk_access_no_end: boolean
 }
 
 /** Fields the roster lets you edit; email stays read-only (OAuth identity). */
@@ -97,8 +102,8 @@ const LEVEL_GROUPS_AFTER: [string, string][]  = [["alumni", "Alumni"], ["visitor
 const NO_ROLE_GROUP = "_none"
 const BANNED_GROUP = "_banned"
 
-/** Shared column template for the header and every row. */
-const GRID_COLS = "minmax(0,1.5fr) minmax(0,1.6fr) minmax(0,1.3fr) minmax(0,1.1fr) 110px minmax(0,0.7fr) 40px"
+/** Shared column template for the header and every row (last two: moderation action, "…" menu). */
+const GRID_COLS = "minmax(0,1.5fr) minmax(0,1.6fr) minmax(0,1.3fr) minmax(0,1.1fr) 140px minmax(0,0.7fr) 40px 40px"
 
 /** Dropdown trigger styled as a form field (same box as inputClass; Dropdown supplies the focus ring). */
 const DROPDOWN_TRIGGER = "rounded-lg border px-3 py-2.5 min-h-11 text-base md:text-sm transition theme-bg theme-outline theme-text"
@@ -113,6 +118,26 @@ function gradeLabel(grade: string | null, year: string | null): string {
     const g = grade ? (grade === "sophomore" ? "Soph" : pretty(grade)) : null
     const y = year ? `Yr ${year.replace("year_", "")}` : null
     return [g, y].filter(Boolean).join(" · ") || "—"
+}
+
+/** Live kiosk grant: "no_end", the end time, or null when there is none (or it lapsed). */
+function kioskGrantOf(m: MemberRow, now = Date.now()): "no_end" | Date | null {
+    if (m.kiosk_access_no_end) return "no_end"
+    if (!m.kiosk_access_until) return null
+    const until = new Date(m.kiosk_access_until)
+    return until.getTime() > now ? until : null
+}
+
+/** "3:40 PM" today, otherwise "Sat, Nov 15, 3:40 PM". */
+function formatEnd(d: Date): string {
+    const sameDay = d.toDateString() === new Date().toDateString()
+    return d.toLocaleString(undefined, sameDay
+        ? { hour: "numeric", minute: "2-digit" }
+        : { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+}
+
+function kioskGrantLabel(grant: "no_end" | Date): string {
+    return grant === "no_end" ? "No end" : `Until ${formatEnd(grant)}`
 }
 
 function initials(name: string): string {
@@ -203,6 +228,7 @@ export default function MembersPage() {
     const canEditTags = canManage || Boolean(getPerm(user?.permissions, "can_moderate"))
     const [editingTagsFor, setEditingTagsFor] = useState<string | null>(null)
     const [editingFor, setEditingFor]         = useState<string | null>(null)
+    const [kioskFor, setKioskFor]             = useState<string | null>(null)
     // Mobile only: the member whose action sheet is open.
     const [sheetFor, setSheetFor]             = useState<string | null>(null)
     const [loading, setLoading]              = useState(bMembers === null)
@@ -284,6 +310,24 @@ export default function MembersPage() {
         await fetch(`${API}/tags/user/${userId}/${tag}`, { method: "DELETE", credentials: "include" })
         setRows(prev => prev.map(r => (r.id === userId ? { ...r, tags: r.tags.filter(t => t !== tag) } : r)))
     }, [])
+
+    /** Grant (minutes, or null for no end) or revoke kiosk access; applies immediately. */
+    const handleKioskAccess = useCallback(async (userId: string, minutes: number | null | "revoke") => {
+        const res = await fetch(`${API}/members/${userId}/kiosk_access`, minutes === "revoke"
+            ? { method: "DELETE", credentials: "include" }
+            : {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ minutes }),
+            })
+        if (!res.ok) {
+            const detail = await res.json().then((b: { detail?: unknown }) => b.detail, () => null)
+            throw new Error(typeof detail === "string" ? detail : "Couldn't update kiosk access")
+        }
+        const body = await res.json() as Pick<MemberRow, "kiosk_access_until" | "kiosk_access_no_end">
+        patchRow(userId, { kiosk_access_until: body.kiosk_access_until, kiosk_access_no_end: body.kiosk_access_no_end })
+    }, [patchRow])
 
     const handleReset = useCallback(() => {
         setRows(prev => prev.map(r => ({ ...r, ...r._orig })))
@@ -432,7 +476,15 @@ export default function MembersPage() {
         return { label: "Ban", icon: Ban, onClick: () => handleBan(m.id), disabled: !!scopeReason, reason: scopeReason }
     }
 
+    /** Why the viewer can't change this member's kiosk access, or undefined when they can. */
+    const kioskBlockedReason = (m: MemberRowState): string | undefined =>
+        m.id === user?.id ? "You can't change your own kiosk access"
+            : !canModerate(user?.permissions, m.role, catalog) ? "This member is outside your moderation scope"
+            : m.banned_at ? "Banned members can't use kiosks"
+            : undefined
+
     const editingMember = editingFor ? rows.find(r => r.id === editingFor) : undefined
+    const kioskMember = kioskFor ? rows.find(r => r.id === kioskFor) : undefined
     const editingTagsMember = editingTagsFor ? rows.find(r => r.id === editingTagsFor) : undefined
     const sheetMember = sheetFor ? rows.find(r => r.id === sheetFor) : undefined
 
@@ -548,7 +600,7 @@ export default function MembersPage() {
                                 className={`grid gap-4 px-6 py-2.5 theme-subtext-color ${typeH2}`}
                                 style={{ gridTemplateColumns: GRID_COLS, background: "var(--ag-grid-header-bg)" }}
                             >
-                                <span>Member</span><span>Email</span><span>Role</span><span>Grade</span><span>Status</span><span>Tags</span><span />
+                                <span>Member</span><span>Email</span><span>Role</span><span>Grade</span><span>Status</span><span>Tags</span><span /><span />
                             </div>
                             <div className="flex-1 min-h-0 overflow-y-auto theme-scrollbar">
                                 {renderGroups(m => (
@@ -559,6 +611,12 @@ export default function MembersPage() {
                                         action={actionFor(m)}
                                         onEdit={canEditMember(m.role) ? () => setEditingFor(m.id) : undefined}
                                         onEditTags={canEditTags ? () => setEditingTagsFor(m.id) : undefined}
+                                        kioskBlocked={kioskBlockedReason(m)}
+                                        onKioskAccess={() => setKioskFor(m.id)}
+                                        onRevokeKiosk={() => {
+                                            setError(null)
+                                            void handleKioskAccess(m.id, "revoke").catch((e: Error) => setError(e.message))
+                                        }}
                                     />
                                 ))}
                             </div>
@@ -584,11 +642,13 @@ export default function MembersPage() {
                     .members-row:hover { background: var(--ag-grid-hover-bg); }
                     .members-row:hover .members-tag-edit { opacity: 1; }
                     .members-action:not(:disabled):hover { border-color: var(--theme-border); color: var(--theme-h1-color); }
+                    .members-menu-item:not(:disabled):hover { background: color-mix(in oklch, var(--theme-button-bg) 90%, transparent); }
                 }
                 @media (hover: none) {
                     .members-tag-edit { opacity: 1; }
                 }
                 .members-list-row:active { background: var(--ag-grid-hover-bg); }
+                .members-menu-item:not(:disabled):focus-visible { background: color-mix(in oklch, var(--theme-button-bg) 90%, transparent); }
             `}</style>
 
             {sheetMember && (
@@ -599,6 +659,8 @@ export default function MembersPage() {
                     onClose={() => setSheetFor(null)}
                     onEdit={canEditMember(sheetMember.role) ? () => { setSheetFor(null); setEditingFor(sheetMember.id) } : undefined}
                     onEditTags={canEditTags ? () => { setSheetFor(null); setEditingTagsFor(sheetMember.id) } : undefined}
+                    kioskBlocked={kioskBlockedReason(sheetMember)}
+                    onKioskAccess={() => { setSheetFor(null); setKioskFor(sheetMember.id) }}
                 />
             )}
 
@@ -609,6 +671,14 @@ export default function MembersPage() {
                     canChangeRole={canManage}
                     onClose={() => setEditingFor(null)}
                     onApply={patch => { patchRow(editingMember.id, patch); setEditingFor(null) }}
+                />
+            )}
+
+            {kioskMember && (
+                <KioskAccessModal
+                    member={kioskMember}
+                    onClose={() => setKioskFor(null)}
+                    onSubmit={minutes => handleKioskAccess(kioskMember.id, minutes)}
                 />
             )}
 
@@ -631,11 +701,16 @@ interface MemberGridRowProps {
     /** Opens the profile editor; absent when the member is outside the viewer's editing scope. */
     onEdit?: () => void
     onEditTags?: () => void
+    /** Why kiosk access can't be changed for this member; undefined when it can. */
+    kioskBlocked?: string
+    onKioskAccess: () => void
+    onRevokeKiosk: () => void
 }
 
-function MemberGridRow({ member: m, role, action, onEdit, onEditTags }: MemberGridRowProps) {
+function MemberGridRow({ member: m, role, action, onEdit, onEditTags, kioskBlocked, onKioskAccess, onRevokeKiosk }: MemberGridRowProps) {
     const name = nameOf(m)
     const goesBy = goesByOf(m)
+    const kiosk = kioskGrantOf(m)
     // A staged, unsaved moderation change is italicised until Save/Reset.
     const statusDirty = isDirty(m, PENDING)
     const Icon = action.icon
@@ -668,7 +743,10 @@ function MemberGridRow({ member: m, role, action, onEdit, onEditTags }: MemberGr
                 {role?.level === "lead" && <LeadBadge />}
             </div>
             <span className="text-sm whitespace-nowrap theme-text">{gradeLabel(m.grade, m.team_year)}</span>
-            <span className={`text-sm theme-text ${statusDirty ? "italic" : ""}`}>{STATUS_LABEL[statusOf(m)]}</span>
+            <span className="flex items-center gap-1.5 min-w-0">
+                <span className={`text-sm theme-text ${statusDirty ? "italic" : ""}`}>{STATUS_LABEL[statusOf(m)]}</span>
+                {kiosk && <KioskBadge grant={kiosk} />}
+            </span>
             <div className="flex items-center gap-1 flex-wrap min-w-0">
                 {m.tags.map(t => (
                     <span key={t} className="text-xs px-2 py-0.5 rounded-full truncate max-w-full" style={tagChip}>{t}</span>
@@ -693,6 +771,138 @@ function MemberGridRow({ member: m, role, action, onEdit, onEditTags }: MemberGr
             >
                 <Icon size={14} />
             </button>
+            <RowMenu
+                label={`More actions for ${name}`}
+                items={[
+                    { label: "Edit profile", icon: Pencil, onClick: onEdit, reason: onEdit ? undefined : "This member is outside your editing scope" },
+                    { label: "Edit tags", icon: Tag, onClick: onEditTags, reason: onEditTags ? undefined : "You can't edit tags" },
+                    { label: kiosk ? "Change kiosk access…" : "Grant kiosk access…", icon: ScanLine, onClick: kioskBlocked ? undefined : onKioskAccess, reason: kioskBlocked, divider: true },
+                    ...(kiosk ? [{ label: "Revoke kiosk access", icon: X, onClick: kioskBlocked ? undefined : onRevokeKiosk, reason: kioskBlocked, danger: true }] : []),
+                ]}
+            />
+        </div>
+    )
+}
+
+/** Marks a member holding a live kiosk grant; the tooltip says when it ends. */
+function KioskBadge({ grant }: { grant: "no_end" | Date }) {
+    const text = `Kiosk access · ${kioskGrantLabel(grant)}`
+    return (
+        <span
+            title={text}
+            aria-label={text}
+            className="inline-flex items-center gap-1 text-xs font-semibold px-1.5 py-0.5 rounded-full shrink-0"
+            style={tagChip}
+        >
+            <ScanLine size={12} aria-hidden /> Kiosk
+        </span>
+    )
+}
+
+interface RowMenuItem {
+    label: string
+    icon: typeof Check
+    /** Absent = disabled; `reason` becomes the tooltip. */
+    onClick?: () => void
+    reason?: string
+    /** Draw a separator above this item. */
+    divider?: boolean
+    danger?: boolean
+}
+
+/**
+ * Desktop row "…" menu: an anchored menu (design-system/modals.md, z-40) that
+ * opens upward when there isn't room below inside the scrolling roster. Arrow
+ * keys move between items; Esc or an outside click closes it.
+ */
+function RowMenu({ label, items }: { label: string; items: RowMenuItem[] }) {
+    const [open, setOpen] = useState(false)
+    const [upward, setUpward] = useState(false)
+    const rootRef = useRef<HTMLDivElement>(null)
+    const triggerRef = useRef<HTMLButtonElement>(null)
+    const menuRef = useRef<HTMLDivElement>(null)
+
+    const close = useCallback((refocus: boolean) => {
+        setOpen(false)
+        if (refocus) triggerRef.current?.focus()
+    }, [])
+
+    useEffect(() => {
+        if (!open) return
+        const onDown = (e: MouseEvent) => {
+            if (rootRef.current && !rootRef.current.contains(e.target as Node)) close(false)
+        }
+        document.addEventListener("mousedown", onDown)
+        menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus()
+        return () => document.removeEventListener("mousedown", onDown)
+    }, [open, close])
+
+    const toggle = () => {
+        if (!open && triggerRef.current) {
+            const rect = triggerRef.current.getBoundingClientRect()
+            const scroller = triggerRef.current.closest(".overflow-y-auto")
+            const bottom = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight
+            setUpward(bottom - rect.bottom < 44 * items.length + 24)
+        }
+        setOpen(o => !o)
+    }
+
+    const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+        if (e.key === "Escape") { e.stopPropagation(); close(true); return }
+        if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return
+        e.preventDefault()
+        const enabled = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])]
+        const i = enabled.indexOf(document.activeElement as HTMLButtonElement)
+        enabled[(i + (e.key === "ArrowDown" ? 1 : -1) + enabled.length) % enabled.length]?.focus()
+    }
+
+    return (
+        <div ref={rootRef} className="relative" onKeyDown={open ? onKeyDown : undefined}>
+            <button
+                ref={triggerRef}
+                type="button"
+                onClick={toggle}
+                aria-label={label}
+                title="More actions"
+                aria-haspopup="menu"
+                aria-expanded={open}
+                className={`members-action w-8 h-8 rounded-lg border border-transparent grid place-items-center theme-subtext-color cursor-pointer ${focusRing}`}
+                style={open ? { borderColor: "var(--theme-border)", color: "var(--theme-h1-color)" } : undefined}
+            >
+                <MoreHorizontal size={16} />
+            </button>
+            {open && (
+                <div
+                    ref={menuRef}
+                    role="menu"
+                    aria-label={label}
+                    className={`absolute right-0 z-40 w-60 rounded-xl border shadow-lg theme-border p-1 flex flex-col ${upward ? "bottom-full mb-1.5" : "top-full mt-1.5"}`}
+                    style={{ background: "var(--theme-bg)" }}
+                >
+                    {items.map(item => {
+                        const ItemIcon = item.icon
+                        return (
+                            <div key={item.label} className="flex flex-col">
+                                {item.divider && <div className="my-1 border-t theme-border" role="separator" />}
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    disabled={!item.onClick}
+                                    title={item.onClick ? undefined : item.reason}
+                                    onClick={() => { close(true); item.onClick?.() }}
+                                    className={`members-menu-item ${menuRowClass} font-medium cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
+                                    style={{ color: item.danger ? "var(--theme-danger)" : "var(--theme-text)" }}
+                                >
+                                    <span className="flex items-center gap-3 min-w-0">
+                                        <ItemIcon size={16} className="shrink-0" aria-hidden />
+                                        <span className="truncate">{item.label}</span>
+                                    </span>
+                                </button>
+                            </div>
+                        )
+                    })}
+                </div>
+            )}
         </div>
     )
 }
@@ -746,6 +956,7 @@ function MemberListRow({ member: m, role, onOpen }: MemberListRowProps) {
                     </span>
                 )}
             </span>
+            {kioskGrantOf(m) && <ScanLine size={16} className="shrink-0 theme-text-contrast" aria-label="Has kiosk access" />}
             {(status !== "approved" || statusDirty) && <StatusPill status={status} dirty={statusDirty} />}
             <ChevronRight size={18} className="shrink-0 theme-subtext-color" />
         </button>
@@ -760,6 +971,9 @@ interface MemberSheetProps {
     /** Absent when the member is outside the viewer's editing scope. */
     onEdit?: () => void
     onEditTags?: () => void
+    /** Why kiosk access can't be changed for this member; undefined when it can. */
+    kioskBlocked?: string
+    onKioskAccess: () => void
 }
 
 /**
@@ -767,9 +981,10 @@ interface MemberSheetProps {
  * desktop row spreads across columns (profile edit, tags, approve/ban/unban).
  * Like the grid, moderation only stages the change — Save still persists it.
  */
-function MemberSheet({ member: m, role, action, onClose, onEdit, onEditTags }: MemberSheetProps) {
+function MemberSheet({ member: m, role, action, onClose, onEdit, onEditTags, kioskBlocked, onKioskAccess }: MemberSheetProps) {
     const name = nameOf(m)
     const goesBy = goesByOf(m)
+    const kiosk = kioskGrantOf(m)
     const statusDirty = isDirty(m, PENDING)
     const Icon = action.icon
 
@@ -787,6 +1002,7 @@ function MemberSheet({ member: m, role, action, onClose, onEdit, onEditTags }: M
                 {STATUS_LABEL[statusOf(m)]}{statusDirty ? " (unsaved)" : ""}
             </span>
         )],
+        ["Kiosk access", kiosk ? kioskGrantLabel(kiosk) : "None"],
     ]
 
     return (
@@ -836,6 +1052,10 @@ function MemberSheet({ member: m, role, action, onClose, onEdit, onEditTags }: M
                             <Tag size={16} /> Edit tags
                         </Button>
                     )}
+                    <Button variant="outlined" className="w-full" onClick={onKioskAccess} disabled={!!kioskBlocked}>
+                        <ScanLine size={16} /> {kiosk ? "Change kiosk access" : "Grant kiosk access"}
+                    </Button>
+                    {kioskBlocked && <p className={`text-center ${helperClass}`}>{kioskBlocked}</p>}
                     <Button
                         variant="outlined"
                         className="w-full"
@@ -850,7 +1070,7 @@ function MemberSheet({ member: m, role, action, onClose, onEdit, onEditTags }: M
                 </div>
 
                 <p className={`text-center ${helperClass}`}>
-                    Profile and status changes are staged — press Save to keep them.
+                    Profile and status changes are staged — press Save to keep them. Kiosk access applies right away.
                 </p>
             </div>
         </Sheet>
@@ -1032,6 +1252,167 @@ function TagsModal({ member, onClose, onAdd, onRemove }: TagsModalProps) {
                 <p className={helperClass}>
                     Tag changes save immediately and don't require pressing Save.
                 </p>
+            </div>
+        </Sheet>
+    )
+}
+
+/** Preset kiosk grant lengths in minutes; null = no end. */
+const KIOSK_PRESETS: { key: string; label: string; minutes: number | null }[] = [
+    { key: "5m",   label: "5 min",  minutes: 5 },
+    { key: "15m",  label: "15 min", minutes: 15 },
+    { key: "1h",   label: "1 hr",   minutes: 60 },
+    { key: "8h",   label: "8 hr",   minutes: 480 },
+    { key: "none", label: "No end", minutes: null },
+]
+
+const CUSTOM_UNITS = [
+    { value: "1",    label: "Minutes" },
+    { value: "60",   label: "Hours" },
+    { value: "1440", label: "Days" },
+]
+
+/** Mirrors the backend cap (KIOSK_ACCESS_MAX_MINUTES): one year. */
+const KIOSK_MAX_MINUTES = 60 * 24 * 365
+
+interface KioskAccessModalProps {
+    member: MemberRowState
+    onClose: () => void
+    /** Minutes from now, null for no end, or "revoke". Rejects with a user-facing message. */
+    onSubmit: (minutes: number | null | "revoke") => Promise<void>
+}
+
+/**
+ * Grant a member kiosk access for a set time: they can scan member codes with
+ * their phone and set up a kiosk by showing their own code. Unlike profile
+ * edits this applies immediately — kiosk access isn't part of Save/Reset.
+ */
+function KioskAccessModal({ member, onClose, onSubmit }: KioskAccessModalProps) {
+    const current = kioskGrantOf(member)
+    const [choice, setChoice] = useState("1h")
+    const [customAmount, setCustomAmount] = useState("30")
+    const [customUnit, setCustomUnit] = useState("1")
+    const [busy, setBusy] = useState(false)
+    const [submitError, setSubmitError] = useState<string | null>(null)
+
+    const firstName = (member.display_name ?? nameOf(member)).split(" ")[0]
+    const amount = Number(customAmount)
+    const customMinutes = Math.round(amount * Number(customUnit))
+    const customInvalid = choice === "custom" && (!customAmount.trim() || !Number.isFinite(amount) || customMinutes < 1)
+    const customTooLong = choice === "custom" && !customInvalid && customMinutes > KIOSK_MAX_MINUTES
+    const minutes: number | null = choice === "custom"
+        ? customMinutes
+        : KIOSK_PRESETS.find(p => p.key === choice)?.minutes ?? null
+    const endsAt = minutes == null ? null : new Date(Date.now() + minutes * 60_000)
+
+    const run = async (value: number | null | "revoke") => {
+        setBusy(true)
+        setSubmitError(null)
+        try {
+            await onSubmit(value)
+            onClose()
+        } catch (e) {
+            setSubmitError(e instanceof Error ? e.message : "Couldn't update kiosk access")
+            setBusy(false)
+        }
+    }
+
+    const chip = (key: string, label: string) => {
+        const selected = choice === key
+        return (
+            <button
+                key={key}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setChoice(key)}
+                className={`min-h-11 md:min-h-10 px-3 rounded-lg border text-sm font-medium cursor-pointer transition-colors ${focusRing}`}
+                style={selected
+                    ? { ...tagChip, borderColor: "var(--theme-text-contrast)" }
+                    : { borderColor: "var(--theme-border)", color: "var(--theme-text)" }}
+            >
+                {label}
+            </button>
+        )
+    }
+
+    return (
+        <Sheet
+            title={`Kiosk access — ${nameOf(member)}`}
+            onClose={onClose}
+            footer={
+                <FormFooter safeArea>
+                    {current && (
+                        <Button variant="dangerOutlined" size="footer" className="mr-auto" disabled={busy} onClick={() => void run("revoke")}>
+                            Revoke
+                        </Button>
+                    )}
+                    <Button variant="outlined" size="footer" className={current ? "" : "ml-auto"} onClick={onClose} disabled={busy}>
+                        Cancel
+                    </Button>
+                    <Button size="footer" disabled={busy || customInvalid || customTooLong} onClick={() => void run(minutes)}>
+                        {busy ? "Saving…" : current ? "Update" : "Grant"}
+                    </Button>
+                </FormFooter>
+            }
+        >
+            <div className="flex flex-col gap-4">
+                <p className="text-sm theme-text">
+                    Lets {firstName} scan member codes to check people in, and set up a kiosk by showing their own code.
+                </p>
+
+                {current && (
+                    <div className="flex items-center gap-2 rounded-xl border theme-border px-4 py-2.5">
+                        <ScanLine size={16} className="shrink-0 theme-text-contrast" aria-hidden />
+                        <span className="text-sm theme-text">
+                            Has access now · <span className="theme-subtext-color">{kioskGrantLabel(current)}</span>
+                        </span>
+                    </div>
+                )}
+
+                <div className={`flex flex-col gap-1.5 ${fieldLabelClass}`}>
+                    <span id="kiosk-duration-label">Duration</span>
+                    <div role="radiogroup" aria-labelledby="kiosk-duration-label" className="grid grid-cols-3 gap-2 font-normal">
+                        {KIOSK_PRESETS.map(p => chip(p.key, p.label))}
+                        {chip("custom", "Custom")}
+                    </div>
+                </div>
+
+                {choice === "custom" && (
+                    <div className="grid grid-cols-2 gap-3">
+                        <label className={`flex flex-col gap-1.5 ${fieldLabelClass}`}>
+                            Amount
+                            <input
+                                type="number"
+                                inputMode="decimal"
+                                min={1}
+                                step="any"
+                                value={customAmount}
+                                onChange={e => setCustomAmount(e.target.value)}
+                                className={`w-full ${inputClass}`}
+                                aria-invalid={customInvalid || customTooLong}
+                            />
+                        </label>
+                        <div className={`flex flex-col gap-1.5 ${fieldLabelClass}`}>
+                            Unit
+                            <Dropdown value={customUnit} options={CUSTOM_UNITS} onChange={setCustomUnit}
+                                      label="Unit" triggerClassName={DROPDOWN_TRIGGER} />
+                        </div>
+                    </div>
+                )}
+
+                {customInvalid ? <p className={fieldErrorClass}>Enter a length of at least 1 minute.</p>
+                    : customTooLong ? <p className={fieldErrorClass}>Up to 365 days — pick No end for longer.</p>
+                    : (
+                        <p className={helperClass}>
+                            {endsAt ? `Ends ${formatEnd(endsAt)}.` : "Stays on until you revoke it."}
+                            {" "}Kiosks {firstName} sets up stop working when access ends.
+                        </p>
+                    )}
+
+                {submitError && <Notice>{submitError}</Notice>}
+
+                <p className={helperClass}>Kiosk access applies right away — no need to press Save.</p>
             </div>
         </Sheet>
     )

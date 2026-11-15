@@ -19,6 +19,8 @@ stays trivially testable. The request-time enforcement dependency
 is available, to avoid a circular import.
 """
 
+from collections.abc import Mapping
+from datetime import datetime, timezone
 from typing import Any
 
 # Moderation-authority specs, shared by role definitions below. `can_moderate`
@@ -46,15 +48,15 @@ ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
     "manufacturing_lead":   {"label": "Manufacturing Lead",   "level": "lead",   "subteam": "manufacturing", "requires_approval": True, "student": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
     "programming_member":   {"label": "Programming Member",   "level": "member", "subteam": "programming",   "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
     "programming_lead":     {"label": "Programming Lead",     "level": "lead",   "subteam": "programming",   "requires_approval": True, "student": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
-    "scouting_member":      {"label": "Scouting Member",      "level": "member", "subteam": "scouting",      "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
-    "scouting_lead":        {"label": "Scouting Lead",        "level": "lead",   "subteam": "scouting",      "requires_approval": True, "student": True,  "can_moderate": _MODERATE_ALL, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True, "members": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
+    "scouting_member":      {"label": "Scouting Member",      "level": "member", "subteam": "scouting",      "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}, "kiosk": {"authorize": True}},
+    "scouting_lead":        {"label": "Scouting Lead",        "level": "lead",   "subteam": "scouting",      "requires_approval": True, "student": True,  "can_moderate": _MODERATE_ALL, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True, "members": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}, "kiosk": {"authorize": True}},
     "publicity_member":     {"label": "Publicity Member",     "level": "member", "subteam": "publicity",     "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
     "publicity_lead":       {"label": "Publicity Lead",       "level": "lead",   "subteam": "publicity",     "requires_approval": True, "student": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
     "operations_member":    {"label": "Operations Member",    "level": "member", "subteam": "operations",    "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
     "operations_lead":      {"label": "Operations Lead",      "level": "lead",   "subteam": "operations",    "requires_approval": True, "student": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
     "outreach_member":      {"label": "Outreach Member",      "level": "member", "subteam": "outreach",      "requires_approval": False, "student": True, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
     "outreach_lead":        {"label": "Outreach Lead",        "level": "lead",   "subteam": "outreach",      "requires_approval": True, "student": True,  "can_moderate": _MODERATE_SUBTEAM, "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_agenda": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
-    "captain":              {"label": "Captain",              "level": "captain", "subteam": None,           "requires_approval": True, "student": True,  "can_moderate": _MODERATE_ALL,     "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True, "members": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
+    "captain":              {"label": "Captain",              "level": "captain", "subteam": None,           "requires_approval": True, "student": True,  "can_moderate": _MODERATE_ALL,     "school_info": {"required": True},  "attendance": {"view": True},  "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True, "members": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}, "kiosk": {"authorize": True}},
     "mentor":               {"label": "Mentor",               "level": "mentor",  "subteam": None,           "requires_approval": True, "student": False,  "can_moderate": _MODERATE_ALL,     "school_info": {"required": False}, "attendance": {"view": False}, "control_panel": {"view": True, "meeting_time": True, "meeting_agenda": True, "upcoming_event": True, "members": True, "notifications": True}, "tasks": {"view": True, "assign": True}, "events": {"edit": True}},
     "alumni":               {"label": "Alumni",               "level": "alumni",  "subteam": None,           "requires_approval": False, "student": False, "school_info": {"required": False}, "attendance": {"view": False}, "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
     "visitor":              {"label": "Visitor",              "level": "visitor", "subteam": None,           "requires_approval": True,  "student": False, "school_info": {"required": False}, "attendance": {"view": False}, "control_panel": {"view": False}, "tasks": {"view": True, "assign": False}},
@@ -356,11 +358,44 @@ def role_catalog() -> list[dict[str, Any]]:
     ]
 
 
+def kiosk_grant_active(user: Mapping[str, Any] | None, now: datetime | None = None) -> bool:
+    """Whether a member holds a live per-member kiosk grant (Members page → Kiosk access).
+
+    Separate from the role policy: a grant adds ``kiosk.authorize`` to one
+    member until ``kiosk_access_until`` passes, or indefinitely when
+    ``kiosk_access_no_end`` is set.
+    """
+    if not user:
+        return False
+    if user.get("kiosk_access_no_end"):
+        return True
+    until = user.get("kiosk_access_until")
+    return until is not None and until > (now or datetime.now(timezone.utc))
+
+
+def can_operate_kiosk(user: Mapping[str, Any] | None) -> bool:
+    """``kiosk.authorize`` from the member's role, or from a live per-member grant."""
+    if not user:
+        return False
+    return can(get_permissions_for_role(user.get("role")), "kiosk.authorize") or kiosk_grant_active(user)
+
+
+def permissions_for_user(user: Mapping[str, Any] | None) -> dict[str, Any]:
+    """The role policy with a live kiosk grant folded in as ``kiosk.authorize``."""
+    perms = get_permissions_for_role(user.get("role") if user else None)
+    if kiosk_grant_active(user) and not can(perms, "kiosk.authorize"):
+        perms = {**perms, "kiosk": {**(perms.get("kiosk") or {}), "authorize": True}}
+    return perms
+
+
 __all__ = [
     "STUDENT_EMAIL_DOMAIN",
     "ROLE_DEFINITIONS",
     "get_permissions_for_role",
     "get_perm",
+    "kiosk_grant_active",
+    "can_operate_kiosk",
+    "permissions_for_user",
     "can",
     "role_requires_approval",
     "role_is_student",

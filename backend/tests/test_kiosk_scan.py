@@ -228,3 +228,98 @@ def test_clock(store):
     before = time.time()
     server_time = _client(None).get("/kiosk/clock").json()["server_time"]
     assert before - 1 <= server_time <= time.time() + 1
+
+
+# --- Handheld scanner: a signed-in member's phone acts as the kiosk ----------
+
+@pytest.fixture
+def scanner(store, monkeypatch):
+    kiosks = {"K-ABC123": {"id": "K-ABC123", "authorized_by": CAPTAIN_ID, "revoked_at": None}}
+    state = {"session": CAPTAIN_ID}
+
+    async def get_user(uid):
+        return USERS.get(uid)
+
+    async def get_kiosk(kiosk_id):
+        k = kiosks.get(kiosk_id)
+        return None if k is None else {**k, "revoked_at": "now" if kiosk_id in store["revoked"] else None}
+
+    async def touch_kiosk(kiosk_id):
+        pass
+
+    monkeypatch.setattr(db, "get_user", get_user)
+    monkeypatch.setattr(db, "get_kiosk", get_kiosk)
+    monkeypatch.setattr(db, "touch_kiosk", touch_kiosk)
+    app = FastAPI()
+    app.include_router(kiosk_router, prefix="/kiosk")
+    app.dependency_overrides[kiosk_mod.require_active] = lambda: {"sub": state["session"]}
+    return TestClient(app), state
+
+
+def scanner_scan(client, code, kiosk_id="K-ABC123"):
+    return client.post(f"/kiosk/scanner/{kiosk_id}/scan", json={
+        "code": code, "scanned_at": time.time(), "scan_id": str(uuid.uuid4()),
+    })
+
+
+def test_scanner_opens_a_kiosk_and_checks_member_in(scanner, store):
+    client, _ = scanner
+    assert client.post("/kiosk/scanner").json() == {"kiosk_id": "K-ABC123"}
+    assert store["kiosks"] == [CAPTAIN_ID]
+    resp = scanner_scan(client, code_for(MEMBER_ID))
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "checked_in"
+    assert store["toggles"] == [(MEMBER_ID, "scanner_code")]
+    assert scanner_scan(client, code_for(MEMBER_ID)).json()["status"] == "checked_out"
+
+
+def test_scanner_needs_a_kiosk_role(scanner, store):
+    client, state = scanner
+    state["session"] = MEMBER_ID
+    assert client.post("/kiosk/scanner").status_code == 403
+    assert scanner_scan(client, code_for(CAPTAIN_ID)).status_code == 403
+    assert store["kiosks"] == [] and store["toggles"] == []
+
+
+def test_scanner_rejects_someone_elses_kiosk(scanner, store):
+    client, _ = scanner
+    assert scanner_scan(client, code_for(MEMBER_ID), kiosk_id="K-OTHER1").status_code == 404
+    assert store["toggles"] == []
+
+
+def test_closed_scanner_stops_scanning(scanner, store):
+    client, _ = scanner
+    assert client.delete("/kiosk/scanner/K-ABC123").status_code == 200
+    assert store["revoked"] == ["K-ABC123"]
+    assert scanner_scan(client, code_for(MEMBER_ID)).status_code == 404
+    assert store["toggles"] == []
+
+
+def test_scanner_allows_a_live_kiosk_grant(scanner, store, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    client, state = scanner
+    state["session"] = MEMBER_ID
+    monkeypatch.setitem(USERS, MEMBER_ID, {
+        **USERS[MEMBER_ID], "kiosk_access_until": datetime.now(timezone.utc) + timedelta(minutes=5),
+    })
+    assert client.post("/kiosk/scanner").status_code == 200
+    assert store["kiosks"] == [MEMBER_ID]
+
+
+def test_scanner_rejects_an_expired_kiosk_grant(scanner, store, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    client, state = scanner
+    state["session"] = MEMBER_ID
+    monkeypatch.setitem(USERS, MEMBER_ID, {
+        **USERS[MEMBER_ID], "kiosk_access_until": datetime.now(timezone.utc) - timedelta(seconds=1),
+    })
+    assert client.post("/kiosk/scanner").status_code == 403
+
+
+def test_authorize_allows_a_no_end_kiosk_grant(store, monkeypatch):
+    monkeypatch.setitem(USERS, MEMBER_ID, {**USERS[MEMBER_ID], "kiosk_access_no_end": True})
+    resp = _client(None).post("/kiosk/authorize", json={
+        "code": code_for(MEMBER_ID), "scanned_at": time.time(), "scan_id": str(uuid.uuid4()),
+    })
+    assert resp.status_code == 200
+    assert store["kiosks"] == [MEMBER_ID]
