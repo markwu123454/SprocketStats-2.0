@@ -9,7 +9,10 @@ import db
 from core.attendance_rules import (
     ATTENDANCE_ACTIVE_FROM, MAX_HOURS_MULTIPLIER, MIN_HOURS_MULTIPLIER, hours_multiplier, meeting_checkin_seconds,
 )
-from core.permissions import can_view_absence, has_absence_view, role_requires_approval, tracks_attendance
+from core.permissions import (
+    can_view_absence, get_perm, get_permissions_for_role, has_absence_view, role_requires_approval, sees_whole_team,
+    tracks_attendance,
+)
 from core.discord_notify import discord_configured, notify_meetings_created
 from core.push_notify import absence_push, kick_outbox
 from core.security import require_access, require_active
@@ -137,6 +140,10 @@ async def attendance_overview(user: dict = Depends(require_active)):
     ``active_from`` is when the attendance system went live (see
     ``core.attendance_rules``): the client requires a check-in for meetings
     starting on or after it, and credits earlier ones in full.
+
+    Each member carries its role's ``subteam`` and ``level`` so the client can
+    group them; ``team_wide`` says whether the viewer oversees the whole team
+    (captains, mentors, the Scouting Lead) or only their own subteam.
     """
     viewer_role = user.get("role")
     if not has_absence_view(viewer_role):
@@ -158,8 +165,11 @@ async def attendance_overview(user: dict = Depends(require_active)):
             if user_id in member_ids
         ],
         "meetings": [_row_to_meeting(r) for r in await db.list_all_meeting_hours()],
+        "team_wide": sees_whole_team(viewer_role),
         "members": sorted(
-            ({"user_id": m["id"], "display_name": m["display_name"], "role": m["role"], "created_at": m["created_at"]}
+            ({"user_id": m["id"], "display_name": m["display_name"], "role": m["role"], "created_at": m["created_at"],
+              "subteam": get_perm(get_permissions_for_role(m["role"]), "subteam"),
+              "level": get_perm(get_permissions_for_role(m["role"]), "level")}
              for m in members),
             key=lambda m: (m["display_name"] or "").lower(),
         ),
