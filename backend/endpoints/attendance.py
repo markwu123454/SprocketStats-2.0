@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 import db
 from core import member_codes, qr_events
-from core.attendance_rules import hours_multiplier, multiplier_bonus_seconds
+from core.attendance_rules import credited_seconds_by_member
 from core.security import get_current_user, require_active
 
 logger = logging.getLogger(__name__)
@@ -37,50 +37,25 @@ async def get_meetings(_: dict = Depends(get_current_user)):
 
 @router.get("/leaderboard")
 async def get_leaderboard(user: dict = Depends(get_current_user)):
-    # Rows come back ordered by (user_id, checkin_time), so overlapping/adjacent
-    # entries for the same user are merged with a single sweep to avoid
-    # double-counting time that was logged more than once.
-    rows = await db.list_all_attendance()
-    now = datetime.now(timezone.utc)
+    """Credited hours per member: meeting time only, weighted by how each
+    session ended and by each meeting's multiplier (see core.attendance_rules).
+    Members with sessions but no credited time are listed with zero."""
+    entries = await db.list_all_attendance()
+    checkins = await db.list_meeting_checkins()
+    meetings = await db.list_all_meeting_hours()
 
     names: dict[str, str] = {}
-    totals: dict[str, float] = {}
-    open_interval: dict[str, tuple[datetime, datetime]] = {}
     # An entry still open (abandoned ones are already filtered out) means the
     # member is checked in right now.
     checked_in: set[str] = set()
-
-    def close_interval(uid: str) -> None:
-        start, end = open_interval.pop(uid)
-        totals[uid] = totals.get(uid, 0.0) + (end - start).total_seconds()
-
-    for row in rows:
-        uid = row["user_id"]
-        names[uid] = row["display_name"] or row["given_name"] or "Unknown User"
-        start = row["checkin_time"]
-        end = row["checkout_time"] or now
+    for row in [*entries, *checkins]:
+        names[row["user_id"]] = row["display_name"] or row["given_name"] or "Unknown User"
+    for row in entries:
         if row["checkout_time"] is None:
-            checked_in.add(uid)
+            checked_in.add(row["user_id"])
 
-        current = open_interval.get(uid)
-        if current is None:
-            open_interval[uid] = (start, end)
-        elif start <= current[1]:
-            open_interval[uid] = (current[0], max(current[1], end))
-        else:
-            close_interval(uid)
-            open_interval[uid] = (start, end)
-
-    for uid in list(open_interval):
-        close_interval(uid)
-
-    # Meetings worth more than x1.0 add their extra on top of the clock time.
-    meetings = await db.list_all_meeting_hours()
-    if any(hours_multiplier(m) > 1.0 for m in meetings):
-        for uid, bonus in multiplier_bonus_seconds(meetings, await db.list_meeting_checkins()).items():
-            if uid in totals:
-                totals[uid] += bonus
-
+    credited = credited_seconds_by_member(meetings, checkins)
+    totals = {uid: credited.get(uid, 0.0) for uid in names}
     ranked = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
     return [
         {
@@ -108,7 +83,8 @@ async def get_my_attendance(user: dict = Depends(get_current_user)):
 # deliberately no endpoint for a member to submit their own hours.
 #
 # Checking *out* is the one exception: it can only end a session a kiosk
-# started, so it can shorten logged time but never add to it.
+# started. Because it doesn't prove when the member left, a session ended this
+# way earns only unverified credit (core.attendance_rules.UNVERIFIED_CREDIT).
 
 
 @router.post("/checkout")

@@ -2,18 +2,18 @@ import {useCallback, useEffect, useId, useRef, useState, type KeyboardEvent} fro
 import {createPortal} from "react-dom"
 import {CameraOff, LogIn, LogOut, SwitchCamera, X} from "lucide-react"
 import {isTopOverlay, lockScroll, pushOverlay, trapTab} from "@/lib/modalStack"
-import {preloadCodeReader, readMemberCode} from "@/lib/codeReader"
+import {centerOf, createCodeReader, memberCodeOf, type Point} from "@/lib/codeReader"
 import {focusRing} from "@/lib/uiClasses"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
 const FACING_KEY = "sprocket-scanner-facing"
-// Longest side of the frame handed to the decoder. A phone held up to the
-// camera fills most of it, so full resolution only costs time.
-const DECODE_SIDE = 800
-const DECODE_INTERVAL_MS = 120
 // A code unseen for this long has left the frame; showing it again is a new scan.
+// A found-but-unreadable code (blur, glare) near a known one counts as "seen".
 const GONE_MS = 1500
+// How close (as a share of the frame's diagonal) an unreadable code must be to
+// a known one to be treated as the same phone.
+const SAME_PLACE = 0.25
 // After a rejected scan, wait this long before trying the same appearance again.
 const RETRY_MS = 1500
 const BANNER_MS = 3000
@@ -31,13 +31,31 @@ interface ScanResult {
 }
 
 // One continuous appearance of a member's code in front of the camera. It keeps
-// one scan_id, so a retry can never toggle the member twice.
+// one scan_id, so a retry can never toggle the member twice. Several can be
+// live at once when more than one phone is held up.
 interface Appearance {
     codeNumber: string
     scanId: string
     lastSeen: number
+    center: Point
     state: "sending" | "done" | "failed"
     failedAt: number
+}
+
+type BoxState = Appearance["state"] | "reading"
+
+/** Outlines of the codes in the latest decoded frame, in that frame's pixels. */
+interface Overlay {
+    width: number
+    height: number
+    boxes: {quad: Point[], state: BoxState}[]
+}
+
+const BOX_COLOR: Record<BoxState, string> = {
+    reading: "rgba(255,255,255,.85)",
+    sending: "#facc15",
+    done: "#22c55e",
+    failed: "#ef4444",
 }
 
 type Setup =
@@ -90,7 +108,8 @@ export default function ScannerDialog({onClose}: {onClose: () => void}) {
     const [recent, setRecent] = useState<ScanResult[]>([])
     const [scanError, setScanError] = useState<string | null>(null)
     const [now, setNow] = useState(() => Date.now())
-    const appearanceRef = useRef<Appearance | null>(null)
+    const [overlay, setOverlay] = useState<Overlay | null>(null)
+    const appearancesRef = useRef(new Map<string, Appearance>())
 
     useEffect(() => {
         const unregister = pushOverlay(token)
@@ -120,7 +139,6 @@ export default function ScannerDialog({onClose}: {onClose: () => void}) {
     // Register this phone as a kiosk, and learn the server's clock: a scan is
     // judged against the moment it was read, which must match the server's.
     useEffect(() => {
-        preloadCodeReader()
         let cancelled = false
         let kioskId: string | null = null
         void (async () => {
@@ -186,14 +204,16 @@ export default function ScannerDialog({onClose}: {onClose: () => void}) {
         }
     }, [facing])
 
-    const submit = useCallback(async (a: Appearance, code: string, kioskId: string, clockOffsetMs: number) => {
+    // `seenAt` is when the frame was captured (Date.now() clock): the server
+    // judges a rotating code against the moment it was read, not when it arrived.
+    const submit = useCallback(async (a: Appearance, code: string, seenAt: number, kioskId: string, clockOffsetMs: number) => {
         a.state = "sending"
         try {
             const res = await fetch(`${API}/kiosk/scanner/${encodeURIComponent(kioskId)}/scan`, {
                 method: "POST",
                 credentials: "include",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({code, scanned_at: (Date.now() + clockOffsetMs) / 1000, scan_id: a.scanId}),
+                body: JSON.stringify({code, scanned_at: (seenAt + clockOffsetMs) / 1000, scan_id: a.scanId}),
             })
             if (!res.ok) throw new Error(await detailOf(res))
             const body = await res.json() as Omit<ScanResult, "id" | "at">
@@ -208,44 +228,104 @@ export default function ScannerDialog({onClose}: {onClose: () => void}) {
         }
     }, [])
 
-    // Decode loop: one frame at a time, never overlapping.
+    // Decode loop: frames go to a worker one at a time, and the next is grabbed
+    // as soon as the last one answers (paced to new camera frames where the
+    // browser supports requestVideoFrameCallback), so it runs as fast as the
+    // device decodes without ever queueing stale frames.
     useEffect(() => {
         if (setup.kind !== "ready") return
         const {kioskId, clockOffsetMs} = setup
-        const canvas = document.createElement("canvas")
-        const ctx = canvas.getContext("2d", {willReadFrequently: true})
+        const reader = createCodeReader()
+        const appearances = appearancesRef.current
         let stopped = false
         let timer = 0
+        let frameHandle = 0
+        let frameVideo: HTMLVideoElement | null = null
+
+        const handle = (width: number, height: number, codes: {text: string | null, quad: Point[]}[], seenAt: number) => {
+            const t = performance.now()
+            const reach = SAME_PLACE * Math.hypot(width, height)
+            const boxes: Overlay["boxes"] = []
+
+            for (const found of codes) {
+                const center = centerOf(found.quad)
+                const code = memberCodeOf(found.text)
+                if (found.text !== null && !code) continue // some other DataMatrix: ignore it
+                if (code) {
+                    const number = code.slice(0, 4)
+                    let a = appearances.get(number)
+                    if (a && t - a.lastSeen < GONE_MS) {
+                        a.lastSeen = t
+                        a.center = center
+                        if (a.state === "failed" && t - a.failedAt > RETRY_MS) void submit(a, code, seenAt, kioskId, clockOffsetMs)
+                    } else {
+                        a = {codeNumber: number, scanId: crypto.randomUUID(), lastSeen: t, center, state: "sending", failedAt: 0}
+                        appearances.set(number, a)
+                        void submit(a, code, seenAt, kioskId, clockOffsetMs)
+                    }
+                    boxes.push({quad: found.quad, state: a.state})
+                    continue
+                }
+                // Found but unreadable: keep the nearest live appearance alive.
+                let nearest: Appearance | null = null
+                let best = reach
+                for (const a of appearances.values()) {
+                    const d = Math.hypot(a.center.x - center.x, a.center.y - center.y)
+                    if (t - a.lastSeen < GONE_MS && d < best) {
+                        best = d
+                        nearest = a
+                    }
+                }
+                if (nearest) {
+                    nearest.lastSeen = t
+                    nearest.center = center
+                }
+                boxes.push({quad: found.quad, state: nearest?.state ?? "reading"})
+            }
+
+            for (const [number, a] of appearances) {
+                if (t - a.lastSeen > GONE_MS * 4) appearances.delete(number)
+            }
+            setOverlay(prev => (boxes.length === 0 && prev === null ? prev : boxes.length ? {width, height, boxes} : null))
+        }
+
+        const schedule = () => {
+            if (stopped) return
+            const video = videoRef.current
+            if (video && "requestVideoFrameCallback" in video) {
+                frameVideo = video
+                frameHandle = video.requestVideoFrameCallback(() => void tick())
+            } else {
+                timer = window.setTimeout(() => void tick(), 30)
+            }
+        }
 
         const tick = async () => {
             const video = videoRef.current
-            if (ctx && video && video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0) {
-                const scale = Math.min(1, DECODE_SIDE / Math.max(video.videoWidth, video.videoHeight))
-                canvas.width = Math.round(video.videoWidth * scale)
-                canvas.height = Math.round(video.videoHeight * scale)
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-                const code = await readMemberCode(ctx.getImageData(0, 0, canvas.width, canvas.height)).catch(() => null)
-                if (stopped) return
-                if (code) {
-                    const t = performance.now()
-                    const number = code.slice(0, 4)
-                    const a = appearanceRef.current
-                    if (a && a.codeNumber === number && t - a.lastSeen < GONE_MS) {
-                        a.lastSeen = t
-                        if (a.state === "failed" && t - a.failedAt > RETRY_MS) void submit(a, code, kioskId, clockOffsetMs)
-                    } else {
-                        const next: Appearance = {codeNumber: number, scanId: crypto.randomUUID(), lastSeen: t, state: "sending", failedAt: 0}
-                        appearanceRef.current = next
-                        void submit(next, code, kioskId, clockOffsetMs)
+            if (video && video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0) {
+                const seenAt = Date.now()
+                try {
+                    const bitmap = await createImageBitmap(video)
+                    if (stopped) {
+                        bitmap.close()
+                        return
                     }
+                    const res = await reader.read(bitmap, seenAt)
+                    if (stopped) return
+                    if (res.width > 0) handle(res.width, res.height, res.codes, res.capturedAt)
+                } catch {
+                    // A frame that can't be captured (camera switching) is just skipped.
                 }
             }
-            if (!stopped) timer = window.setTimeout(tick, DECODE_INTERVAL_MS)
+            schedule()
         }
-        void tick()
+        schedule()
         return () => {
             stopped = true
             window.clearTimeout(timer)
+            if (frameVideo && frameHandle) frameVideo.cancelVideoFrameCallback(frameHandle)
+            reader.close()
+            setOverlay(null)
         }
     }, [setup, submit])
 
@@ -342,7 +422,29 @@ export default function ScannerDialog({onClose}: {onClose: () => void}) {
                             <p className="max-w-64 text-base font-semibold text-white">{problem}</p>
                         </div>
                     ) : (
-                        <div aria-hidden="true" className="absolute inset-[18%] rounded-2xl border-2 border-white/70"/>
+                        <div aria-hidden="true" className="absolute inset-[18%] rounded-2xl border-2 border-white/40"/>
+                    )}
+                    {/* Outlines found codes: white while reading, yellow sending, green done, red failed.
+                        "slice" matches the video's object-cover crop; mirrored with the front camera like the video. */}
+                    {overlay && !problem && (
+                        <svg
+                            aria-hidden="true"
+                            className="absolute inset-0 size-full pointer-events-none"
+                            viewBox={`0 0 ${overlay.width} ${overlay.height}`}
+                            preserveAspectRatio="xMidYMid slice"
+                            style={facing === "user" ? {transform: "scaleX(-1)"} : undefined}
+                        >
+                            {overlay.boxes.map((b, i) => (
+                                <polygon
+                                    key={i}
+                                    points={b.quad.map(p => `${p.x},${p.y}`).join(" ")}
+                                    fill={b.state === "done" ? "rgba(34,197,94,.18)" : "none"}
+                                    stroke={BOX_COLOR[b.state]}
+                                    strokeWidth={Math.max(overlay.width, overlay.height) / 160}
+                                    strokeLinejoin="round"
+                                />
+                            ))}
+                        </svg>
                     )}
                     {banner && (
                         <div

@@ -983,6 +983,19 @@ async def _migration_0015_kiosk_access_grants(conn) -> None:
     )
 
 
+async def _migration_0016_attendance_checkout_method(conn) -> None:
+    """Record how each attendance session ended, so only check-outs that prove
+    the member was in the room earn full credit (core.attendance_rules):
+    ``kiosk`` (any kiosk/scanner/QR scan), ``self`` (the Check out button) or
+    ``expired`` (never checked out). Sessions closed before this existed are
+    marked ``legacy`` and keep full credit, so no past hours change."""
+    await conn.execute("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS checkout_method TEXT")
+    await conn.execute(
+        "UPDATE attendance SET checkout_method = 'legacy' "
+        "WHERE checkout_time IS NOT NULL AND checkout_method IS NULL"
+    )
+
+
 # Append-only: never edit or renumber a migration that has shipped. Each must
 # be idempotent against init_db's current schema, because a fresh database
 # gets that schema first and then runs every migration.
@@ -1002,6 +1015,7 @@ _MIGRATIONS = [
     (13, _migration_0013_member_codes),
     (14, _migration_0014_member_code_numbers),
     (15, _migration_0015_kiosk_access_grants),
+    (16, _migration_0016_attendance_checkout_method),
 ]
 
 
