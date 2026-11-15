@@ -9,6 +9,9 @@ from .connection import DB_NAME, db_connection
 logger = logging.getLogger(__name__)
 
 KIOSK_SESSION_MAX_AGE = timedelta(hours=12)
+# Time before a meeting starts and after it ends that still earns hours
+# (setup, cleanup, running over). See list_meeting_checkins.
+MEETING_GRACE = timedelta(minutes=30)
 
 
 async def toggle_kiosk_attendance(user_id: str, source: str = "kiosk") -> str | None:
@@ -49,14 +52,22 @@ async def toggle_kiosk_attendance(user_id: str, source: str = "kiosk") -> str | 
 
                 if open_entry is not None and now - open_entry["checkin_time"] < KIOSK_SESSION_MAX_AGE:
                     await conn.execute(
-                        "UPDATE attendance SET checkout_time = $2 WHERE id = $1",
+                        "UPDATE attendance SET checkout_time = $2, checkout_method = 'kiosk' WHERE id = $1",
                         open_entry["id"],
                         now,
                     )
                     return "checked_out"
 
+                # Nobody checked out of the old session. Close it as "expired"
+                # rather than deleting it: it still earns unverified credit
+                # (see core.attendance_rules).
                 if open_entry is not None:
-                    await conn.execute("DELETE FROM attendance WHERE id = $1", open_entry["id"])
+                    await conn.execute(
+                        "UPDATE attendance SET checkout_time = checkin_time + $2::interval, "
+                        "checkout_method = 'expired' WHERE id = $1",
+                        open_entry["id"],
+                        KIOSK_SESSION_MAX_AGE,
+                    )
 
                 await conn.execute(
                     """
@@ -100,7 +111,8 @@ async def checkout_attendance(user_id: str) -> asyncpg.Record | None:
 
     Never opens a session: checking in still requires being at a kiosk.
     Abandoned open entries (older than the kiosk limit) are left alone, the
-    same as the toggle treats them.
+    same as the toggle treats them. Recorded as a ``self`` check-out, which
+    earns only unverified credit: nothing proves where the member was.
 
     :returns: The closed entry, or ``None`` if the user wasn't checked in.
     """
@@ -108,7 +120,7 @@ async def checkout_attendance(user_id: str) -> asyncpg.Record | None:
         try:
             return await conn.fetchrow(
                 """
-                UPDATE attendance SET checkout_time = clock_timestamp()
+                UPDATE attendance SET checkout_time = clock_timestamp(), checkout_method = 'self'
                 WHERE id = (
                     SELECT id FROM attendance
                     WHERE user_id = $1 AND checkout_time IS NULL
@@ -135,6 +147,7 @@ async def list_attendance_for_user(user_id: str) -> list[asyncpg.Record]:
                 SELECT *
                 FROM attendance
                 WHERE user_id = $1
+                  AND checkout_method IS DISTINCT FROM 'expired'
                   AND (checkout_time IS NOT NULL OR checkin_time > now() - INTERVAL '12 hours')
                 ORDER BY checkin_time
                 """,
@@ -154,8 +167,8 @@ async def list_all_attendance() -> list[asyncpg.Record]:
                 SELECT a.user_id, a.checkin_time, a.checkout_time, u.display_name, u.given_name
                 FROM attendance a
                 JOIN users u ON u.id = a.user_id
-                WHERE a.checkout_time IS NOT NULL
-                   OR a.checkin_time > now() - INTERVAL '12 hours'
+                WHERE a.checkout_method IS DISTINCT FROM 'expired'
+                  AND (a.checkout_time IS NOT NULL OR a.checkin_time > now() - INTERVAL '12 hours')
                 ORDER BY a.user_id, a.checkin_time
                 """
             )
@@ -167,26 +180,58 @@ async def list_all_attendance() -> list[asyncpg.Record]:
 async def list_meeting_checkins() -> list[asyncpg.Record]:
     """Every attendance entry clipped to each meeting it overlaps.
 
+    Each meeting's window is stretched by ``MEETING_GRACE`` on both sides, so
+    setup and cleanup time counts. Where two meetings are closer than twice
+    the grace, the gap between them is split at its midpoint, so no minute
+    counts toward both.
+
     One row per (meeting, entry) pair with the overlapping span as
     ``seg_start``/``seg_end``, ordered so a single sweep can merge a member's
-    overlapping entries. An entry still open counts up to now; abandoned open
-    entries (older than the kiosk limit) are skipped, as everywhere else.
+    overlapping entries. ``checkout_method`` says how the entry ended
+    (``kiosk``, ``self``, ``expired``, ``legacy``, or NULL while still open)
+    and ``meeting_end`` (the end of the window, grace included) lets the
+    caller tell a live meeting from a finished one. An entry still open counts
+    up to now; one left open past the kiosk limit is reported as ``expired``,
+    ending at the limit.
     """
     async with db_connection(DB_NAME) as conn:
         try:
             return await conn.fetch(
                 """
-                SELECT m.id AS meeting_id, a.user_id,
-                       GREATEST(a.checkin_time, m.start_time) AS seg_start,
-                       LEAST(COALESCE(a.checkout_time, now()), m.end_time) AS seg_end
-                FROM meeting_hours m
-                JOIN attendance a
-                  ON a.checkin_time < m.end_time
-                 AND COALESCE(a.checkout_time, now()) > m.start_time
-                WHERE a.checkout_time IS NOT NULL
-                   OR a.checkin_time > now() - INTERVAL '12 hours'
-                ORDER BY m.id, a.user_id, seg_start
-                """
+                WITH ordered AS (
+                    SELECT id, start_time, end_time,
+                           LAG(end_time)    OVER (ORDER BY start_time, id) AS prev_end,
+                           LEAD(start_time) OVER (ORDER BY start_time, id) AS next_start
+                    FROM meeting_hours
+                ), windows AS (
+                    SELECT id,
+                           CASE WHEN prev_end IS NULL THEN start_time - $2::interval
+                                WHEN prev_end >= start_time THEN start_time
+                                ELSE GREATEST(start_time - $2::interval, prev_end + (start_time - prev_end) / 2)
+                           END AS win_start,
+                           CASE WHEN next_start IS NULL THEN end_time + $2::interval
+                                WHEN next_start <= end_time THEN end_time
+                                ELSE LEAST(end_time + $2::interval, end_time + (next_start - end_time) / 2)
+                           END AS win_end
+                    FROM ordered
+                )
+                SELECT w.id AS meeting_id, w.win_end AS meeting_end, a.user_id,
+                       u.display_name, u.given_name,
+                       GREATEST(a.checkin_time, w.win_start) AS seg_start,
+                       LEAST(e.end_at, w.win_end) AS seg_end,
+                       e.method AS checkout_method
+                FROM attendance a
+                CROSS JOIN LATERAL (
+                    SELECT COALESCE(a.checkout_time, LEAST(now(), a.checkin_time + $1::interval)) AS end_at,
+                           CASE WHEN a.checkout_time IS NULL AND a.checkin_time <= now() - $1::interval
+                                THEN 'expired' ELSE a.checkout_method END AS method
+                ) e
+                JOIN windows w ON a.checkin_time < w.win_end AND e.end_at > w.win_start
+                JOIN users u ON u.id = a.user_id
+                ORDER BY w.id, a.user_id, seg_start
+                """,
+                KIOSK_SESSION_MAX_AGE,
+                MEETING_GRACE,
             )
         except Exception as e:
             logger.error("list_meeting_checkins failed: %s", e)
@@ -266,6 +311,7 @@ async def list_kiosk_qr_results(kiosk_user_id: str, tokens: list[str]) -> list[a
 
 __all__ = [
     "KIOSK_SESSION_MAX_AGE",
+    "MEETING_GRACE",
     "QR_CODE_TTL",
     "create_kiosk_qr_code",
     "claim_kiosk_qr_code",

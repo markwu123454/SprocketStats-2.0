@@ -132,7 +132,8 @@ async def attendance_overview(user: dict = Depends(require_active)):
     ``absences`` is limited to those members.
 
     ``checkins`` is how long each of those members was checked in during each
-    meeting (``seconds``, never more than the meeting's length).
+    meeting (``seconds``, credited per core.attendance_rules and including the
+    grace window around it; the client caps it at the meeting length).
     ``active_from`` is when the attendance system went live (see
     ``core.attendance_rules``): the client requires a check-in for meetings
     starting on or after it, and credits earlier ones in full.

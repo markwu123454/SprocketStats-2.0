@@ -306,9 +306,15 @@ export default function DashboardPage() {
                                         : "Check in at a kiosk when you arrive."}
                             </p>
                             {openEntry && (
-                                <Button variant="outlined" className="mt-auto self-start" onClick={checkOut} disabled={checkingOut}>
-                                    {checkingOut ? "Checking out…" : "Check out"}
-                                </Button>
+                                <>
+                                    <Button variant="outlined" className="mt-auto self-start" onClick={checkOut} disabled={checkingOut}>
+                                        {checkingOut ? "Checking out…" : "Check out"}
+                                    </Button>
+                                    {/* Mirrors core.attendance_rules: only a kiosk/scanner check-out proves when you left. */}
+                                    <p className="text-xs theme-subtext-color">
+                                        Scan out at a kiosk for full hours. Checking out here, or not checking out, counts half.
+                                    </p>
+                                </>
                             )}
                             {checkoutError && (
                                 <p role="alert" className="text-sm" style={{ color: "var(--theme-danger)" }}>Couldn't check out. Try again.</p>

@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 import db
 import core.push_notify as push_notify
 from core.attendance_rules import (
-    ATTENDANCE_ACTIVE_FROM, hours_multiplier, meeting_checkin_seconds, multiplier_bonus_seconds,
+    ATTENDANCE_ACTIVE_FROM, credited_seconds_by_member, hours_multiplier, meeting_checkin_seconds,
 )
 from core.permissions import absence_push_roles, can_view_absence, has_absence_view, tracks_attendance
 from core.security import require_active
@@ -341,10 +341,12 @@ def test_attendance_captain_sees_every_tracked_member(setup):
     assert set(ids) == {"me", "cad-mate", "cad-lead", "prog-member", "captain-1"}
 
 
-def _span(user_id, start_min, end_min, meeting_id=PAST_ID):
+def _span(user_id, start_min, end_min, meeting_id=PAST_ID, method="kiosk", meeting_end=None):
     """A db.list_meeting_checkins row: minutes from the start of the past meeting."""
     start = NOW - timedelta(days=2)
     return {"meeting_id": uuid.UUID(meeting_id), "user_id": user_id,
+            "display_name": None, "given_name": None,
+            "meeting_end": meeting_end or start + timedelta(hours=3), "checkout_method": method,
             "seg_start": start + timedelta(minutes=start_min), "seg_end": start + timedelta(minutes=end_min)}
 
 
@@ -390,11 +392,38 @@ def test_hours_multiplier_defaults_and_clamps():
     assert hours_multiplier({"hours_multiplier": 0.2}) == 1.0
 
 
-def test_multiplier_bonus_is_the_extra_on_top():
+def test_credited_seconds_apply_each_meetings_multiplier():
     meetings = [{"id": uuid.UUID(PAST_ID), "hours_multiplier": 1.5}, {"id": uuid.UUID(FUTURE_ID)}]
     rows = [_span("a", 0, 60), _span("b", 0, 120), _span("a", 0, 60, FUTURE_ID)]
-    # x1.5: half an hour extra per hour. The x1.0 meeting adds nothing.
-    assert multiplier_bonus_seconds(meetings, rows) == {"a": 30 * 60, "b": 60 * 60}
+    # x1.5 turns an hour into 90 minutes; the x1.0 meeting counts as clocked.
+    assert credited_seconds_by_member(meetings, rows) == {"a": 150 * 60, "b": 180 * 60}
+
+
+# ── check-out credit ───────────────────────────────────────────────────────────
+
+def test_scan_out_earns_full_credit_and_legacy_keeps_it():
+    rows = [_span("a", 0, 60, method="kiosk"), _span("b", 0, 60, method="legacy")]
+    assert meeting_checkin_seconds(rows) == {(PAST_ID, "a"): 3600.0, (PAST_ID, "b"): 3600.0}
+
+
+def test_self_checkout_and_no_checkout_earn_half():
+    rows = [_span("a", 0, 120, method="self"), _span("b", 0, 120, method="expired")]
+    assert meeting_checkin_seconds(rows) == {(PAST_ID, "a"): 3600.0, (PAST_ID, "b"): 3600.0}
+
+
+def test_open_session_is_full_during_the_meeting_and_half_after():
+    live = _span("a", 0, 60, method=None, meeting_end=NOW + timedelta(hours=1))
+    over = _span("b", 0, 60, method=None, meeting_end=NOW - timedelta(minutes=1))
+    assert meeting_checkin_seconds([live, over], NOW) == {(PAST_ID, "a"): 3600.0, (PAST_ID, "b"): 1800.0}
+
+
+def test_leaving_early_and_self_checking_out_at_the_end_earns_half():
+    # Left after 30 min of a 2h meeting, tapped Check out from home at 1:59.
+    cheat = _span("a", 0, 119, method="self")
+    stayed = _span("b", 0, 120, method="kiosk")
+    totals = meeting_checkin_seconds([cheat, stayed])
+    assert totals[(PAST_ID, "a")] == 119 * 30
+    assert totals[(PAST_ID, "b")] == 120 * 60
 
 
 def test_meetings_carry_their_multiplier(setup):
