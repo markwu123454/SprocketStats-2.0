@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, forwardRef } from "react"
 import type { ReactNode } from "react"
 import { Pencil, Plus } from "lucide-react"
 import { useEventContext } from "@/contexts/eventContext"
-import { useOnboardedUser } from "@/contexts/authContext"
+import { useIsOffline, useOnboardedUser } from "@/contexts/authContext"
 import { can } from "@/lib/permissions"
 import { patchEventContent, type ItineraryItem } from "@/lib/eventApi"
 import {
@@ -62,7 +62,9 @@ function buildRows(items: ItineraryItem[], now: number, currentIndex: number): R
 export default function ItineraryPage() {
     const { eventKey, info, loading, updateInfo } = useEventContext()
     const user = useOnboardedUser()
-    const isEditor = can(user.permissions, "events.edit")
+    // Read-only offline: edits need the server.
+    const offline = useIsOffline()
+    const isEditor = !offline && can(user.permissions, "events.edit")
     const currentItemRef = useRef<HTMLDivElement>(null)
 
     // Only one day (including "add a new day") is ever in edit mode at once.

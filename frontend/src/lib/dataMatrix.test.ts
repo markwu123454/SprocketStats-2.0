@@ -1,5 +1,29 @@
+import {readFileSync} from "node:fs"
+import {createRequire} from "node:module"
 import {describe, expect, it} from "vitest"
+import {prepareZXingModule, readBarcodes} from "zxing-wasm/reader"
 import {dataMatrix, rsEcc} from "./dataMatrix"
+
+// The same decoder the kiosks run, loaded from node_modules instead of a CDN.
+prepareZXingModule({
+    overrides: {wasmBinary: readFileSync(createRequire(import.meta.url).resolve("zxing-wasm/reader/zxing_reader.wasm"))},
+})
+
+/** Render a symbol as RGBA pixels: `scale` px per module, 2-module quiet zone. */
+function render(m: boolean[][], scale = 8) {
+    const side = (m.length + 4) * scale
+    const data = new Uint8ClampedArray(side * side * 4).fill(255)
+    m.forEach((row, y) => row.forEach((dark, x) => {
+        if (!dark) return
+        for (let dy = 0; dy < scale; dy++) {
+            for (let dx = 0; dx < scale; dx++) {
+                const i = (((y + 2) * scale + dy) * side + (x + 2) * scale + dx) * 4
+                data[i] = data[i + 1] = data[i + 2] = 0
+            }
+        }
+    }))
+    return {data, width: side, height: side, colorSpace: "srgb" as const}
+}
 
 describe("dataMatrix", () => {
     it("matches the standard's worked example for error correction", () => {
@@ -7,7 +31,16 @@ describe("dataMatrix", () => {
         expect(rsEcc([142, 164, 186], 5)).toEqual([114, 25, 5, 88, 102])
     })
 
-    it("encodes a 16-digit member code as a 14x14 symbol", () => {
+    it("encodes a 24-digit member code as a 16x16 symbol the kiosk decoder reads back", async () => {
+        const code = "000042605876915828510742"
+        const m = dataMatrix(code)
+        expect(m.length).toBe(16)
+        expect(m.every(row => row.length === 16)).toBe(true)
+        const results = await readBarcodes(render(m), {formats: ["DataMatrix"], tryHarder: true})
+        expect(results.map(r => r.text)).toEqual([code])
+    })
+
+    it("encodes 16 digits as a 14x14 symbol", () => {
         // From the independent Python reference encoder.
         const expected = [
             "10101010101010",

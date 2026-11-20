@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { Navigate } from "react-router-dom"
-import { useOnboardedUser } from "@/contexts/authContext"
+import { useIsOffline, useOnboardedUser } from "@/contexts/authContext"
+import { OfflineUnavailable } from "@/components/Offline"
 import { CONTROL_SECTIONS } from "@/lib/controlSections"
 
 /**
@@ -15,7 +16,10 @@ import { CONTROL_SECTIONS } from "@/lib/controlSections"
  */
 export default function ControlGuard({ section, children }: { section: string; children: ReactNode }) {
     const user = useOnboardedUser()
+    const offline = useIsOffline()
     const match = CONTROL_SECTIONS.find(s => s.to === section)
     if (!match || !match.visible(user.permissions)) return <Navigate to="/control" replace />
+    // Control Panel data is never saved on the phone (lib/offline.ts).
+    if (offline) return <OfflineUnavailable what="The Control Panel" />
     return <>{children}</>
 }

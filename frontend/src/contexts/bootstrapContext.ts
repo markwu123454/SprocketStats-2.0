@@ -7,6 +7,13 @@ export type BootstrapCache = Record<string, unknown>
 
 export const BootstrapContext = createContext<BootstrapCache>({})
 
+/** When the bootstrap data on screen was fetched (ms), or null before it arrives. Offline, that's when it was saved. */
+export const BootstrapSavedAtContext = createContext<number | null>(null)
+
+export function useBootstrapSavedAt(): number | null {
+    return useContext(BootstrapSavedAtContext)
+}
+
 /**
  * Drop-in replacement for useState that pre-populates from the bootstrap cache.
  *

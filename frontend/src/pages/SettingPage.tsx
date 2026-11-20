@@ -35,7 +35,7 @@ function getNavTextPref(): boolean {
 }
 
 export default function SettingPage() {
-    const { logout, refreshUser } = useAuth()
+    const { logout, refreshUser, offline } = useAuth()
     const user = useOnboardedUser()
     const [editingName, setEditingName] = useState(false)
     const [nameDraft, setNameDraft] = useState("")
@@ -69,11 +69,18 @@ export default function SettingPage() {
     const [prefsError, setPrefsError] = useState<string | null>(null)
 
     useEffect(() => {
+        // Offline, only this device's own state can be read; the rest loads
+        // when the connection is back (this re-runs then).
+        if (offline) {
+            void getPushState().then(setPushState)
+            return
+        }
         // Not just getPushState(): this also re-registers the subscription with
         // the backend, so "on" here means the server will actually send to it.
         void syncPushSubscription().then(setPushState)
+        setPrefsError(null)
         getPushPreferences().then(setPrefs).catch(() => setPrefsError("Couldn't load notification preferences"))
-    }, [])
+    }, [offline])
 
     async function toggleCategory(key: PushCategory) {
         if (!prefs) return
@@ -205,15 +212,17 @@ export default function SettingPage() {
                         ) : (
                             <div className="flex items-center gap-2 min-w-0">
                                 <p className="text-lg font-semibold theme-text truncate">{user.display_name}</p>
-                                <Button
-                                    variant="icon"
-                                    onClick={startEditingName}
-                                    aria-label="Edit display name"
-                                    title="Edit display name"
-                                    className="shrink-0 -my-2"
-                                >
-                                    <Pencil size={14} />
-                                </Button>
+                                {!offline && (
+                                    <Button
+                                        variant="icon"
+                                        onClick={startEditingName}
+                                        aria-label="Edit display name"
+                                        title="Edit display name"
+                                        className="shrink-0 -my-2"
+                                    >
+                                        <Pencil size={14} />
+                                    </Button>
+                                )}
                             </div>
                         )}
                         {user.name !== user.display_name && (
@@ -345,14 +354,16 @@ export default function SettingPage() {
                                         ? "Not supported in this browser"
                                         : pushState === "denied"
                                             ? "Blocked - enable in your browser's site settings"
-                                            : "Get notified on this device"}
+                                            : offline
+                                                ? "Changing notifications needs a connection"
+                                                : "Get notified on this device"}
                                 </p>
                             </div>
                         </div>
                         <Toggle
                             aria-label="Push notifications"
                             checked={pushState === "subscribed"}
-                            disabled={pushBusy || pushState === "unsupported" || pushState === "denied"}
+                            disabled={offline || pushBusy || pushState === "unsupported" || pushState === "denied"}
                             onChange={() => void togglePush()}
                         />
                     </div>
@@ -382,7 +393,7 @@ export default function SettingPage() {
                                     <Toggle
                                         aria-label={label}
                                         checked={prefs?.[key] ?? true}
-                                        disabled={!prefs}
+                                        disabled={offline || !prefs}
                                         onChange={() => void toggleCategory(key)}
                                     />
                                 </div>

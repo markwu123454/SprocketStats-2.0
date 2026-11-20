@@ -5,6 +5,7 @@ import {
     Settings, LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen, SlidersHorizontal,
 } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
+import { OfflineLabel } from "@/components/Offline"
 import Sheet from "@/components/ui/Sheet"
 import { focusRing, menuRowClass } from "@/lib/uiClasses"
 import NotificationGate from "@/components/NotificationGate.tsx"
@@ -25,7 +26,7 @@ function getNavTextPref(): boolean {
 }
 
 export default function AppShell() {
-    const { logout } = useAuth()
+    const { logout, offline } = useAuth()
     // Guaranteed present + onboarded: AppShell only renders under <Protected>.
     const user = useOnboardedUser()
     const location = useLocation()
@@ -53,8 +54,9 @@ export default function AppShell() {
     useEffect(() => { markReady() }, [markReady])
 
     // Keep this device's push subscription registered with the backend for
-    // whoever is signed in (see syncPushSubscription). Never prompts.
-    useEffect(() => { void syncPushSubscription() }, [user.id])
+    // whoever is signed in (see syncPushSubscription). Never prompts. Waits
+    // for a connection when offline.
+    useEffect(() => { if (!offline) void syncPushSubscription() }, [user.id, offline])
 
     // A notification tapped while the app is already open routes in-app.
     useEffect(() => onNotificationNavigate(path => navigate(path)), [navigate])
@@ -108,7 +110,7 @@ export default function AppShell() {
 
             {/* ── Top header ──────────────────────────────────────── */}
             <header className={`shrink-0 border-b z-30 theme-bg theme-border${isInsideEvent ? " hidden md:block" : ""}`}>
-                <div className="px-3 h-14 flex items-center justify-between gap-3">
+                <div className="relative px-3 h-14 flex items-center justify-between gap-3">
 
                     <div className="flex items-center gap-1">
                         <button
@@ -133,6 +135,8 @@ export default function AppShell() {
                             <span className="font-bold text-base theme-text hidden sm:block">SprocketStats</span>
                         </Link>
                     </div>
+
+                    {offline && <OfflineLabel className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />}
 
                     {/* Desktop user menu */}
                     <div className="relative hidden md:block" ref={menuRef}>

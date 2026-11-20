@@ -1,5 +1,7 @@
 import { useState } from "react"
 import { useEventContext } from "@/contexts/eventContext"
+import { useIsOffline } from "@/contexts/authContext"
+import { useBootstrapSavedAt } from "@/contexts/bootstrapContext"
 import type { TBAMatch, TBARankEntry } from "@/lib/eventApi"
 import EmptyState from "@/components/ui/EmptyState"
 import Skeleton from "@/components/ui/Skeleton"
@@ -88,6 +90,9 @@ function parseNexusStatus(raw: string | null | undefined): { label: string; colo
 
 export default function CompPage() {
     const { info, loading, archived } = useEventContext()
+    // Offline the live data stops updating, and old scores look current: say how old.
+    const offline = useIsOffline()
+    const savedAt = useBootstrapSavedAt()
 
     // epa: our own scouting metric, not yet wired — will arrive via /update when implemented
     const [epa] = useState<number | null>(null)
@@ -161,6 +166,12 @@ export default function CompPage() {
 
     return (
         <div className="max-w-2xl mx-auto px-4 py-4 flex flex-col gap-6 pb-8">
+
+            {offline && !archived && savedAt !== null && (
+                <p className="-mb-3 text-xs theme-subtext-color">
+                    Match data as of {new Date(savedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}. It updates once you're back online.
+                </p>
+            )}
 
             {/* ── Robot Status (live only) ─────────────────────────── */}
             {!archived && <Section label="Robot">

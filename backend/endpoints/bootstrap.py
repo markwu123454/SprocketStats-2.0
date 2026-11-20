@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from core import account_state
 from core.permissions import can, get_permissions_for_role, has_moderation_authority
 from core.security import get_current_user
-from .attendance import get_meetings, get_leaderboard
+from .attendance import get_meetings, get_leaderboard, get_my_attendance
 from .auth import roles as auth_roles
 from .events import list_events, get_current_event_info, list_event_keys
 from .meeting_hours import (
@@ -68,6 +68,8 @@ router = APIRouter()
 #   meeting_absences → GET /meeting-hours/absences
 #   attendance_leaderboard → GET /attendance/leaderboard
 #   roles            → GET /auth/roles
+#   attendance_me    → GET /attendance/me (the dashboard's check-in status;
+#                      also what a phone shows offline)
 #
 # A factory that raises is logged and its key is simply omitted from the
 # response; one failing prefetch never fails the whole bootstrap.
@@ -85,6 +87,7 @@ ENDPOINTS: list[tuple[str, object, str | None]] = [
     ("meeting_schedule", lambda u: list_meeting_schedule(u),  "active"),
     ("meeting_absences", lambda u: list_meeting_absences(u),  "active"),
     ("attendance_leaderboard", lambda u: get_leaderboard(u),  None),
+    ("attendance_me",   lambda u: get_my_attendance(u),       None),
     ("roles",           lambda u: auth_roles(u),              None),
 ]
 

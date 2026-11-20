@@ -15,7 +15,7 @@ from endpoints import bootstrap as bs
 
 NEW_KEYS = {
     "tasks", "task_people", "meeting_schedule", "meeting_absences",
-    "attendance_leaderboard", "roles",
+    "attendance_leaderboard", "roles", "attendance_me",
 }
 ACTIVE_KEYS = {"tasks", "task_people", "meeting_schedule", "meeting_absences"}
 
@@ -26,7 +26,7 @@ HANDLERS = [
     "list_events", "get_meetings", "get_all_assignments", "get_user_tags",
     "list_members", "get_current_event_info", "list_event_keys", "list_tasks",
     "list_task_people", "list_meeting_schedule", "list_meeting_absences",
-    "get_leaderboard", "auth_roles",
+    "get_leaderboard", "auth_roles", "get_my_attendance",
 ]
 
 
@@ -52,6 +52,7 @@ async def test_new_keys_present_for_active_user(handlers):
     handlers["list_meeting_absences"].assert_awaited_once_with(MEMBER)
     handlers["get_leaderboard"].assert_awaited_once_with(MEMBER)
     handlers["auth_roles"].assert_awaited_once_with(MEMBER)
+    handlers["get_my_attendance"].assert_awaited_once_with(MEMBER)
     assert result["tasks"] == "list_tasks-result"
 
 

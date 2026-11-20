@@ -4,6 +4,7 @@ import Button from "@/components/ui/Button"
 import FormFooter from "@/components/ui/FormFooter"
 import Notice from "@/components/ui/Notice"
 import Sheet from "@/components/ui/Sheet"
+import { useIsOffline } from "@/contexts/authContext"
 import { confirmDialog } from "@/lib/confirmDialog"
 import { askDiscard } from "@/lib/useDiscardGuard"
 import { fieldLabelClass, focusRing, helperClass, inputClass } from "@/lib/uiClasses"
@@ -90,6 +91,7 @@ const linkButton = `inline-flex items-center gap-2 py-2 -my-2 text-sm font-semib
 
 /** Bottom action area of a meeting card: own report control, absent count and list. */
 export function MeetingAbsenceRow({ meeting, mine, others, roleLabels, onChanged }: MeetingAbsenceRowProps) {
+    const offline = useIsOffline()
     const [open, setOpen] = useState(false)
     const [expanded, setExpanded] = useState(false)
     const listId = useId()
@@ -111,10 +113,12 @@ export function MeetingAbsenceRow({ meeting, mine, others, roleLabels, onChanged
                             <span className="block sm:hidden theme-subtext-color break-words whitespace-pre-wrap">{mine.reason}</span>
                         </>}
                     </p>
-                    <button type="button" className={`${linkButton} shrink-0`} onClick={() => setOpen(true)}>Edit</button>
+                    {!offline && <button type="button" className={`${linkButton} shrink-0`} onClick={() => setOpen(true)}>Edit</button>}
                 </div>
             </>
-            : <div><button type="button" className={`${linkButton} whitespace-nowrap`} onClick={() => setOpen(true)}>Report absence <span aria-hidden="true">→</span></button></div>}
+            : offline
+                ? <p className="text-sm theme-subtext-color">Reporting an absence needs a connection.</p>
+                : <div><button type="button" className={`${linkButton} whitespace-nowrap`} onClick={() => setOpen(true)}>Report absence <span aria-hidden="true">→</span></button></div>}
         {toggle && <div className="-mt-1">{toggle}</div>}
         {others && expanded && count > 0 && <ul id={listId} className="flex flex-col divide-y theme-border border-t border-dashed theme-border pt-2.5">
             {others.map(absence => <li key={absence.user_id} className="py-2 first:pt-0 last:pb-0 min-w-0">

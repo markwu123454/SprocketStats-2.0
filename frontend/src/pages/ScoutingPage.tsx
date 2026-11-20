@@ -7,6 +7,8 @@ import FormFooter from "@/components/ui/FormFooter"
 import Notice from "@/components/ui/Notice"
 import Sheet from "@/components/ui/Sheet"
 import Skeleton from "@/components/ui/Skeleton"
+import { OfflineUnavailable } from "@/components/Offline"
+import { useIsOffline } from "@/contexts/authContext"
 import { buttonClass, focusRing, typeH2 } from "@/lib/uiClasses"
 
 const LS_KEY = "label_studio_email_ack"
@@ -59,6 +61,7 @@ function formatPct(value: number): string {
  * competitive. The email-acknowledgement modal on the CTA is unchanged.
  */
 export default function ScoutingPage() {
+    const offline = useIsOffline()
     const [summary, setSummary] = useState<SummaryRow | null>(null)
     const [contributions, setContributions] = useState<ContributionRow[]>([])
     const [loading, setLoading] = useState(true)
@@ -141,6 +144,9 @@ export default function ScoutingPage() {
             {label}
         </button>
     )
+
+    // Labeling progress comes from Label Studio through the server: nothing to show offline.
+    if (offline) return <OfflineUnavailable what="Scouting" />
 
     return (
         <div className="mx-auto px-4 py-8 flex flex-col gap-6 h-full">

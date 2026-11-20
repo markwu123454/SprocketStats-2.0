@@ -23,7 +23,21 @@ what happened and what the user can do. Layout is the same on web and mobile unl
 | Page failed to load | Whole-screen pattern with **Try again** | Page body |
 | Not found | Icon, title, sentence, way back | `NotFoundPage` |
 | Action failed in a list | Snackbar with **Retry** | Above the tab bar on mobile, bottom start on web |
-| Offline or server down | Persistent banner under the header | Page top |
+| Can't reach the server, signed out | Danger notice under the sign-in button, which becomes **Continue offline** when the phone may sign in offline | Login sheet |
+| Offline, signed in | `OfflineLabel` ("Offline") in the top bar, nothing else | Top bar (the event hub's title row on phones) |
+
+## Offline
+
+Offline the app shows what was saved on the phone (`lib/offline.ts`) and re-checks
+the connection on its own every 5 s, so there is never a **Try again** or **Retry**
+for it. Being offline is only mentioned where it costs the user something:
+
+| What | Pattern |
+|---|---|
+| Whole page with nothing saved (Control Panel, Scouting, another event's hub) | `OfflineUnavailable` screen: "Not available offline" |
+| An action that needs the server | Disabled or hidden, with one muted line saying it needs a connection when the user would otherwise look for it ("Checking out here needs a connection…") |
+| Live data that stopped updating (Comp page) | One caption with the time it's from |
+| Everything else | Looks exactly as it does online |
 
 Danger notice: `rounded-lg border`, `--theme-danger` text and border,
 `color-mix(in oklch, var(--theme-danger) 10%, transparent)` fill, `AlertCircle` icon, `role="alert"`.
@@ -48,6 +62,5 @@ Danger notice: `rounded-lg border`, `--theme-danger` text and border,
 
 - Retry buttons: only `PushNotificationsPage.tsx` has one. `EventTasksPage.tsx` ("Refresh to try again"), `AttendancePage.tsx`, `ScoutingPage.tsx`, `MembersPage.tsx` and the Tasks pages show a notice with no retry. A retry is a new action, so it needs its own change.
 - Snackbar: there is no shared one. Success and failure of background actions still appear inline. `UpdatePrompt.tsx` (z-110) is the position reference.
-- Offline banner: nothing tells the user they are offline beyond failed requests. Not built.
 - Raw `err.message` where the thrown error carries no `.status`, so `failMessage` (`taskFormat.ts`) cannot tell a server detail from a network failure. The server's `detail` is shown correctly, but a network failure shows the browser's text ("Failed to fetch"): `OnboardingPageRouter.tsx` (profile save), `NotificationDetailPage.tsx` (save notice), `PushNotificationsPage.tsx` (send), `SettingPage.tsx` (three saves). Fix by attaching `.status` in those fetch paths, as `tasksApi.ts` and `eventApi.ts` do.
 - Internal `new Error("Couldn't ...")` messages in `AttendancePage.tsx` and `ScoutingPage.tsx` are swallowed by their `catch` blocks and never shown.

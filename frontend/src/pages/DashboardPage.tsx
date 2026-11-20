@@ -1,6 +1,6 @@
 import {useEffect, useState, type ReactNode} from "react"
 import { Link } from "react-router-dom"
-import { useOnboardedUser } from "@/contexts/authContext"
+import { useIsOffline, useOnboardedUser } from "@/contexts/authContext"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks, LogIn, QrCode, ScanLine, UserX } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
@@ -80,7 +80,8 @@ export default function DashboardPage() {
     const [showCode, setShowCode] = useState(false)
     const [showScanner, setShowScanner] = useState(false)
     const [tasks, setTasks] = useBootstrapped<Task[] | null>("tasks", null)
-    const [attendance, setAttendance] = useState<AttendanceEntry[] | null>(null)
+    const [attendance, setAttendance] = useBootstrapped<AttendanceEntry[] | null>("attendance_me", null)
+    const offline = useIsOffline()
     const [checkingOut, setCheckingOut] = useState(false)
     const [checkoutError, setCheckoutError] = useState(false)
 
@@ -114,12 +115,15 @@ export default function DashboardPage() {
     const hasHub  = !!key && eventKeys.includes(key)
     const seeded  = currentEvent?.event_key === key ? currentEvent : null
 
+    // Both refresh the bootstrap copy. A failed refresh keeps what's on screen
+    // (offline that's the copy saved on the phone) and only fills in an empty
+    // state when there was nothing to show.
     useEffect(() => {
         let cancelled = false
         fetch(`${API}/attendance/meetings`, { credentials: "include" })
-            .then(res => (res.ok ? res.json() : []))
+            .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
             .then((data: MeetingHours[]) => { if (!cancelled) setMeetings(data) })
-            .catch(() => { if (!cancelled) setMeetings([]) })
+            .catch(() => { if (!cancelled) setMeetings(prev => prev ?? []) })
         return () => { cancelled = true }
     }, [setMeetings])
 
@@ -128,11 +132,11 @@ export default function DashboardPage() {
     useEffect(() => {
         let cancelled = false
         fetch(`${API}/attendance/me`, { credentials: "include" })
-            .then(res => (res.ok ? res.json() : []))
+            .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
             .then((data: AttendanceEntry[]) => { if (!cancelled) setAttendance(data) })
-            .catch(() => { if (!cancelled) setAttendance([]) })
+            .catch(() => { if (!cancelled) setAttendance(prev => prev ?? []) })
         return () => { cancelled = true }
-    }, [])
+    }, [setAttendance])
 
     useEffect(() => {
         if (!canViewTasks) return
@@ -307,12 +311,14 @@ export default function DashboardPage() {
                             </p>
                             {openEntry && (
                                 <>
-                                    <Button variant="outlined" className="mt-auto self-start" onClick={checkOut} disabled={checkingOut}>
+                                    <Button variant="outlined" className="mt-auto self-start" onClick={checkOut} disabled={checkingOut || offline}>
                                         {checkingOut ? "Checking out…" : "Check out"}
                                     </Button>
                                     {/* Mirrors core.attendance_rules: only a kiosk/scanner check-out proves when you left. */}
                                     <p className="text-xs theme-subtext-color">
-                                        Scan out at a kiosk for full hours. Checking out here, or not checking out, counts half.
+                                        {offline
+                                            ? "Checking out here needs a connection. You can still scan out at a kiosk with My code."
+                                            : "Scan out at a kiosk for full hours. Checking out here, or not checking out, counts half."}
                                     </p>
                                 </>
                             )}

@@ -8,7 +8,12 @@
 import type { ReaderOptions } from "zxing-wasm/reader"
 import wasmUrl from "zxing-wasm/reader/zxing_reader.wasm?url"
 
-const MEMBER_CODE_RE = /^\d{16}$/
+// Header "00" (format v0, check-in) + 4-digit code number + 18-digit tag.
+const MEMBER_CODE_RE = /^00(\d{4})\d{18}$/
+// LEGACY-16-DIGIT: a code from an app build before the header. Passed on so the
+// server can tell the member to update. Delete in the next update; see
+// NEXT_UPDATE_CLEANUP.md.
+const LEGACY_CODE_RE = /^(\d{4})\d{12}$/
 
 export interface Point {
     x: number
@@ -34,10 +39,15 @@ export interface WorkerResponse {
     codes: FoundCode[]
 }
 
-/** A valid 16-digit member code, else null (any other DataMatrix is ignored). */
+/** A member's check-in code, else null (any other DataMatrix is ignored). */
 export function memberCodeOf(text: string | null): string | null {
     const t = text?.trim()
-    return t && MEMBER_CODE_RE.test(t) ? t : null
+    return t && (MEMBER_CODE_RE.test(t) || LEGACY_CODE_RE.test(t)) ? t : null
+}
+
+/** The 4-digit code number in a code {@link memberCodeOf} accepted. Stays the same as the tag rotates. */
+export function codeNumberOf(code: string): string {
+    return (MEMBER_CODE_RE.exec(code) ?? LEGACY_CODE_RE.exec(code))?.[1] ?? code
 }
 
 /** Centre of a code's corners, for telling codes in the same frame apart. */

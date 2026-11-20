@@ -418,9 +418,11 @@ export default function TasksPageMobile() {
                 )}
             </div>
 
-            <Button variant="fab" aria-label="New task" onClick={() => setNewTaskOpen(true)}>
-                <Plus size={21} />
-            </Button>
+            {!board.offline && (
+                <Button variant="fab" aria-label="New task" onClick={() => setNewTaskOpen(true)}>
+                    <Plus size={21} />
+                </Button>
+            )}
 
             {newTaskOpen && (
                 <TaskFormSheet mode="create" board={board} people={people} defaultBucket={defaultBucket} onClose={() => setNewTaskOpen(false)} />

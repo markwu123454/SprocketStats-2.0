@@ -1,6 +1,6 @@
 /**
  * Data Matrix (ECC 200) encoder for short ASCII payloads, enough for member
- * codes (42 digits -> a 20x20 symbol). Digit pairs pack into one codeword each,
+ * codes (24 digits -> a 16x16 symbol). Digit pairs pack into one codeword each,
  * which is why member codes are digits only.
  *
  * Follows ISO/IEC 16022: ASCII encodation, Reed-Solomon over GF(256) with the

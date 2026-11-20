@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { Check } from "lucide-react"
 import Dropdown from "@/components/ui/Dropdown"
+import { useIsOffline } from "@/contexts/authContext"
 import DayChips from "@/components/events/DayChips"
 import {
     checkInRolesOf, defaultCheckInRole, eventDays, hasEventPage, isTabHidden, STATUS_META, usesCheckIn,
@@ -31,6 +32,7 @@ interface ActiveEventCardProps {
 }
 
 export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId }: ActiveEventCardProps) {
+    const offline = useIsOffline()
     const [matches, setMatches] = useState<TBAMatch[] | null>(seed?.matches ?? null)
     const [checkedIn, setCheckedIn] = useState<boolean | null>(
         seed ? (seed.roster?.some(r => r.user_id === userId) ?? null) : null
@@ -185,6 +187,8 @@ export default function ActiveEventCard({ active, hasHub, eventKey, seed, userId
                                     </Link>
                                 ) : null}
                             </>
+                        ) : offline ? (
+                            <p className="text-sm theme-subtext-color">Checking in to this event needs a connection.</p>
                         ) : (
                             <>
                                 <Button variant="text" onClick={() => changeDismissed(true)} disabled={checkedIn === null}>
