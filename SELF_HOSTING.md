@@ -273,7 +273,7 @@ Whether the app then survives depends on how each variable is read, see the **If
 
 **`403 Account pending approval`.** Expected before seeding, see step 10.
 
-**OAuth `redirect_uri_mismatch`.** The Google Console URI must exactly match `https://<fly-app>.fly.dev/auth/callback`, no trailing slash, `https` not `http`.
+**OAuth `redirect_uri_mismatch`.** The Google Console URI must exactly match `https://<fly-app>.fly.dev/auth/callback`, no trailing slash, `https` not `http`. If Google's error details show the backend sending `http://`, the deploy is missing `FORWARDED_ALLOW_IPS = '*'` under `[env]` in `backend/fly.toml`: without it the backend doesn't believe Fly's proxy that the request came in over HTTPS.
 
 **CORS errors in the browser.** `CORS_ORIGINS` must contain the exact Vercel origin. With `ENV=development` the backend allows all origins ([backend/main.py:183](backend/main.py:183)); in production it allows only the origins listed.
 
