@@ -34,7 +34,9 @@ interface BaseUser {
     // This member's kiosk check-in code. Generated at account creation, so it's
     // present before onboarding too. Treat as a credential in the UI (masked by
     // default) even though it's scoped to this user's own session response.
-    offline_code: string
+    // Missing after "Continue offline": the profile saved on the phone leaves
+    // it out (AuthProvider's writeCachedUser).
+    offline_code?: string
 }
 
 /** A signed-in user who hasn't finished onboarding yet — profile fields may be absent. */

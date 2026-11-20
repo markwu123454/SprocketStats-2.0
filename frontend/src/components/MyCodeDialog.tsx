@@ -41,7 +41,7 @@ export default function MyCodeDialog({onClose}: {onClose: () => void}) {
     const [opener] = useState<Element | null>(() => document.activeElement)
     const [state, setState] = useState<KeyState>({kind: "loading"})
     const [code, setCode] = useState<string | null>(null)
-    const [fraction, setFraction] = useState(0)
+    const barRef = useRef<HTMLDivElement>(null)
 
     // Overlay bookkeeping, same as ConfirmDialog: Esc/Tab for the top overlay,
     // scroll lock, and focus back to the opener on close.
@@ -102,26 +102,32 @@ export default function MyCodeDialog({onClose}: {onClose: () => void}) {
         }
     }, [user.id, offline])
 
-    // Recompute the code whenever the step changes.
+    // Every frame: move the time bar, and switch the code the moment its step
+    // changes. The bar is set straight on the element as a transform, so it
+    // doesn't re-render anything and moves at the screen's frame rate. (A
+    // React-state timer showed visibly stepped motion, worse on iPhones,
+    // which slow timers down.)
     useEffect(() => {
         if (state.kind !== "ready") return
         const {rec} = state
         let cancelled = false
         let shownStep: number | null = null
+        let frame = 0
         const tick = () => {
             const {step, fraction} = stepAt(Date.now(), rec)
-            setFraction(fraction)
-            if (step === shownStep) return
-            shownStep = step
-            void codeAt(rec.key, rec.codeNumber, step).then(c => {
-                if (!cancelled) setCode(c)
-            })
+            if (barRef.current) barRef.current.style.transform = `scaleX(${fraction})`
+            if (step !== shownStep) {
+                shownStep = step
+                void codeAt(rec.key, rec.codeNumber, step).then(c => {
+                    if (!cancelled && step === shownStep) setCode(c)
+                })
+            }
+            frame = requestAnimationFrame(tick)
         }
         tick()
-        const timer = window.setInterval(tick, 200)
         return () => {
             cancelled = true
-            window.clearInterval(timer)
+            cancelAnimationFrame(frame)
         }
     }, [state])
 
@@ -153,7 +159,10 @@ export default function MyCodeDialog({onClose}: {onClose: () => void}) {
     const side = symbol ? symbol.length + MARGIN * 2 : 1
 
     return createPortal(
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onKeyDown={onKeyDown}>
+        // 4px from the screen edges on a phone, so the code is as large as it can
+        // be for the kiosk camera. Capped at 480px wide, and by the screen height
+        // less the header and time bar (70px) so it still fits in landscape.
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-1" onKeyDown={onKeyDown}>
             <div className="absolute inset-0 bg-black/70 sds-scrim-enter" aria-hidden="true" onClick={onClose}/>
             <div
                 ref={panelRef}
@@ -161,7 +170,7 @@ export default function MyCodeDialog({onClose}: {onClose: () => void}) {
                 aria-modal="true"
                 aria-labelledby={titleId}
                 tabIndex={-1}
-                className="sds-dialog-enter relative w-full max-w-[360px] overflow-hidden rounded-2xl border theme-border theme-bg shadow-2xl outline-none"
+                className="sds-dialog-enter relative w-full max-w-[min(480px,calc(100dvh-70px))] overflow-hidden rounded-2xl border theme-border theme-bg shadow-2xl outline-none"
             >
                 <div className="h-14 pl-4 pr-1.5 flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
@@ -205,7 +214,12 @@ export default function MyCodeDialog({onClose}: {onClose: () => void}) {
                             )}
                         </div>
                         <div className="h-1.5" style={{background: "var(--theme-border)"}}>
-                            <div className="h-full" style={{width: `${Math.round(fraction * 100)}%`, background: "var(--theme-text-contrast)"}}/>
+                            {/* Driven by the frame loop above; React never changes `transform` after mount. */}
+                            <div
+                                ref={barRef}
+                                className="h-full origin-left will-change-transform"
+                                style={{transform: "scaleX(0)", background: "var(--theme-text-contrast)"}}
+                            />
                         </div>
                     </>
                 ) : (

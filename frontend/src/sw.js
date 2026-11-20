@@ -1,7 +1,9 @@
 import {cleanupOutdatedCaches, precacheAndRoute} from "workbox-precaching";
 import {clientsClaim} from "workbox-core";
 import {registerRoute} from "workbox-routing";
-import {NetworkFirst} from "workbox-strategies";
+import {NetworkFirst, StaleWhileRevalidate} from "workbox-strategies";
+import {CacheableResponsePlugin} from "workbox-cacheable-response";
+import {ExpirationPlugin} from "workbox-expiration";
 
 const API = import.meta.env.VITE_BACKEND_URL;
 
@@ -26,6 +28,25 @@ registerRoute(
         url.origin === self.location.origin,
     new NetworkFirst({
         cacheName: "html-cache",
+    })
+);
+
+// Images the precache doesn't hold (team icons, Google profile photos) are
+// kept once seen, so pages look the same offline. Shown from the copy at once,
+// refreshed in the background. Only full 200 responses: Avatar loads Google
+// photos with CORS so they aren't opaque (an opaque copy counts as ~7 MB of
+// storage quota each in Chrome). The season art, logos and wordmarks are
+// precached instead (vite.config.ts globPatterns).
+registerRoute(
+    ({request, url}) =>
+        request.destination === "image" &&
+        (url.origin === self.location.origin || url.hostname.endsWith(".googleusercontent.com")),
+    new StaleWhileRevalidate({
+        cacheName: "images",
+        plugins: [
+            new CacheableResponsePlugin({statuses: [200]}),
+            new ExpirationPlugin({maxEntries: 300, maxAgeSeconds: 60 * 24 * 60 * 60, purgeOnQuotaError: true}),
+        ],
     })
 );
 

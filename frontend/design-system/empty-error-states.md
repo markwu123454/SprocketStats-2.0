@@ -21,6 +21,7 @@ what happened and what the user can do. Layout is the same on web and mobile unl
 | Form save failed | Danger notice, input kept | Directly above FormFooter |
 | Section failed to load | Danger notice with **Try again** | In place of the section |
 | Page failed to load | Whole-screen pattern with **Try again** | Page body |
+| Page crashed, or its code couldn't load | `PageErrorBoundary`: "This page couldn't load" with **Reload** (nothing short of a reload recovers it) | Page body; the top bar and tabs stay |
 | Not found | Icon, title, sentence, way back | `NotFoundPage` |
 | Action failed in a list | Snackbar with **Retry** | Above the tab bar on mobile, bottom start on web |
 | Can't reach the server, signed out | Danger notice under the sign-in button, which becomes **Continue offline** when the phone may sign in offline | Login sheet |
@@ -37,7 +38,7 @@ for it. Being offline is only mentioned where it costs the user something:
 | Whole page with nothing saved (Control Panel, Scouting, another event's hub) | `OfflineUnavailable` screen: "Not available offline" |
 | An action that needs the server | Disabled or hidden, with one muted line saying it needs a connection when the user would otherwise look for it ("Checking out here needs a connection…") |
 | Live data that stopped updating (Comp page) | One caption with the time it's from |
-| Everything else | Looks exactly as it does online |
+| Everything else | Looks exactly as it does online, images included: the season art, wordmarks and logos are precached, and other images (profile photos, team icons) are kept once seen (`sw.js`) |
 
 Danger notice: `rounded-lg border`, `--theme-danger` text and border,
 `color-mix(in oklch, var(--theme-danger) 10%, transparent)` fill, `AlertCircle` icon, `role="alert"`.

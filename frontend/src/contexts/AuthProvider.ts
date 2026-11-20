@@ -162,10 +162,13 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
         }
     }, [fetchUser])
 
-    // Re-read on every connection change: signing out (or a check that found
-    // the session gone) clears the saved profile.
+    // Re-read on every user or connection change: signing out (or a check
+    // that found the session gone) clears the saved profile. Kept while the
+    // member is signed in so the login screen doesn't flash back to the Google
+    // button between "Continue offline" and the dashboard.
     const candidate = useMemo(
-        () => (user === null && connection !== null ? offlineCandidate() : {user: null, expired: false}),
+        () => (connection !== null ? offlineCandidate() : {user: null, expired: false}),
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- `user` is the re-read trigger
         [user, connection],
     )
 
