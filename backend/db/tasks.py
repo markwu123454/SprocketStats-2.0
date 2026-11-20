@@ -9,16 +9,20 @@ logger = logging.getLogger(__name__)
 # same four display names (assignee/creator/finisher/reviewer), plus the profile
 # pictures of the people the board draws avatars for (assignee, contributors),
 # so there is one canonical joined shape rather than a raw variant and a joined
-# variant that could drift apart.
+# variant that could drift apart. A picture is NULL when its owner hid it from
+# others (users.hide_picture); endpoints.tasks puts the viewer's own back.
 _SELECT_TASK = """
     SELECT t.*,
            a.display_name AS assignee_name,
-           a.picture AS assignee_picture,
+           CASE WHEN a.hide_picture THEN NULL ELSE a.picture END AS assignee_picture,
            c.display_name AS created_by_name,
            f.display_name AS finished_by_name,
            r.display_name AS reviewed_by_name,
            COALESCE(
-               (SELECT json_agg(json_build_object('id', u.id, 'display_name', u.display_name, 'picture', u.picture) ORDER BY tc.added_at)
+               (SELECT json_agg(json_build_object(
+                           'id', u.id, 'display_name', u.display_name,
+                           'picture', CASE WHEN u.hide_picture THEN NULL ELSE u.picture END
+                       ) ORDER BY tc.added_at)
                 FROM task_contributors tc
                 JOIN users u ON u.id = tc.user_id
                 WHERE tc.task_id = t.id),
@@ -39,7 +43,7 @@ _SELECT_TASK = """
 _SELECT_NOTE = """
     SELECT n.*,
            u.display_name AS author_name,
-           u.picture AS author_picture
+           CASE WHEN u.hide_picture THEN NULL ELSE u.picture END AS author_picture
     FROM task_notes n
     LEFT JOIN users u ON u.id = n.author_id
 """

@@ -44,11 +44,12 @@ class FakeStore:
         self.pushes: list[tuple] = []
 
     def add_user(self, user_id, display_name, role=None, approved_by="approver", banned_at=None,
-                 onboarding_complete=True, picture=None):
+                 onboarding_complete=True, picture=None, hide_picture=False):
         self.users[user_id] = {
             "id": user_id,
             "display_name": display_name,
             "picture": picture,
+            "hide_picture": hide_picture,
             "role": role,
             "approved_by": approved_by,
             "banned_at": banned_at,
@@ -77,16 +78,21 @@ class FakeStore:
         self.tasks[task["id"]] = task
         return task["id"]
 
+    def _shown_picture(self, user_id):
+        """Mirror the task queries: NULL for a missing user or one who hid their photo."""
+        u = self.users.get(user_id) if user_id else None
+        return None if u is None or u["hide_picture"] else u["picture"]
+
     def _joined(self, t: dict) -> dict:
         d = dict(t)
         d["assignee_name"] = self.users.get(t["assignee_id"], {}).get("display_name") if t["assignee_id"] else None
-        d["assignee_picture"] = self.users.get(t["assignee_id"], {}).get("picture") if t["assignee_id"] else None
+        d["assignee_picture"] = self._shown_picture(t["assignee_id"])
         d["created_by_name"] = self.users.get(t["created_by"], {}).get("display_name")
         d["finished_by_name"] = self.users.get(t["finished_by"], {}).get("display_name") if t["finished_by"] else None
         d["reviewed_by_name"] = self.users.get(t["reviewed_by"], {}).get("display_name") if t["reviewed_by"] else None
         d["contributors"] = [
             {"id": uid, "display_name": self.users.get(uid, {}).get("display_name"),
-             "picture": self.users.get(uid, {}).get("picture")}
+             "picture": self._shown_picture(uid)}
             for uid in self.contributors.get(t["id"], [])
         ]
         d["note_count"] = sum(1 for n in self.notes.values() if n["task_id"] == t["id"])
@@ -95,7 +101,7 @@ class FakeStore:
     def _joined_note(self, n: dict) -> dict:
         d = dict(n)
         d["author_name"] = self.users.get(n["author_id"], {}).get("display_name") if n["author_id"] else None
-        d["author_picture"] = self.users.get(n["author_id"], {}).get("picture") if n["author_id"] else None
+        d["author_picture"] = self._shown_picture(n["author_id"])
         return d
 
     # -- db.tasks-shaped async methods, monkeypatched onto the `db` module --
@@ -749,6 +755,38 @@ def test_list_tasks_includes_assignee_and_contributor_pictures(app, store):
     assert [c["picture"] for c in task["contributors"]] == ["https://example.com/h.jpg", None]
 
 
+def test_hidden_photos_are_withheld_from_other_members(app, store):
+    store.add_user("assignee-1", "Assignee", role="cad_member", picture="https://example.com/a.jpg", hide_picture=True)
+    store.add_user("helper-1", "Helper", role="cad_member", picture="https://example.com/h.jpg", hide_picture=True)
+    task_id = store.add_task(assignee_id="assignee-1", status="doing")
+    store.contributors[task_id] = ["helper-1"]
+    store.notes["n1"] = {
+        "id": "n1", "task_id": task_id, "author_id": "helper-1", "body": "hi",
+        "created_at": datetime(2024, 1, 1, tzinfo=timezone.utc),
+    }
+
+    task = next(t for t in _as(app, MEMBER).get("/tasks").json() if t["id"] == task_id)
+    assert task["assignee_picture"] is None
+    assert [c["picture"] for c in task["contributors"]] == [None]
+    notes = _as(app, MEMBER).get(f"/tasks/{task_id}/notes").json()
+    assert [n["author_picture"] for n in notes] == [None]
+
+
+def test_members_still_see_their_own_hidden_photo(app, store):
+    me = {"sub": "helper-1", "role": "cad_member", "picture": "https://example.com/h.jpg"}
+    store.add_user("helper-1", "Helper", role="cad_member", picture="https://example.com/h.jpg", hide_picture=True)
+    task_id = store.add_task(assignee_id="helper-1", status="doing")
+    store.notes["n1"] = {
+        "id": "n1", "task_id": task_id, "author_id": "helper-1", "body": "mine",
+        "created_at": datetime(2024, 1, 1, tzinfo=timezone.utc),
+    }
+
+    task = next(t for t in _as(app, me).get("/tasks").json() if t["id"] == task_id)
+    assert task["assignee_picture"] == "https://example.com/h.jpg"
+    notes = _as(app, me).get(f"/tasks/{task_id}/notes").json()
+    assert [n["author_picture"] for n in notes] == ["https://example.com/h.jpg"]
+
+
 # ── Contributors: add/remove ────────────────────────────────────────────────
 
 def test_add_contributor_member_can_add_self(app, store):
@@ -936,10 +974,10 @@ def test_notes_listed_oldest_first(app, store):
 
 
 def test_notes_include_author_picture(app, store):
-    store.add_user("member-1", "Member One", role="cad_member", picture="https://example.com/m.jpg")
+    store.add_user("author-1", "Author", role="cad_member", picture="https://example.com/m.jpg")
     task_id = store.add_task()
     store.notes["n1"] = {
-        "id": "n1", "task_id": task_id, "author_id": "member-1", "body": "hi",
+        "id": "n1", "task_id": task_id, "author_id": "author-1", "body": "hi",
         "created_at": datetime(2024, 1, 1, tzinfo=timezone.utc),
     }
     store.notes["n2"] = {

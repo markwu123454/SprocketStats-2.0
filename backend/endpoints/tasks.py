@@ -121,10 +121,10 @@ def _decode_contributors(value) -> list[dict]:
 
 
 @router.get("")
-async def list_tasks(event_key: str | None = None, _: dict = Depends(require_task_access)):
+async def list_tasks(event_key: str | None = None, user: dict = Depends(require_task_access)):
     """Every task, or with `?event_key=` only the ones linked to that event."""
     rows = await db.list_tasks(event_key)
-    return [_row_to_task(r) for r in rows]
+    return [_row_to_task(r, user) for r in rows]
 
 
 @router.get("/people")
@@ -172,7 +172,7 @@ async def create_task(body: TaskCreate, user: dict = Depends(require_task_access
     )
     if body.assignee_id is not None:
         push_notify.notify_task_assigned(row, body.assignee_id, user)
-    return _row_to_task(row)
+    return _row_to_task(row, user)
 
 
 @router.patch("/{task_id}")
@@ -286,7 +286,7 @@ async def update_task(task_id: str, body: TaskUpdate, user: dict = Depends(requi
             fields["reviewed_by"] = None
 
     if not fields and not releasing_assignee:
-        return _row_to_task(existing)
+        return _row_to_task(existing, user)
 
     row = existing
     if fields:
@@ -313,7 +313,7 @@ async def update_task(task_id: str, body: TaskUpdate, user: dict = Depends(requi
         if new_assignee_id != existing["assignee_id"]:
             push_notify.notify_task_assigned(row, new_assignee_id, user)
 
-    return _row_to_task(row)
+    return _row_to_task(row, user)
 
 
 @router.post("/{task_id}/claim")
@@ -330,7 +330,7 @@ async def claim_task(task_id: str, user: dict = Depends(require_task_access)):
     if row is None:
         # Lost a race with a concurrent claim between the check above and the update.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Task is already assigned")
-    return _row_to_task(row)
+    return _row_to_task(row, user)
 
 
 @router.post("/{task_id}/contributors")
@@ -367,7 +367,7 @@ async def add_contributor(task_id: str, body: ContributorAdd | None = None, user
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     if not already_contributor:
         push_notify.notify_task_assigned(row, target, user, as_contributor=True)
-    return _row_to_task(row)
+    return _row_to_task(row, user)
 
 
 @router.delete("/{task_id}/contributors/{user_id}")
@@ -395,7 +395,7 @@ async def remove_contributor(task_id: str, user_id: str, user: dict = Depends(re
         row = await db.remove_contributor(task_id, target)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    return _row_to_task(row)
+    return _row_to_task(row, user)
 
 
 @router.post("/{task_id}/review")
@@ -416,7 +416,7 @@ async def review_task(task_id: str, user: dict = Depends(require_task_access)):
     row = await db.review_task(task_id, user["sub"])
     if row is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Task is not awaiting review")
-    return _row_to_task(row)
+    return _row_to_task(row, user)
 
 
 @router.post("/{task_id}/unreview")
@@ -436,7 +436,7 @@ async def unreview_task(task_id: str, user: dict = Depends(require_task_access))
     row = await db.unreview_task(task_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only a done task can be unreviewed")
-    return _row_to_task(row)
+    return _row_to_task(row, user)
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -450,14 +450,14 @@ async def delete_task(task_id: str, user: dict = Depends(require_task_access)):
 
 
 @router.get("/{task_id}/notes")
-async def list_notes(task_id: str, _: dict = Depends(require_task_access)):
+async def list_notes(task_id: str, user: dict = Depends(require_task_access)):
     """List a task's note thread, oldest first. Open to any active user."""
     existing = await db.get_task(task_id)
     if existing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
     rows = await db.list_task_notes(task_id)
-    return [_row_to_note(r) for r in rows]
+    return [_row_to_note(r, user) for r in rows]
 
 
 @router.post("/{task_id}/notes")
@@ -474,7 +474,7 @@ async def create_note(task_id: str, body: NoteCreate, user: dict = Depends(requi
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Note is too long")
 
     row = await db.create_task_note(task_id, user["sub"], text)
-    return _row_to_note(row)
+    return _row_to_note(row, user)
 
 
 @router.delete("/{task_id}/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -490,7 +490,18 @@ async def delete_note(task_id: str, note_id: str, user: dict = Depends(require_t
     await db.delete_task_note(note_id)
 
 
-def _row_to_task(r) -> dict:
+def _picture_for(viewer: dict, person_id: str | None, picture: str | None) -> str | None:
+    """A person's photo as `viewer` should see it.
+
+    The task queries already blank the photo of anyone who hid it from others
+    (`users.hide_picture`); the viewer still sees their own, from their claims.
+    """
+    if person_id is not None and person_id == viewer.get("sub"):
+        return viewer.get("picture")
+    return picture
+
+
+def _row_to_task(r, viewer: dict) -> dict:
     """Shape a joined `tasks` row (see `db.tasks._SELECT_TASK`) into the `Task` JSON shape."""
     d = dict(r)
     return {
@@ -502,9 +513,9 @@ def _row_to_task(r) -> dict:
         "status": d["status"],
         "assignee_id": d["assignee_id"],
         "assignee_name": d.get("assignee_name"),
-        "assignee_picture": d.get("assignee_picture"),
+        "assignee_picture": _picture_for(viewer, d["assignee_id"], d.get("assignee_picture")),
         "contributors": [
-            {"id": c["id"], "display_name": c["display_name"], "picture": c.get("picture")}
+            {"id": c["id"], "display_name": c["display_name"], "picture": _picture_for(viewer, c["id"], c.get("picture"))}
             for c in _decode_contributors(d.get("contributors"))
         ],
         "note_count": d.get("note_count") or 0,
@@ -521,7 +532,7 @@ def _row_to_task(r) -> dict:
     }
 
 
-def _row_to_note(r) -> dict:
+def _row_to_note(r, viewer: dict) -> dict:
     """Shape a joined `task_notes` row (see `db.tasks._SELECT_NOTE`) into the note JSON shape."""
     d = dict(r)
     return {
@@ -529,7 +540,7 @@ def _row_to_note(r) -> dict:
         "task_id": str(d["task_id"]),
         "author_id": d["author_id"],
         "author_name": d.get("author_name"),
-        "author_picture": d.get("author_picture"),
+        "author_picture": _picture_for(viewer, d["author_id"], d.get("author_picture")),
         "body": d["body"],
         "created_at": d["created_at"].isoformat(),
     }

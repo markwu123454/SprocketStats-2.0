@@ -240,6 +240,7 @@ async def init_db():
                         banned_at           TIMESTAMPTZ,
                         code_version        INTEGER     NOT NULL DEFAULT 1,
                         code_number         INTEGER     UNIQUE,
+                        hide_picture        BOOLEAN     NOT NULL DEFAULT false,
                         CONSTRAINT onboarded_fields_present CHECK (
                             NOT onboarding_complete
                             OR (
@@ -1006,6 +1007,14 @@ async def _migration_0017_drop_offline_code(conn) -> None:
     await conn.execute("DROP FUNCTION IF EXISTS public.damm_check(TEXT)")
 
 
+async def _migration_0018_hide_picture(conn) -> None:
+    """Let a member hide their Google photo from other members (Settings).
+    Off for everyone to start, so nothing anyone sees changes."""
+    await conn.execute(
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS hide_picture BOOLEAN NOT NULL DEFAULT false"
+    )
+
+
 # Append-only: never edit or renumber a migration that has shipped. Each must
 # be idempotent against init_db's current schema, because a fresh database
 # gets that schema first and then runs every migration.
@@ -1027,6 +1036,7 @@ _MIGRATIONS = [
     (15, _migration_0015_kiosk_access_grants),
     (16, _migration_0016_attendance_checkout_method),
     (17, _migration_0017_drop_offline_code),
+    (18, _migration_0018_hide_picture),
 ]
 
 

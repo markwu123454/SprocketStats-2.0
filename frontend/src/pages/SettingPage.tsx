@@ -1,6 +1,6 @@
 import { useAuth, useOnboardedUser } from "@/contexts/authContext"
 import { getPerm } from "@/lib/permissions"
-import { LogOut, Mail, ShieldCheck, Palette, Navigation, Bell, ListChecks, CalendarClock, Milestone, Megaphone, UserX, Pencil, ImagePlus } from "lucide-react"
+import { LogOut, Mail, ShieldCheck, Palette, Navigation, Bell, ListChecks, CalendarClock, Milestone, Megaphone, UserX, Pencil, ImagePlus, ImageOff } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useTheme } from "@/contexts/themeContext"
 import Avatar from "@/components/Avatar.tsx"
@@ -41,6 +41,8 @@ export default function SettingPage() {
     const [nameDraft, setNameDraft] = useState("")
     const [nameSaving, setNameSaving] = useState(false)
     const [nameError, setNameError] = useState<string | null>(null)
+    const [photoSaving, setPhotoSaving] = useState(false)
+    const [photoError, setPhotoError] = useState<string | null>(null)
     // Dirty while the inline name field holds something other than the saved name.
     const confirmDiscard = useDiscardGuard(editingName && nameDraft !== user.display_name)
     const { theme, setTheme } = useTheme()
@@ -132,6 +134,25 @@ export default function SettingPage() {
             setNameError(e instanceof Error ? e.message : "Couldn't save your name")
         } finally {
             setNameSaving(false)
+        }
+    }
+
+    async function setPhotoShown(shown: boolean) {
+        setPhotoSaving(true)
+        setPhotoError(null)
+        try {
+            const res = await fetch(`${API}/auth/picture-visibility`, {
+                method: "PATCH",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ hide_picture: !shown }),
+            })
+            if (!res.ok) throw new Error()
+            await refreshUser()
+        } catch {
+            setPhotoError("Couldn't change your photo setting")
+        } finally {
+            setPhotoSaving(false)
         }
     }
 
@@ -240,6 +261,31 @@ export default function SettingPage() {
                         </div>
                     </div>
                 </div>
+
+                <div className="flex items-center justify-between px-4 py-3 gap-4">
+                    <div className="flex items-center gap-3">
+                        <ImageOff size={16} className="theme-subtext-color shrink-0" />
+                        <div>
+                            <p className="text-sm font-medium theme-text">Show my photo to others</p>
+                            <p className="text-xs theme-subtext-color">
+                                {offline
+                                    ? "Changing this needs a connection"
+                                    : user.hide_picture
+                                        ? "Other members see your initial instead of your Google photo"
+                                        : "Other members see your Google photo on tasks and the roster"}
+                            </p>
+                        </div>
+                    </div>
+                    <Toggle
+                        aria-label="Show my photo to others"
+                        checked={!user.hide_picture}
+                        disabled={offline || photoSaving}
+                        onChange={shown => void setPhotoShown(shown)}
+                    />
+                </div>
+                {photoError && (
+                    <p className={`px-4 py-3 ${fieldErrorClass}`}>{photoError}</p>
+                )}
 
                 <Button
                     variant="danger"
