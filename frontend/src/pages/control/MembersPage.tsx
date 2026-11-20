@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
+import { createPortal } from "react-dom"
+import { AgGridReact } from "ag-grid-react"
+import type {
+    CellClassParams, ColDef, EditableCallbackParams, ICellRendererParams,
+    RowClassParams, SuppressKeyboardEventParams, ValueGetterParams, ValueSetterParams,
+} from "ag-grid-community"
+import "@/lib/agGrid"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { Ban, Check, ChevronRight, MoreHorizontal, Pencil, Plus, RotateCcw, ScanLine, Tag, X } from "lucide-react"
 import { useAuth } from "@/contexts/authContext"
@@ -11,7 +18,7 @@ import Sheet from "@/components/ui/Sheet"
 import Notice from "@/components/ui/Notice"
 import EmptyState from "@/components/ui/EmptyState"
 import Skeleton from "@/components/ui/Skeleton"
-import { fieldErrorClass, fieldLabelClass, focusRing, helperClass, inputClass, menuRowClass, typeH2 } from "@/lib/uiClasses"
+import { fieldErrorClass, fieldLabelClass, focusRing, helperClass, inputClass, menuRowClass } from "@/lib/uiClasses"
 import { useDiscardGuard, useIsDirty } from "@/lib/useDiscardGuard"
 import { useIsMobile } from "@/lib/useIsMobile"
 
@@ -108,8 +115,8 @@ const LEVEL_GROUPS_AFTER: [string, string][]  = [["alumni", "Alumni"], ["visitor
 const NO_ROLE_GROUP = "_none"
 const BANNED_GROUP = "_banned"
 
-/** Shared column template for the header and every row (last two: moderation action, "…" menu). */
-const GRID_COLS = "minmax(0,1.5fr) minmax(0,1.6fr) minmax(0,1.3fr) minmax(0,1.1fr) 140px minmax(0,0.7fr) 40px 40px"
+/** Height of the title row (title, Save, Reset). Fixed, because on a phone it sticks and the group headers stick right under it. */
+const TITLE_ROW_H = 72
 
 /** Dropdown trigger styled as a form field (same box as inputClass; Dropdown supplies the focus ring). */
 const DROPDOWN_TRIGGER = "rounded-lg border px-3 py-2.5 min-h-11 text-base md:text-sm transition theme-bg theme-outline theme-text"
@@ -201,17 +208,20 @@ interface RowAction {
 /**
  * Members control page — the roster, grouped by subteam.
  *
- * Status tabs, a subteam filter and search narrow the groups as well as the
- * rows. Leads come first in each group and banned accounts are collected at the
- * bottom. Approve/ban/unban and profile edits made in the row editor are staged
+ * Search narrows the groups as well as the rows (it matches role names too, so
+ * "cad" finds the CAD subteam); on a phone, status tabs do too. Leads come first
+ * in each group and banned accounts are collected at the bottom. Approve/ban/unban and profile edits made in the row editor are staged
  * locally; "Reset" reverts every row to its DB snapshot and "Save" persists only
  * the changed rows. Captains, Mentors and the Scouting Lead can edit anyone; Leads
  * can edit their own subteam's members (and alumni), except for their role. The `/members` endpoints
  * enforce the same scope — this UI is cosmetic, the backend is the real boundary.
  *
- * Below the `md` breakpoint the wide grid is swapped for a stacked list: tapping
- * a member opens a bottom sheet holding every action (edit, tags, moderation),
- * and Save/Reset sit in a footer bar under the list at every width (disabled until something is staged).
+ * From `md` up the roster is an AG Grid (`MembersGrid`): sortable, resizable,
+ * filterable columns, Role, Grade and Year edited in place, and each group's
+ * header kept above its members under any sort or filter. Below `md` it's a
+ * stacked list: tapping a member opens a bottom sheet holding every action (edit,
+ * tags, moderation). Save/Reset sit beside the title at every width (disabled
+ * until something is staged); on a phone that row sticks to the top.
  */
 export default function MembersPage() {
     const { user } = useAuth()
@@ -248,7 +258,6 @@ export default function MembersPage() {
 
     const [query, setQuery]     = useState("")
     const [tab, setTab]         = useState<Tab>("all")
-    const [subteam, setSubteam] = useState("all")
 
     // Seed rows from bootstrap if it resolves after this component mounted
     // but before load() has started (async case on slow connections).
@@ -415,23 +424,39 @@ export default function MembersPage() {
     const groupLabel = useCallback((key: string) =>
         groupOrder.find(([k]) => k === key)?.[1] ?? pretty(key), [groupOrder])
 
-    const ql = query.trim().toLowerCase()
+    // Search is phone-only; desktop filters with the grid's column filters.
+    const ql = isMobile ? query.trim().toLowerCase() : ""
     const roleLabel = useCallback((role: string | null) =>
         role ? (roleById.get(role)?.label ?? pretty(role)) : "", [roleById])
 
-    // Search + subteam filter first; tab counts are computed over this set.
+    // Search first; tab counts are computed over this set.
     const base = useMemo(() => rows.filter(m => {
-        if (subteam !== "all" && groupKeyOf(m) !== subteam) return false
         if (!ql) return true
         return [m.name, m.display_name, m.email, roleLabel(m.role)]
             .some(v => v?.toLowerCase().includes(ql))
-    }), [rows, subteam, ql, groupKeyOf, roleLabel])
+    }), [rows, ql, roleLabel])
 
-    const visible = useMemo(() => base.filter(m => tab === "all" || statusOf(m) === tab), [base, tab])
+    /** Roster order: by group (captains, mentors, each subteam, alumni, visitors), leads first, then
+     *  name, with banned accounts last. The phone list groups this way; the desktop grid's Role sort uses it. */
+    const compareRoster = useCallback((a: MemberRow, b: MemberRow) => {
+        const groupIndex = (m: MemberRow) => {
+            const i = groupOrder.findIndex(([k]) => k === groupKeyOf(m))
+            return i === -1 ? groupOrder.length - 1.5 : i // unknown roles just before "No role", as in the list
+        }
+        const isLead = (m: MemberRow) => (m.role ? roleById.get(m.role)?.level === "lead" : false)
+        return Number(!!a.banned_at) - Number(!!b.banned_at)
+            || groupIndex(a) - groupIndex(b)
+            || Number(isLead(b)) - Number(isLead(a))
+            || (a.name ?? "").localeCompare(b.name ?? "")
+    }, [groupOrder, groupKeyOf, roleById])
 
+    // The status tabs are phone-only; desktop filters status with the grid's column filter.
+    const statusTab: Tab = isMobile ? tab : "all"
+    const visible = useMemo(() => base.filter(m => statusTab === "all" || statusOf(m) === statusTab), [base, statusTab])
+
+    /** Phone list: `visible` split into its groups, each in roster order, banned accounts in their own group last. */
     const groups = useMemo(() => {
         const byName = (a: MemberRow, b: MemberRow) => (a.name ?? "").localeCompare(b.name ?? "")
-        const isLead = (m: MemberRow) => (m.role ? roleById.get(m.role)?.level === "lead" : false)
         const buckets = new Map<string, MemberRowState[]>()
         const banned: MemberRowState[] = []
         for (const m of visible) {
@@ -448,25 +473,11 @@ export default function MembersPage() {
             .map(k => ({
                 key: k,
                 name: groupLabel(k),
-                rows: buckets.get(k)!.sort((a, b) => Number(isLead(b)) - Number(isLead(a)) || byName(a, b)),
+                rows: buckets.get(k)!.sort(compareRoster),
             }))
         if (banned.length) out.push({ key: BANNED_GROUP, name: "Banned", rows: banned.sort(byName) })
         return out
-    }, [visible, groupKeyOf, groupOrder, groupLabel, roleById])
-
-    const subteamOptions = useMemo(() => {
-        const present = new Set(rows.map(groupKeyOf))
-        return [
-            { value: "all", label: "All subteams" },
-            ...groupOrder.filter(([k]) => present.has(k)).map(([value, label]) => ({ value, label })),
-        ]
-    }, [rows, groupKeyOf, groupOrder])
-
-    const counts = useMemo(() => {
-        const c = { approved: 0, pending: 0, banned: 0 }
-        for (const m of rows) c[statusOf(m)]++
-        return c
-    }, [rows])
+    }, [visible, groupKeyOf, groupOrder, groupLabel, compareRoster])
 
     /** The single moderation action shown at the end of a row. */
     const actionFor = (m: MemberRowState): RowAction => {
@@ -498,30 +509,57 @@ export default function MembersPage() {
     const sheetMember = sheetFor ? rows.find(r => r.id === sheetFor) : undefined
 
     const resetButton = (
-        <Button variant="outlined" size="footer" className="ml-auto" onClick={() => void confirmDiscardStaged().then(ok => { if (ok) handleReset() })} disabled={!hasChanges || saving}>
+        <Button variant="outlined" onClick={() => void confirmDiscardStaged().then(ok => { if (ok) handleReset() })} disabled={!hasChanges || saving}>
             Reset
         </Button>
     )
     const saveButton = (
-        <Button size="footer" onClick={() => void handleSave()} disabled={!hasChanges || saving}>
+        <Button onClick={() => void handleSave()} disabled={!hasChanges || saving}>
             {saving ? "Saving…" : "Save"}
         </Button>
     )
+    const searchBox = (className: string) => (
+        <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search name, email, role, subteam…"
+            className={`members-search ${className} ${inputClass}`}
+            aria-label="Search members"
+            style={{ background: "var(--ag-grid-chrome-bg)" }}
+        />
+    )
     const unsavedLabel = `${changes} unsaved change${changes > 1 ? "s" : ""}`
 
-    /** Loading / empty states, else each group's sticky header followed by its rows. */
+    const loadingSkeleton = (
+        <div className="flex flex-col gap-3 px-4 md:px-6 py-4" role="status" aria-label="Loading members">
+            {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+        </div>
+    )
+
+    /** What the desktop grid's cells call back into; the grid reads it fresh on every redraw. */
+    const gridHandlers: GridHandlers = {
+        roleById,
+        actionFor,
+        onEdit: m => (canEditMember(m.role) ? () => setEditingFor(m.id) : undefined),
+        onEditTags: m => (canEditTags ? () => setEditingTagsFor(m.id) : undefined),
+        kioskBlocked: kioskBlockedReason,
+        onKioskAccess: m => setKioskFor(m.id),
+        onRevokeKiosk: m => {
+            setError(null)
+            void handleKioskAccess(m.id, "revoke").catch((e: Error) => setError(e.message))
+        },
+    }
+
+    /** Mobile list: loading / empty states, else each group's sticky header followed by its rows. */
     const renderGroups = (renderRow: (m: MemberRowState) => ReactNode) =>
-        loading ? (
-            <div className="flex flex-col gap-3 px-4 md:px-6 py-4" role="status" aria-label="Loading members">
-                {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-12 w-full" />)}
-            </div>
-        ) : groups.length === 0 ? (
+        loading ? loadingSkeleton : groups.length === 0 ? (
             <div className="px-4 md:px-6 py-6">
                 <EmptyState>No members match these filters.</EmptyState>
             </div>
         ) : groups.map(g => (
             <div key={g.key} className="flex flex-col">
-                <div className="sticky top-0 z-10 flex items-baseline gap-2.5 px-4 md:px-6 pt-3.5 pb-2 border-b theme-border theme-bg">
+                {/* Sticks just under the sticky title row. */}
+                <div className="sticky z-10 flex items-baseline gap-2.5 px-4 md:px-6 pt-3.5 pb-2 border-b theme-border theme-bg" style={{ top: TITLE_ROW_H }}>
                     <span className="text-sm font-semibold theme-h1-color">{g.name}</span>
                     <span className="text-xs theme-subtext-color">{g.rows.length}</span>
                 </div>
@@ -531,20 +569,30 @@ export default function MembersPage() {
 
     return (
         // Desktop pins the card to the viewport and scrolls the grid inside it; on
-        // mobile the whole page scrolls (overflow-clip, not hidden, so the group
-        // headers and the save bar can still stick) to give the list the full screen.
+        // mobile the whole page scrolls (overflow-clip, not hidden, so the title row
+        // and group headers can still stick) to give the list the full screen.
         <div className="px-4 py-3 md:px-6 md:py-6 flex flex-col gap-4 md:h-full">
             <div className="rounded-xl border overflow-clip md:overflow-hidden theme-border theme-bg flex flex-col md:flex-1 md:min-h-0">
-                <div className="flex flex-wrap items-center gap-4 px-4 py-4 md:px-6 md:py-5">
-                    <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-                        <h1 className="text-2xl font-bold theme-h1-color">Members</h1>
-                        <span className="text-xs theme-subtext-color">
-                            {counts.approved} approved · {counts.pending} pending · {counts.banned} banned
-                        </span>
+                {/* Title with Save and Reset. On a phone it sticks to the top, so they stay in reach
+                    while the list scrolls under it. */}
+                <div
+                    className="sticky top-0 z-20 md:static shrink-0 flex items-center gap-3 md:gap-4 px-4 md:px-6 border-b theme-border theme-bg"
+                    style={{ height: TITLE_ROW_H }}
+                >
+                    <div className="flex flex-col min-w-0">
+                        <h1 className="text-2xl font-bold leading-tight theme-h1-color">Members</h1>
+                        {/* Takes no space when there is nothing unsaved, so the title stays centred; still announced. */}
+                        <span className={hasChanges ? "text-xs theme-text-contrast" : "sr-only"} aria-live="polite">{hasChanges ? unsavedLabel : ""}</span>
+                    </div>
+                    <div className="flex-1" />
+                    <div className="flex items-center gap-2 shrink-0">
+                        {resetButton}
+                        {saveButton}
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3 px-4 md:px-6 pb-4 border-b theme-border">
+                {/* Phone: status tabs and search. Desktop filters with the grid's column filters instead. */}
+                <div className="md:hidden flex flex-col gap-3 px-4 py-3 border-b theme-border">
                     <div className="flex gap-1 p-1 rounded-xl max-w-full overflow-x-auto" style={{ background: "var(--ag-grid-chrome-bg)" }}>
                         {TABS.map(([k, label]) => (
                             <button
@@ -563,25 +611,10 @@ export default function MembersPage() {
                             </button>
                         ))}
                     </div>
-                    <div className="w-full md:w-[200px]">
-                        <Dropdown
-                            value={subteam}
-                            options={subteamOptions}
-                            onChange={setSubteam}
-                            label="Subteam"
-                            triggerClassName={DROPDOWN_TRIGGER}
-                        />
-                    </div>
-                    <div className="hidden md:block flex-1" />
-                    <input
-                        value={query}
-                        onChange={e => setQuery(e.target.value)}
-                        placeholder="Search name, email, role…"
-                        className={`members-search w-full md:w-[280px] ${inputClass}`}
-                        aria-label="Search members"
-                        style={{ background: "var(--ag-grid-chrome-bg)" }}
-                    />
+                    {searchBox("w-full")}
                 </div>
+
+                {error && <Notice className="mx-4 md:mx-6 mt-3 shrink-0">{error}</Notice>}
 
                 {isMobile ? (
                     <div className="flex flex-col">
@@ -594,54 +627,33 @@ export default function MembersPage() {
                             />
                         ))}
                     </div>
-                ) : (
-                    // Wide grid scrolls sideways on narrow desktop windows; groups scroll vertically under a fixed header.
-                    <div className="flex-1 min-h-0 overflow-x-auto theme-scrollbar">
-                        <div className="min-w-[960px] h-full flex flex-col">
-                            <div
-                                className={`grid gap-4 px-6 py-2.5 theme-subtext-color ${typeH2}`}
-                                style={{ gridTemplateColumns: GRID_COLS, background: "var(--ag-grid-header-bg)" }}
-                            >
-                                <span>Member</span><span>Email</span><span>Role</span><span>Grade</span><span>Status</span><span>Tags</span><span /><span />
-                            </div>
-                            <div className="flex-1 min-h-0 overflow-y-auto theme-scrollbar">
-                                {renderGroups(m => (
-                                    <MemberGridRow
-                                        key={m.id}
-                                        member={m}
-                                        role={m.role ? roleById.get(m.role) : undefined}
-                                        action={actionFor(m)}
-                                        onEdit={canEditMember(m.role) ? () => setEditingFor(m.id) : undefined}
-                                        onEditTags={canEditTags ? () => setEditingTagsFor(m.id) : undefined}
-                                        kioskBlocked={kioskBlockedReason(m)}
-                                        onKioskAccess={() => setKioskFor(m.id)}
-                                        onRevokeKiosk={() => {
-                                            setError(null)
-                                            void handleKioskAccess(m.id, "revoke").catch((e: Error) => setError(e.message))
-                                        }}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                    </div>
+                ) : loading ? loadingSkeleton : (
+                    <MembersGrid
+                        members={visible}
+                        compareRoster={compareRoster}
+                        catalog={catalog}
+                        canManage={canManage}
+                        canEditMember={canEditMember}
+                        onPatch={patchRow}
+                        handlers={gridHandlers}
+                    />
                 )}
-
-                {/* Staged edits: one footer at every width, always rendered; Save and Reset stay disabled until something is staged. */}
-                {error && <Notice className="mx-4 md:mx-6 my-2 shrink-0">{error}</Notice>}
-
-                <FormFooter className="shrink-0">
-                    <span className="min-w-0 text-xs theme-text-contrast" aria-live="polite">{hasChanges ? unsavedLabel : ""}</span>
-                    {resetButton}
-                    {saveButton}
-                </FormFooter>
             </div>
 
             {/* Hover-only affordances are gated on real hover so a tap on touch screens
                 isn't swallowed as a hover, and the tag button stays visible without one. */}
             <style>{`
                 .members-search::placeholder { color: var(--theme-subtext-color); opacity: .7; }
+                /* Grid cells: centre custom content, and don't inherit the grid's row-height line-height. */
+                .members-cell { display: flex; align-items: center; line-height: 1.35; }
+                .members-banned .ag-cell { opacity: .6; }
+                .members-grid .ag-body-viewport, .members-grid .ag-body-horizontal-scroll-viewport, .members-grid .ag-center-cols-viewport {
+                    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+                }
+                /* Under the pinned actions column the grid keeps a spacer the height of the horizontal
+                   scrollbar, drawn as an empty scrollbar of its own. Keep the space, drop the stray bar. */
+                .members-grid .ag-horizontal-right-spacer { overflow-x: hidden; }
                 @media (hover: hover) {
-                    .members-row:hover { background: var(--ag-grid-hover-bg); }
                     .members-row:hover .members-tag-edit { opacity: 1; }
                     .members-action:not(:disabled):hover { border-color: var(--theme-border); color: var(--theme-h1-color); }
                     .members-menu-item:not(:disabled):hover { background: color-mix(in oklch, var(--theme-button-bg) 90%, transparent); }
@@ -696,93 +708,311 @@ export default function MembersPage() {
     )
 }
 
-interface MemberGridRowProps {
-    member: MemberRowState
-    role: RoleCatalogEntry | undefined
-    action: RowAction
-    /** Opens the profile editor; absent when the member is outside the viewer's editing scope. */
-    onEdit?: () => void
-    onEditTags?: () => void
+/** What the grid's cells need from the page. */
+interface GridHandlers {
+    roleById: Map<string, RoleCatalogEntry>
+    actionFor: (m: MemberRowState) => RowAction
+    /** Absent when the member is outside the viewer's editing scope. */
+    onEdit: (m: MemberRowState) => (() => void) | undefined
+    onEditTags: (m: MemberRowState) => (() => void) | undefined
     /** Why kiosk access can't be changed for this member; undefined when it can. */
-    kioskBlocked?: string
-    onKioskAccess: () => void
-    onRevokeKiosk: () => void
+    kioskBlocked: (m: MemberRowState) => string | undefined
+    onKioskAccess: (m: MemberRowState) => void
+    onRevokeKiosk: (m: MemberRowState) => void
 }
 
-function MemberGridRow({ member: m, role, action, onEdit, onEditTags, kioskBlocked, onKioskAccess, onRevokeKiosk }: MemberGridRowProps) {
-    const name = nameOf(m)
-    const goesBy = goesByOf(m)
-    const kiosk = kioskGrantOf(m)
-    // A staged, unsaved moderation change is italicised until Save/Reset.
-    const statusDirty = isDirty(m, PENDING)
-    const Icon = action.icon
+/** The grid's `context` is fixed when it's created, so cells reach the page's latest handlers through this. */
+interface GridContext { handlers: () => GridHandlers }
+type CellProps = ICellRendererParams<MemberRowState, unknown, GridContext>
+
+/**
+ * Lets Tab step through the buttons inside a cell before the grid moves to the next
+ * cell, and lets Enter/Space press a focused button instead of the grid acting on
+ * the cell (AG Grid's pattern for interactive cell renderers).
+ */
+function cellButtonKeys({ event }: SuppressKeyboardEventParams<MemberRowState>): boolean {
+    const target = event.target as HTMLElement
+    if ((event.key === "Enter" || event.key === " ") && target.closest("button")) return true
+    if (event.key !== "Tab") return false
+    const cell = target.closest(".ag-cell")
+    const buttons = cell ? [...cell.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")] : []
+    const next = buttons.indexOf(target as HTMLButtonElement) + (event.shiftKey ? -1 : 1)
+    if (event.shiftKey && target === cell) return false
+    if (next < 0 || next >= buttons.length) return false
+    event.preventDefault()
+    buttons[next].focus()
+    return true
+}
+
+/** Staged edits show in italics until Save or Reset. */
+const italicIfDirty = (field: EditableField) => ({
+    italic: (p: CellClassParams<MemberRowState>) => !!p.data && isDirty(p.data, [field]),
+})
+
+/** The grid's own column filters: a "contains" text box per column, matching what the cell shows (`filterText`). */
+const DEFAULT_COL_DEF: ColDef<MemberRowState> = {
+    sortable: true, resizable: true, suppressMovable: true, cellClass: "members-cell",
+    filter: "agTextColumnFilter",
+    filterParams: { filterOptions: ["contains"], maxNumConditions: 1 },
+}
+
+/** A column filter's text for a member: what their cell shows. */
+const filterText = (text: (m: MemberRowState) => string) => (p: ValueGetterParams<MemberRowState>) =>
+    (p.data ? text(p.data) : "")
+
+const ROW_CLASS_RULES = {
+    "members-banned": (p: RowClassParams<MemberRowState>) => !!p.data?.banned_at,
+}
+
+const STATUS_ORDER: Status[] = ["pending", "approved", "banned"]
+
+interface MembersGridProps {
+    /** The members to show, already narrowed by search. */
+    members: MemberRowState[]
+    catalog: RoleCatalogEntry[]
+    /** Roster order (by group, leads first, then name; banned last): what sorting by Role uses. */
+    compareRoster: (a: MemberRowState, b: MemberRowState) => number
+    /** Captains, Mentors and the Scouting Lead: may change roles. */
+    canManage: boolean
+    canEditMember: (role: string | null) => boolean
+    /** Stages an edit on a row; it persists on Save like any other. */
+    onPatch: (id: string, patch: Partial<MemberRowState>) => void
+    handlers: GridHandlers
+}
+
+/**
+ * The desktop roster: one row per member, starting sorted by Role in roster order
+ * (captains, mentors, each subteam with its leads first, alumni, visitors; banned
+ * last). Every column sorts and has the grid's own "contains" filter. Role (for
+ * those who may change it), Grade and Year are edited in place with a single
+ * click, staged like the profile editor's edits; name and display name stay in
+ * the profile editor, opened by clicking the member.
+ */
+function MembersGrid({ members, catalog, compareRoster, canManage, canEditMember, onPatch, handlers }: MembersGridProps) {
+    const gridRef = useRef<AgGridReact<MemberRowState>>(null)
+    const handlersRef = useRef(handlers)
+    useLayoutEffect(() => { handlersRef.current = handlers })
+    const [context] = useState<GridContext>(() => ({ handlers: () => handlersRef.current }))
+
+    // Cells read role labels and permissions through `context`, which the grid doesn't
+    // watch, so redraw them when those change (rows changing redraws them anyway).
+    useEffect(() => {
+        gridRef.current?.api?.refreshCells({ force: true })
+    }, [handlers.roleById, canManage, canEditMember])
+
+    // Depends only on things that rarely change: new column definitions would reset
+    // the widths someone dragged.
+    const columnDefs = useMemo<ColDef<MemberRowState>[]>(() => {
+        const roleById = new Map(catalog.map(c => [c.value, c]))
+        const roleLabel = (v: unknown) => (typeof v === "string" && v ? roleById.get(v)?.label ?? pretty(v) : "—")
+        const byPosition = (list: readonly string[]) => (a: unknown, b: unknown) =>
+            list.indexOf(String(a ?? "")) - list.indexOf(String(b ?? ""))
+        const mayEdit = (p: EditableCallbackParams<MemberRowState>) => !!p.data && canEditMember(p.data.role)
+        const stage = (field: EditableField) => (p: ValueSetterParams<MemberRowState>) => {
+            if (p.data) onPatch(p.data.id, { [field]: norm(p.newValue as string | null) })
+            return false // the page owns the row; its re-render brings the new value in
+        }
+        return [
+            {
+                colId: "member", headerName: "Member", flex: 1.6, minWidth: 180,
+                valueGetter: p => (p.data ? nameOf(p.data) : ""),
+                comparator: (a, b) => String(a).localeCompare(String(b)),
+                filterValueGetter: filterText(m => `${nameOf(m)} ${m.display_name ?? ""}`),
+                cellRenderer: MemberCell, suppressKeyboardEvent: cellButtonKeys,
+            },
+            {
+                colId: "email", headerName: "Email", flex: 1.4, minWidth: 140,
+                valueGetter: p => p.data?.email ?? null,
+                valueFormatter: p => (p.value as string | null) ?? "Hidden",
+                comparator: (a, b) => (a == null ? 1 : b == null ? -1 : String(a).localeCompare(String(b))),
+                filterValueGetter: filterText(m => m.email ?? "Hidden"),
+                cellClass: "members-cell text-xs theme-subtext-color",
+            },
+            {
+                colId: "role", headerName: "Role", flex: 1.3, minWidth: 140,
+                initialSort: "asc",
+                valueGetter: p => p.data?.role ?? "",
+                valueFormatter: p => roleLabel(p.value),
+                comparator: (_a, _b, nodeA, nodeB) => (nodeA.data && nodeB.data ? compareRoster(nodeA.data, nodeB.data) : 0),
+                filterValueGetter: filterText(m => `${roleLabel(m.role)} ${roleTextOf(m, m.role ? roleById.get(m.role) : undefined)}`),
+                cellRenderer: RoleCell,
+                editable: p => canManage && !!p.data,
+                cellEditor: "agSelectCellEditor",
+                cellEditorParams: { values: catalog.map(c => c.value) },
+                valueSetter: stage("role"),
+                headerTooltip: canManage ? "Click a role to change it" : undefined,
+            },
+            {
+                colId: "grade", headerName: "Grade", width: 100,
+                valueGetter: p => p.data?.grade ?? "",
+                valueFormatter: p => (p.value ? pretty(String(p.value)) : "—"),
+                comparator: byPosition(GRADE_OPTIONS),
+                filterValueGetter: filterText(m => (m.grade ? pretty(m.grade) : "")),
+                editable: mayEdit,
+                cellEditor: "agSelectCellEditor",
+                cellEditorParams: { values: GRADE_OPTIONS },
+                valueSetter: stage("grade"),
+                cellClassRules: italicIfDirty("grade"),
+            },
+            {
+                colId: "year", headerName: "Year", width: 80,
+                valueGetter: p => p.data?.team_year ?? "",
+                valueFormatter: p => (p.value ? `Yr ${String(p.value).replace("year_", "")}` : "—"),
+                comparator: byPosition(YEAR_OPTIONS),
+                filterValueGetter: filterText(m => (m.team_year ? `Yr ${m.team_year.replace("year_", "")}` : "")),
+                editable: mayEdit,
+                cellEditor: "agSelectCellEditor",
+                cellEditorParams: { values: YEAR_OPTIONS },
+                valueSetter: stage("team_year"),
+                cellClassRules: italicIfDirty("team_year"),
+            },
+            {
+                colId: "status", headerName: "Status", width: 130,
+                valueGetter: p => (p.data ? statusOf(p.data) : ""),
+                comparator: byPosition(STATUS_ORDER),
+                filterValueGetter: filterText(m => `${STATUS_LABEL[statusOf(m)]}${kioskGrantOf(m) ? " Kiosk" : ""}`),
+                cellRenderer: StatusCell,
+            },
+            {
+                colId: "tags", headerName: "Tags", flex: 1, minWidth: 100, sortable: false,
+                valueGetter: p => p.data?.tags.join(" ") ?? "",
+                filterValueGetter: filterText(m => m.tags.join(" ")),
+                cellRenderer: TagsCell, suppressKeyboardEvent: cellButtonKeys,
+            },
+            {
+                colId: "actions", headerName: "", width: 80, pinned: "right", sortable: false, resizable: false, filter: false,
+                cellRenderer: ActionsCell, suppressKeyboardEvent: cellButtonKeys,
+            },
+        ]
+    }, [catalog, compareRoster, canManage, canEditMember, onPatch])
 
     return (
-        <div
-            className="members-row grid gap-4 items-center px-6 py-2.5"
-            style={{
-                gridTemplateColumns: GRID_COLS,
-                borderBottom: "1px solid var(--ag-grid-row-border)",
-                opacity: m.banned_at ? 0.6 : 1,
-            }}
+        <div className="members-grid flex-1 min-h-0">
+            <AgGridReact<MemberRowState>
+                ref={gridRef}
+                rowData={members}
+                columnDefs={columnDefs}
+                defaultColDef={DEFAULT_COL_DEF}
+                context={context}
+                getRowId={p => p.data.id}
+                rowHeight={56}
+                rowClass="members-row"
+                rowClassRules={ROW_CLASS_RULES}
+                singleClickEdit
+                stopEditingWhenCellsLoseFocus
+                noRowsOverlayComponent={NoMembersOverlay}
+            />
+        </div>
+    )
+}
+
+function NoMembersOverlay() {
+    return <EmptyState>No members match these filters.</EmptyState>
+}
+
+/** Avatar and name; clicking opens the profile editor when the viewer may edit this member. */
+function MemberCell({ data: m, context }: CellProps) {
+    if (!m) return null
+    const onEdit = context.handlers().onEdit(m)
+    const name = nameOf(m)
+    const goesBy = goesByOf(m)
+    return (
+        <button
+            type="button"
+            onClick={onEdit}
+            disabled={!onEdit}
+            title={onEdit ? "Edit member" : undefined}
+            className={`flex items-center gap-3 min-w-0 w-full text-left rounded-lg enabled:cursor-pointer ${focusRing}`}
         >
+            <MemberAvatar name={name} picture={m.picture} />
+            <span className="flex flex-col min-w-0">
+                <span className={`text-sm font-medium truncate theme-h1-color ${isDirty(m, ["name", "display_name"]) ? "italic" : ""}`}>{name}</span>
+                {goesBy && <span className="text-xs truncate theme-subtext-color">{goesBy}</span>}
+            </span>
+        </button>
+    )
+}
+
+function RoleCell({ data: m, context }: CellProps) {
+    if (!m) return null
+    const role = m.role ? context.handlers().roleById.get(m.role) : undefined
+    return (
+        <span className="flex items-center gap-2 min-w-0">
+            <span className={`text-sm truncate theme-text ${isDirty(m, ["role"]) ? "italic" : ""}`}>{roleTextOf(m, role)}</span>
+            {role?.level === "lead" && <LeadBadge />}
+        </span>
+    )
+}
+
+function StatusCell({ data: m }: CellProps) {
+    if (!m) return null
+    const kiosk = kioskGrantOf(m)
+    return (
+        <span className="flex items-center gap-1.5 min-w-0">
+            {/* A staged, unsaved moderation change is italicised until Save/Reset. */}
+            <span className={`text-sm theme-text ${isDirty(m, PENDING) ? "italic" : ""}`}>{STATUS_LABEL[statusOf(m)]}</span>
+            {kiosk && <KioskBadge grant={kiosk} />}
+        </span>
+    )
+}
+
+function TagsCell({ data: m, context }: CellProps) {
+    if (!m) return null
+    const onEditTags = context.handlers().onEditTags(m)
+    return (
+        <span className="flex items-center gap-1 min-w-0 w-full">
+            <span className="flex items-center gap-1 min-w-0 overflow-hidden" title={m.tags.join(", ") || undefined}>
+                {m.tags.map(t => (
+                    <span key={t} className="text-xs px-2 py-0.5 rounded-full shrink-0" style={tagChip}>{t}</span>
+                ))}
+            </span>
+            {onEditTags && (
+                <button
+                    type="button"
+                    onClick={onEditTags}
+                    title="Edit tags"
+                    aria-label={`Edit tags for ${nameOf(m)}`}
+                    className={`members-tag-edit shrink-0 rounded-lg p-0.5 theme-subtext-color opacity-0 focus:opacity-100 hover:opacity-70 transition-opacity ${focusRing}`}
+                >
+                    <Tag size={14} />
+                </button>
+            )}
+        </span>
+    )
+}
+
+/** The member's one moderation action, then the "…" menu with the rest. */
+function ActionsCell({ data: m, context }: CellProps) {
+    if (!m) return null
+    const h = context.handlers()
+    const action = h.actionFor(m)
+    const onEdit = h.onEdit(m)
+    const onEditTags = h.onEditTags(m)
+    const kioskBlocked = h.kioskBlocked(m)
+    const kiosk = kioskGrantOf(m)
+    const Icon = action.icon
+    return (
+        <span className="flex items-center gap-1">
             <button
                 type="button"
-                onClick={onEdit}
-                disabled={!onEdit}
-                title={onEdit ? "Edit member" : undefined}
-                className="flex items-center gap-3 min-w-0 text-left enabled:cursor-pointer"
-            >
-                <MemberAvatar name={name} picture={m.picture} />
-                <span className="flex flex-col min-w-0">
-                    <span className={`text-sm font-medium truncate theme-h1-color ${isDirty(m, EDITABLE) ? "italic" : ""}`}>{name}</span>
-                    {goesBy && <span className="text-xs truncate theme-subtext-color">{goesBy}</span>}
-                </span>
-            </button>
-            <span className="text-xs truncate theme-subtext-color">{m.email ?? "Hidden"}</span>
-            <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm truncate theme-text">{roleTextOf(m, role)}</span>
-                {role?.level === "lead" && <LeadBadge />}
-            </div>
-            <span className="text-sm whitespace-nowrap theme-text">{gradeLabel(m.grade, m.team_year)}</span>
-            <span className="flex items-center gap-1.5 min-w-0">
-                <span className={`text-sm theme-text ${statusDirty ? "italic" : ""}`}>{STATUS_LABEL[statusOf(m)]}</span>
-                {kiosk && <KioskBadge grant={kiosk} />}
-            </span>
-            <div className="flex items-center gap-1 flex-wrap min-w-0">
-                {m.tags.map(t => (
-                    <span key={t} className="text-xs px-2 py-0.5 rounded-full truncate max-w-full" style={tagChip}>{t}</span>
-                ))}
-                {onEditTags && (
-                    <button
-                        onClick={onEditTags}
-                        title="Edit tags"
-                        className={`members-tag-edit rounded-lg p-0.5 theme-subtext-color opacity-0 focus:opacity-100 hover:opacity-70 transition-opacity ${focusRing}`}
-                        aria-label="Edit tags"
-                    >
-                        <Tag size={14} />
-                    </button>
-                )}
-            </div>
-            <button
                 onClick={action.onClick}
                 disabled={action.disabled}
                 title={action.reason ?? action.label}
-                aria-label={action.label}
+                aria-label={`${action.label} ${nameOf(m)}`}
                 className={`members-action w-8 h-8 rounded-lg border border-transparent grid place-items-center theme-subtext-color cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${focusRing}`}
             >
                 <Icon size={14} />
             </button>
             <RowMenu
-                label={`More actions for ${name}`}
+                label={`More actions for ${nameOf(m)}`}
                 items={[
                     { label: "Edit profile", icon: Pencil, onClick: onEdit, reason: onEdit ? undefined : "This member is outside your editing scope" },
                     { label: "Edit tags", icon: Tag, onClick: onEditTags, reason: onEditTags ? undefined : "You can't edit tags" },
-                    { label: kiosk ? "Change kiosk access…" : "Grant kiosk access…", icon: ScanLine, onClick: kioskBlocked ? undefined : onKioskAccess, reason: kioskBlocked, divider: true },
-                    ...(kiosk ? [{ label: "Revoke kiosk access", icon: X, onClick: kioskBlocked ? undefined : onRevokeKiosk, reason: kioskBlocked, danger: true }] : []),
+                    { label: kiosk ? "Change kiosk access…" : "Grant kiosk access…", icon: ScanLine, onClick: kioskBlocked ? undefined : () => h.onKioskAccess(m), reason: kioskBlocked, divider: true },
+                    ...(kiosk ? [{ label: "Revoke kiosk access", icon: X, onClick: kioskBlocked ? undefined : () => h.onRevokeKiosk(m), reason: kioskBlocked, danger: true }] : []),
                 ]}
             />
-        </div>
+        </span>
     )
 }
 
@@ -813,44 +1043,54 @@ interface RowMenuItem {
 }
 
 /**
- * Desktop row "…" menu: an anchored menu (design-system/modals.md, z-40) that
- * opens upward when there isn't room below inside the scrolling roster. Arrow
- * keys move between items; Esc or an outside click closes it.
+ * Desktop row "…" menu: an anchored menu (design-system/modals.md, z-40). Grid
+ * cells clip what overflows them, so the menu renders on <body>, fixed beside its
+ * button, opening upward when there isn't room below. Arrow keys move between
+ * items; Esc, an outside click, or scrolling the roster closes it.
  */
 function RowMenu({ label, items }: { label: string; items: RowMenuItem[] }) {
-    const [open, setOpen] = useState(false)
-    const [upward, setUpward] = useState(false)
-    const rootRef = useRef<HTMLDivElement>(null)
+    const [pos, setPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null)
+    const open = pos !== null
     const triggerRef = useRef<HTMLButtonElement>(null)
     const menuRef = useRef<HTMLDivElement>(null)
 
     const close = useCallback((refocus: boolean) => {
-        setOpen(false)
+        setPos(null)
         if (refocus) triggerRef.current?.focus()
     }, [])
 
     useEffect(() => {
         if (!open) return
-        const onDown = (e: MouseEvent) => {
-            if (rootRef.current && !rootRef.current.contains(e.target as Node)) close(false)
-        }
+        const outside = (target: EventTarget | null) =>
+            !menuRef.current?.contains(target as Node) && !triggerRef.current?.contains(target as Node)
+        const onDown = (e: MouseEvent) => { if (outside(e.target)) close(false) }
+        // The menu is fixed where the button was; once anything scrolls, it no longer lines up.
+        const onScroll = (e: Event) => { if (!menuRef.current?.contains(e.target as Node)) close(false) }
+        const onResize = () => close(false)
         document.addEventListener("mousedown", onDown)
+        window.addEventListener("scroll", onScroll, true)
+        window.addEventListener("resize", onResize)
         menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus()
-        return () => document.removeEventListener("mousedown", onDown)
+        return () => {
+            document.removeEventListener("mousedown", onDown)
+            window.removeEventListener("scroll", onScroll, true)
+            window.removeEventListener("resize", onResize)
+        }
     }, [open, close])
 
     const toggle = () => {
-        if (!open && triggerRef.current) {
-            const rect = triggerRef.current.getBoundingClientRect()
-            const scroller = triggerRef.current.closest(".overflow-y-auto")
-            const bottom = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight
-            setUpward(bottom - rect.bottom < 44 * items.length + 24)
-        }
-        setOpen(o => !o)
+        const trigger = triggerRef.current
+        if (open || !trigger) { close(false); return }
+        const rect = trigger.getBoundingClientRect()
+        const right = window.innerWidth - rect.right
+        const upward = window.innerHeight - rect.bottom < 44 * items.length + 24
+        setPos(upward ? { bottom: window.innerHeight - rect.top + 6, right } : { top: rect.bottom + 6, right })
     }
 
     const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-        if (e.key === "Escape") { e.stopPropagation(); close(true); return }
+        e.stopPropagation()
+        if (e.key === "Escape") { close(true); return }
+        if (e.key === "Tab") { close(false); return }
         if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return
         e.preventDefault()
         const enabled = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])]
@@ -859,7 +1099,7 @@ function RowMenu({ label, items }: { label: string; items: RowMenuItem[] }) {
     }
 
     return (
-        <div ref={rootRef} className="relative" onKeyDown={open ? onKeyDown : undefined}>
+        <>
             <button
                 ref={triggerRef}
                 type="button"
@@ -873,13 +1113,14 @@ function RowMenu({ label, items }: { label: string; items: RowMenuItem[] }) {
             >
                 <MoreHorizontal size={16} />
             </button>
-            {open && (
+            {open && createPortal(
                 <div
                     ref={menuRef}
                     role="menu"
                     aria-label={label}
-                    className={`absolute right-0 z-40 w-60 rounded-xl border shadow-lg theme-border p-1 flex flex-col ${upward ? "bottom-full mb-1.5" : "top-full mt-1.5"}`}
-                    style={{ background: "var(--theme-bg)" }}
+                    onKeyDown={onKeyDown}
+                    className="fixed z-40 w-60 rounded-xl border shadow-lg theme-border p-1 flex flex-col"
+                    style={{ ...pos, background: "var(--theme-bg)" }}
                 >
                     {items.map(item => {
                         const ItemIcon = item.icon
@@ -903,9 +1144,10 @@ function RowMenu({ label, items }: { label: string; items: RowMenuItem[] }) {
                             </div>
                         )
                     })}
-                </div>
+                </div>,
+                document.body,
             )}
-        </div>
+        </>
     )
 }
 

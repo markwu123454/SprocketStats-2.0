@@ -14,11 +14,8 @@ import PageErrorBoundary from "@/components/ErrorBoundary"
 import { can } from "@/lib/permissions"
 import { CORE_TABS, isMorePage } from "@/lib/navTabs"
 import { visibleSections, type ControlSection } from "@/lib/controlSections"
-import { AllCommunityModule, ModuleRegistry } from "ag-grid-community"
 import { useAppReady } from "@/contexts/appReadyContext"
 import { onNotificationNavigate, syncPushSubscription } from "@/lib/push"
-
-ModuleRegistry.registerModules([AllCommunityModule])
 
 const NAV_TEXT_KEY = "nav-show-text"
 
