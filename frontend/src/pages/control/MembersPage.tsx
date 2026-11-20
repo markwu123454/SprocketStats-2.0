@@ -4,6 +4,7 @@ import { Link } from "react-router-dom"
 import { Ban, Check, ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Plus, RotateCcw, ScanLine, Tag, X } from "lucide-react"
 import { useAuth } from "@/contexts/authContext"
 import { can, canModerate, getPerm, type RoleCatalogEntry } from "@/lib/permissions"
+import Avatar from "@/components/Avatar"
 import Dropdown from "@/components/ui/Dropdown"
 import Button from "@/components/ui/Button"
 import FormFooter from "@/components/ui/FormFooter"
@@ -24,6 +25,8 @@ interface MemberRow {
     email: string | null
     name: string | null
     display_name: string | null
+    // Google profile picture, or null if Google gave none.
+    picture: string | null
     role: string | null
     grade: string | null
     team_year: string | null
@@ -160,14 +163,15 @@ function roleTextOf(m: MemberRow, role: RoleCatalogEntry | undefined): string {
         : m.role ? pretty(m.role) : "—"
 }
 
-function Avatar({ name, size = 32 }: { name: string; size?: number }) {
+function MemberAvatar({ name, picture, size = 32 }: { name: string; picture: string | null; size?: number }) {
     return (
-        <span
-            className="rounded-full shrink-0 grid place-items-center text-xs font-semibold theme-h1-color"
-            style={{ width: size, height: size, background: "var(--theme-button-hover)" }}
-        >
-            {initials(name)}
-        </span>
+        <Avatar
+            name={name}
+            picture={picture}
+            size={size}
+            monogram={initials(name)}
+            monogramStyle={{ background: "var(--theme-button-hover)", color: "var(--theme-h1-color)", fontSize: 12 }}
+        />
     )
 }
 
@@ -731,7 +735,7 @@ function MemberGridRow({ member: m, role, action, onEdit, onEditTags, kioskBlock
                 title={onEdit ? "Edit member" : undefined}
                 className="flex items-center gap-3 min-w-0 text-left enabled:cursor-pointer"
             >
-                <Avatar name={name} />
+                <MemberAvatar name={name} picture={m.picture} />
                 <span className="flex flex-col min-w-0">
                     <span className={`text-sm font-medium truncate theme-h1-color ${isDirty(m, EDITABLE) ? "italic" : ""}`}>{name}</span>
                     {goesBy && <span className="text-xs truncate theme-subtext-color">{goesBy}</span>}
@@ -941,7 +945,7 @@ function MemberListRow({ member: m, role, onOpen }: MemberListRowProps) {
             className={`members-list-row w-full flex items-center gap-3 px-4 py-3 text-left cursor-pointer ${focusRing}`}
             style={{ borderBottom: "1px solid var(--ag-grid-row-border)", opacity: m.banned_at ? 0.6 : 1 }}
         >
-            <Avatar name={name} size={40} />
+            <MemberAvatar name={name} picture={m.picture} size={40} />
             <span className="flex flex-col gap-1 flex-1 min-w-0">
                 <span className="flex items-center gap-2 min-w-0">
                     <span className={`text-base font-medium truncate theme-h1-color ${isDirty(m, EDITABLE) ? "italic" : ""}`}>{name}</span>
@@ -1009,7 +1013,7 @@ function MemberSheet({ member: m, role, action, onClose, onEdit, onEditTags, kio
         <Sheet title={name} onClose={onClose}>
             <div className="flex flex-col gap-4">
                 <div className="flex items-center gap-3">
-                    <Avatar name={name} size={44} />
+                    <MemberAvatar name={name} picture={m.picture} size={44} />
                     <div className="flex flex-col min-w-0 flex-1">
                         <span className={`text-base font-semibold truncate theme-h1-color ${isDirty(m, EDITABLE) ? "italic" : ""}`}>{name}</span>
                         {goesBy && <span className="text-xs truncate theme-subtext-color">{goesBy}</span>}

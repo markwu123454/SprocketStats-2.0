@@ -46,7 +46,7 @@ const sections: LegalSection[] = [
                     <li>Generate statistics, rankings, and strategy analysis for the Team.</li>
                     <li>Assign roles and responsibilities within the Team, including competition rosters, based in part on your grade level.</li>
                     <li>Train and improve computer-vision models used to support scouting, using labeled competition imagery linked to the contributing account to help us identify low-quality data and underperforming labelers.</li>
-                    <li>Display your profile picture back to you within the Service; your profile picture is not shown to other users.</li>
+                    <li>Show your Google profile picture next to your name within the Service, to you and to other signed-in Team members and mentors (for example on tasks, task notes, and the member roster).</li>
                     <li>Diagnose bugs, monitor performance, and investigate abuse or unauthorized access.</li>
                     <li>Communicate with you about the Service.</li>
                 </ul>
@@ -76,7 +76,7 @@ const sections: LegalSection[] = [
                             <tr><th scope="col">Recipient</th><th scope="col">Why</th></tr>
                         </thead>
                         <tbody>
-                            <tr><td>Team members and mentors</td><td>Scouting entries are visible to other authorized users, including who submitted them</td></tr>
+                            <tr><td>Team members and mentors</td><td>Scouting entries are visible to other authorized users, including who submitted them. Your name and Google profile picture are shown next to your tasks, task notes, and member roster entry</td></tr>
                             <tr><td>Service providers</td><td>Hosting, database, and authentication vendors — currently NeonDB, Fly.io, and Vercel — who process data on our instructions</td></tr>
                             <tr><td>Cloudflare (R2)</td><td>Stores images and other large files — including uploaded scouting images, competition footage, and training/labeling images — in our own cloud storage</td></tr>
                             <tr><td>Google (Sign-In)</td><td>Authenticates you when you sign in with your school email; Google processes your basic profile information (name, email address) to verify your identity</td></tr>
@@ -201,7 +201,7 @@ export default function PrivacyPage() {
             title="Privacy Policy"
             summary="SprocketStats — sprocketstats.com"
             effectiveDate="8/10/2026"
-            lastUpdated="8/10/2026"
+            lastUpdated="11/19/2026"
             contactEmail={CONTACT_EMAIL}
             sections={sections}
         />

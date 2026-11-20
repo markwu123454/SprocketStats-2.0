@@ -44,10 +44,11 @@ class FakeStore:
         self.pushes: list[tuple] = []
 
     def add_user(self, user_id, display_name, role=None, approved_by="approver", banned_at=None,
-                 onboarding_complete=True):
+                 onboarding_complete=True, picture=None):
         self.users[user_id] = {
             "id": user_id,
             "display_name": display_name,
+            "picture": picture,
             "role": role,
             "approved_by": approved_by,
             "banned_at": banned_at,
@@ -79,11 +80,13 @@ class FakeStore:
     def _joined(self, t: dict) -> dict:
         d = dict(t)
         d["assignee_name"] = self.users.get(t["assignee_id"], {}).get("display_name") if t["assignee_id"] else None
+        d["assignee_picture"] = self.users.get(t["assignee_id"], {}).get("picture") if t["assignee_id"] else None
         d["created_by_name"] = self.users.get(t["created_by"], {}).get("display_name")
         d["finished_by_name"] = self.users.get(t["finished_by"], {}).get("display_name") if t["finished_by"] else None
         d["reviewed_by_name"] = self.users.get(t["reviewed_by"], {}).get("display_name") if t["reviewed_by"] else None
         d["contributors"] = [
-            {"id": uid, "display_name": self.users.get(uid, {}).get("display_name")}
+            {"id": uid, "display_name": self.users.get(uid, {}).get("display_name"),
+             "picture": self.users.get(uid, {}).get("picture")}
             for uid in self.contributors.get(t["id"], [])
         ]
         d["note_count"] = sum(1 for n in self.notes.values() if n["task_id"] == t["id"])
@@ -92,6 +95,7 @@ class FakeStore:
     def _joined_note(self, n: dict) -> dict:
         d = dict(n)
         d["author_name"] = self.users.get(n["author_id"], {}).get("display_name") if n["author_id"] else None
+        d["author_picture"] = self.users.get(n["author_id"], {}).get("picture") if n["author_id"] else None
         return d
 
     # -- db.tasks-shaped async methods, monkeypatched onto the `db` module --
@@ -731,6 +735,20 @@ def test_list_tasks_open_to_any_authenticated_user(app, store):
     assert {t["title"] for t in resp.json()} == {"A", "B"}
 
 
+def test_list_tasks_includes_assignee_and_contributor_pictures(app, store):
+    store.add_user("assignee-1", "Assignee", role="cad_member", picture="https://example.com/a.jpg")
+    store.add_user("helper-1", "Helper", role="cad_member", picture="https://example.com/h.jpg")
+    store.add_user("helper-2", "No Photo", role="cad_member")
+    task_id = store.add_task(assignee_id="assignee-1", status="doing")
+    store.contributors[task_id] = ["helper-1", "helper-2"]
+
+    resp = _as(app, MEMBER).get("/tasks")
+    assert resp.status_code == 200
+    task = next(t for t in resp.json() if t["id"] == task_id)
+    assert task["assignee_picture"] == "https://example.com/a.jpg"
+    assert [c["picture"] for c in task["contributors"]] == ["https://example.com/h.jpg", None]
+
+
 # ── Contributors: add/remove ────────────────────────────────────────────────
 
 def test_add_contributor_member_can_add_self(app, store):
@@ -739,7 +757,7 @@ def test_add_contributor_member_can_add_self(app, store):
 
     resp = _as(app, MEMBER).post(f"/tasks/{task_id}/contributors")
     assert resp.status_code == 200
-    assert resp.json()["contributors"] == [{"id": "member-1", "display_name": "Member One"}]
+    assert resp.json()["contributors"] == [{"id": "member-1", "display_name": "Member One", "picture": None}]
 
 
 def test_add_contributor_requires_assignee(app, store):
@@ -768,7 +786,7 @@ def test_add_contributor_twice_is_idempotent(app, store):
     resp2 = _as(app, MEMBER).post(f"/tasks/{task_id}/contributors")
     assert resp1.status_code == 200
     assert resp2.status_code == 200
-    assert resp2.json()["contributors"] == [{"id": "member-1", "display_name": "Member One"}]
+    assert resp2.json()["contributors"] == [{"id": "member-1", "display_name": "Member One", "picture": None}]
 
 
 def test_contributor_can_leave(app, store):
@@ -789,7 +807,7 @@ def test_lead_adds_another_member_as_contributor(app, store):
 
     resp = _as(app, LEAD).post(f"/tasks/{task_id}/contributors", json={"user_id": "member-1"})
     assert resp.status_code == 200
-    assert resp.json()["contributors"] == [{"id": "member-1", "display_name": "Member One"}]
+    assert resp.json()["contributors"] == [{"id": "member-1", "display_name": "Member One", "picture": None}]
 
 
 def test_member_cannot_add_someone_else_as_contributor(app, store):
@@ -871,7 +889,7 @@ def test_unassign_with_contributors_promotes_earliest(app, store):
     body = resp.json()
     assert body["assignee_id"] == "c1"
     assert body["status"] == "doing"
-    assert body["contributors"] == [{"id": "c2", "display_name": "Contributor Two"}]
+    assert body["contributors"] == [{"id": "c2", "display_name": "Contributor Two", "picture": None}]
 
 
 def test_reassign_to_contributor_removes_them_from_contributor_list(app, store):
@@ -915,6 +933,23 @@ def test_notes_listed_oldest_first(app, store):
     resp = _as(app, MEMBER).get(f"/tasks/{task_id}/notes")
     assert resp.status_code == 200
     assert [n["body"] for n in resp.json()] == ["first", "second"]
+
+
+def test_notes_include_author_picture(app, store):
+    store.add_user("member-1", "Member One", role="cad_member", picture="https://example.com/m.jpg")
+    task_id = store.add_task()
+    store.notes["n1"] = {
+        "id": "n1", "task_id": task_id, "author_id": "member-1", "body": "hi",
+        "created_at": datetime(2024, 1, 1, tzinfo=timezone.utc),
+    }
+    store.notes["n2"] = {
+        "id": "n2", "task_id": task_id, "author_id": None, "body": "orphan",
+        "created_at": datetime(2024, 1, 2, tzinfo=timezone.utc),
+    }
+
+    resp = _as(app, MEMBER).get(f"/tasks/{task_id}/notes")
+    assert resp.status_code == 200
+    assert [n["author_picture"] for n in resp.json()] == ["https://example.com/m.jpg", None]
 
 
 def test_list_notes_unknown_task_404(app, store):

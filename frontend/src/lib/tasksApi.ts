@@ -29,6 +29,7 @@ export interface Task {
     status: TaskStatus
     assignee_id: string | null
     assignee_name: string | null
+    assignee_picture: string | null
     due_date: string | null // "YYYY-MM-DD"
     event_key: string | null // linked event hub, e.g. "2026cass"
     created_by: string
@@ -46,6 +47,8 @@ export interface Task {
 export interface Person {
     id: string
     display_name: string
+    /** Profile picture. Task contributors carry it; the `/tasks/people` picker list doesn't. */
+    picture?: string | null
 }
 
 export interface TaskNote {
@@ -53,6 +56,7 @@ export interface TaskNote {
     task_id: string
     author_id: string | null
     author_name: string | null
+    author_picture: string | null
     body: string
     created_at: string
 }

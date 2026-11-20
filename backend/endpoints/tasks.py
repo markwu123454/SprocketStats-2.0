@@ -502,8 +502,9 @@ def _row_to_task(r) -> dict:
         "status": d["status"],
         "assignee_id": d["assignee_id"],
         "assignee_name": d.get("assignee_name"),
+        "assignee_picture": d.get("assignee_picture"),
         "contributors": [
-            {"id": c["id"], "display_name": c["display_name"]}
+            {"id": c["id"], "display_name": c["display_name"], "picture": c.get("picture")}
             for c in _decode_contributors(d.get("contributors"))
         ],
         "note_count": d.get("note_count") or 0,
@@ -528,6 +529,7 @@ def _row_to_note(r) -> dict:
         "task_id": str(d["task_id"]),
         "author_id": d["author_id"],
         "author_name": d.get("author_name"),
+        "author_picture": d.get("author_picture"),
         "body": d["body"],
         "created_at": d["created_at"].isoformat(),
     }

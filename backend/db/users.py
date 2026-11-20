@@ -181,7 +181,7 @@ async def get_users_by_fields(
 async def list_all_users() -> list[asyncpg.Record]:
     """Return every user with the profile fields the Members roster shows.
 
-    Selects only the columns the roster needs (no ``picture``/timestamps) and
+    Selects only the columns the roster needs (no timestamps) and
     orders by display name so the grid loads in a stable, human-friendly order
     with un-onboarded users (null ``display_name``) sorted last. This exposes
     email for every user, so the endpoint that calls it must stay permission
@@ -191,7 +191,7 @@ async def list_all_users() -> list[asyncpg.Record]:
         try:
             return await conn.fetch(
                 """
-                SELECT id, email, name, display_name, role, grade, team_year, approved_by, banned_at,
+                SELECT id, email, name, display_name, picture, role, grade, team_year, approved_by, banned_at,
                        kiosk_access_until, kiosk_access_no_end
                 FROM users
                 ORDER BY display_name ASC NULLS LAST, email ASC
