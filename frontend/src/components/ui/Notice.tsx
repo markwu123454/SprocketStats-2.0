@@ -1,13 +1,16 @@
 import type {ReactNode} from "react"
-import {AlertCircle} from "lucide-react"
+import {AlertCircle, X} from "lucide-react"
+import Button from "@/components/ui/Button"
 
 interface NoticeProps {
     children: ReactNode
     className?: string
+    /** Shows a dismiss button at the end. */
+    onDismiss?: () => void
 }
 
 /** Danger notice (design-system/empty-error-states.md). The icon keeps the meaning off colour alone. The tint sits on the opaque card colour so it stays legible over season artwork. */
-export default function Notice({children, className = ""}: NoticeProps) {
+export default function Notice({children, className = "", onDismiss}: NoticeProps) {
     return (
         <div
             role="alert"
@@ -15,7 +18,12 @@ export default function Notice({children, className = ""}: NoticeProps) {
             style={{background: "color-mix(in oklch, var(--theme-danger) 10%, var(--theme-bg))"}}
         >
             <AlertCircle size={16} className="shrink-0 mt-0.5" aria-hidden="true"/>
-            <div className="min-w-0">{children}</div>
+            <div className="min-w-0 flex-1">{children}</div>
+            {onDismiss && (
+                <Button variant="icon" aria-label="Dismiss" className="shrink-0 -my-3 -mr-3" onClick={onDismiss}>
+                    <X size={14}/>
+                </Button>
+            )}
         </div>
     )
 }

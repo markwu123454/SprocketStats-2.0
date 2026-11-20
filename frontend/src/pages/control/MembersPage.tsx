@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
-import { Link } from "react-router-dom"
-import { Ban, Check, ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Plus, RotateCcw, ScanLine, Tag, X } from "lucide-react"
+import { Ban, Check, ChevronRight, MoreHorizontal, Pencil, Plus, RotateCcw, ScanLine, Tag, X } from "lucide-react"
 import { useAuth } from "@/contexts/authContext"
 import { can, canModerate, getPerm, type RoleCatalogEntry } from "@/lib/permissions"
 import Avatar from "@/components/Avatar"
@@ -537,13 +536,6 @@ export default function MembersPage() {
         <div className="px-4 py-3 md:px-6 md:py-6 flex flex-col gap-4 md:h-full">
             <div className="rounded-xl border overflow-clip md:overflow-hidden theme-border theme-bg flex flex-col md:flex-1 md:min-h-0">
                 <div className="flex flex-wrap items-center gap-4 px-4 py-4 md:px-6 md:py-5">
-                    <Link
-                        to="/control"
-                        aria-label="Back to Control Panel"
-                        className={`md:hidden flex items-center justify-center w-11 h-11 -ml-3 -mr-3 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity ${focusRing}`}
-                    >
-                        <ChevronLeft size={21} />
-                    </Link>
                     <div className="flex flex-col gap-0.5 flex-1 min-w-0">
                         <h1 className="text-2xl font-bold theme-h1-color">Members</h1>
                         <span className="text-xs theme-subtext-color">

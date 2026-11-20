@@ -28,11 +28,9 @@ const CompPage           = lazy(() => import("@/pages/events/CompPage"))
 const EventTasksPage     = lazy(() => import("@/pages/events/EventTasksPage"))
 const LeaderboardsPage = lazy(() => import("@/pages/LeaderboardsPage"))
 const CheckinPage      = lazy(() => import("@/pages/CheckinPage"))
-const OtherPage       = lazy(() => import("@/pages/OtherPage"))
 const ScoutingPage    = lazy(() => import("@/pages/ScoutingPage"))
 const ScoutingFormPage = lazy(() => import("@/pages/ScoutingFormPage"))
 const TasksPage       = lazy(() => import("@/pages/TasksPageRouter"))
-const ControlPanelHub  = lazy(() => import("@/pages/control/ControlPanelHub"))
 const MeetingPage       = lazy(() => import("@/pages/control/MeetingPage"))
 const UpcomingEventPage = lazy(() => import("@/pages/control/UpcomingEventPage"))
 const MembersPage       = lazy(() => import("@/pages/control/MembersPage"))
@@ -99,11 +97,13 @@ export default function App() {
                                         </Route>
                                         <Route path="/leaderboards" element={<PermGuard perm="leaderboards.view"><LeaderboardsPage/></PermGuard>}/>
                                         <Route path="/checkin"     element={<CheckinPage/>}/>
-                                        <Route path="/other"       element={<OtherPage/>}/>
+                                        {/* The old mobile Other page; its links now live in the More sheet. */}
+                                        <Route path="/other"       element={<Navigate to="/dashboard" replace/>}/>
                                         <Route path="/scouting"    element={<PermGuard perm="scouting.view"><ScoutingPage/></PermGuard>}/>
                                         <Route path="/scouting/scout" element={<PermGuard perm="scouting.view"><ScoutingFormPage/></PermGuard>}/>
                                         <Route path="/tasks"       element={<PermGuard perm="tasks.view"><TasksPage/></PermGuard>}/>
-                                        <Route path="/control"     element={<ControlPanelHub/>}/>
+                                        {/* No page of its own: opens the first section this role can see. */}
+                                        <Route path="/control"     element={<ControlGuard/>}/>
                                         <Route path="/control/meeting"        element={<ControlGuard section="meeting"><MeetingPage/></ControlGuard>}/>
                                         <Route path="/control/upcoming-event" element={<ControlGuard section="upcoming-event"><UpcomingEventPage/></ControlGuard>}/>
                                         <Route path="/control/members"        element={<ControlGuard section="members"><MembersPage/></ControlGuard>}/>

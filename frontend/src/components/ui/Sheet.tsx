@@ -1,10 +1,11 @@
-import {useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode} from "react"
+import {useCallback, useEffect, useId, useRef, type PointerEvent, type ReactNode} from "react"
 import {createPortal} from "react-dom"
 import {X} from "lucide-react"
 import Button from "@/components/ui/Button"
 import {focusRing, typeTitle} from "@/lib/uiClasses"
 import {SheetDirtyContext, askDiscard} from "@/lib/useDiscardGuard"
-import {isTopOverlay, lockScroll, prefersReducedMotion, pushOverlay, trapTab} from "@/lib/modalStack"
+import {prefersReducedMotion} from "@/lib/modalStack"
+import {useOverlay} from "@/lib/useOverlay"
 
 interface SheetProps {
     title: string
@@ -40,9 +41,6 @@ export default function Sheet({title, onClose, children, footer, kind = "form", 
     const timers = useRef<number[]>([])
     const drag = useRef<{startY: number, pointerId: number, active: boolean, samples: {y: number, t: number}[]} | null>(null)
     const onCloseRef = useRef(onClose)
-    const [token] = useState(() => Symbol("sheet"))
-    // Read during the first render, before any child autofocus has moved focus.
-    const [opener] = useState<Element | null>(() => document.activeElement)
 
     const dirtyRef = useRef(dirty)
     const childDirty = useRef(0)
@@ -98,48 +96,15 @@ export default function Sheet({title, onClose, children, footer, kind = "form", 
         else onDeclined?.()
     }, [dismiss])
 
-    // Open: register on the overlay stack, lock scroll, move focus in. Close: undo all three.
+    // Overlay stack, scroll lock, focus in and back, Tab trap, and Esc (shared with Dialog).
+    // A child that autofocuses (Dropdown search) keeps focus; otherwise the panel takes it.
+    const onRootKeyDown = useOverlay(panelRef, {onEscape: () => void requestClose()})
+
+    // A pending close timer must not fire after the sheet is gone.
     useEffect(() => {
-        const unregister = pushOverlay(token)
-        const unlock = lockScroll()
-        const panel = panelRef.current
-        // A child that autofocuses (Dropdown search) has already claimed focus; otherwise take it.
-        if (panel && !panel.contains(document.activeElement)) panel.focus({preventScroll: true})
         const pending = timers.current
-        return () => {
-            unregister()
-            unlock()
-            pending.forEach(window.clearTimeout)
-            if (opener instanceof HTMLElement && opener !== document.body && document.contains(opener)) {
-                opener.focus({preventScroll: true})
-            }
-        }
-    }, [token, opener])
-
-    // Keys while focus is outside every sheet (e.g. after clicking the scrim of something else).
-    useEffect(() => {
-        const onDocKey = (e: globalThis.KeyboardEvent) => {
-            const panel = panelRef.current
-            if (!panel || !isTopOverlay(token) || panel.contains(e.target as Node) || e.defaultPrevented) return
-            if (e.key === "Escape") { e.preventDefault(); void requestClose() }
-            else trapTab(e, panel)
-        }
-        document.addEventListener("keydown", onDocKey)
-        return () => document.removeEventListener("keydown", onDocKey)
-    }, [token, requestClose])
-
-    const onRootKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-        // The portal's React parents must not see this: a Sheet inside a Dropdown or clickable row stays self-contained.
-        e.stopPropagation()
-        const panel = panelRef.current
-        if (!panel || !isTopOverlay(token)) return
-        if (e.key === "Escape" && !e.defaultPrevented) {
-            e.preventDefault()
-            void requestClose()
-        } else {
-            trapTab(e, panel)
-        }
-    }
+        return () => pending.forEach(window.clearTimeout)
+    }, [])
 
     // ── Drag (header and handle only) ──────────────────────────────────────
     const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {

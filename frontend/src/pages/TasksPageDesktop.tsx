@@ -1,7 +1,7 @@
 import { confirmAnyDiscard, useDiscardGuard, useIsDirty } from "@/lib/useDiscardGuard"
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react"
 import { useLocation } from "react-router-dom"
-import { ChevronDown, ChevronRight, X } from "lucide-react"
+import { ChevronDown, ChevronRight } from "lucide-react"
 import { useOnboardedUser, type OnboardedUser } from "@/contexts/authContext"
 import Dropdown from "@/components/ui/Dropdown"
 import Button from "@/components/ui/Button"
@@ -329,8 +329,8 @@ export default function TasksPageDesktop() {
                     </div>
                 </div>
 
-                {loadError && <ErrorBanner message={loadError} />}
-                {actionError && <ErrorBanner message={actionError} onDismiss={() => setActionError(null)} />}
+                {loadError && <Notice>{loadError}</Notice>}
+                {actionError && <Notice onDismiss={() => setActionError(null)}>{actionError}</Notice>}
 
                 {composing && (
                     <ComposeForm
@@ -428,21 +428,6 @@ export default function TasksPageDesktop() {
                 />
             )}
         </div>
-    )
-}
-
-function ErrorBanner({ message, onDismiss }: { message: string; onDismiss?: () => void }) {
-    return (
-        <Notice>
-            <div className="flex items-center justify-between gap-2">
-                <span>{message}</span>
-                {onDismiss && (
-                    <Button variant="icon" aria-label="Dismiss" className="shrink-0 -my-3 -mr-3" onClick={onDismiss}>
-                        <X size={14} />
-                    </Button>
-                )}
-            </div>
-        </Notice>
     )
 }
 
@@ -1204,7 +1189,7 @@ function NotesThread({ taskId, currentUserId, currentUserGivenName, currentUserP
                 </span>
             </div>
 
-            {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+            {error && <Notice onDismiss={() => setError(null)}>{error}</Notice>}
 
             {notes === null ? (
                 <div role="status" aria-label="Loading notes" className="flex flex-col gap-2">

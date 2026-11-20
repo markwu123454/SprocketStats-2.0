@@ -51,6 +51,17 @@ Choose by the job, then let the breakpoint choose the form.
 Alert copy names the action: "Delete this day's itinerary?" with **Cancel** and **Delete**,
 never "Are you sure?" with OK.
 
+## Building one
+
+Every centred modal renders through `components/ui/Dialog.tsx`: `ConfirmDialog` (alert dialog),
+`MyCodeDialog`, `ScannerDialog` and `NotificationGate` (required notice). It owns the portal,
+scrim, enter motion and z layer; the caller supplies the heading id, `onDismiss` and the
+panel's size. Leave out `onDismiss` for a dialog nothing may close.
+
+`Sheet` and `Dialog` share their open/close behaviour through `lib/useOverlay.ts`: the overlay
+stack (only the topmost handles keys), scroll lock, focus in on open and back to the trigger on
+close, the Tab trap and Esc. A new modal surface uses that hook rather than repeating it.
+
 ## Layers
 
 | z | Layer |
@@ -81,6 +92,6 @@ never "Are you sure?" with OK.
 
 ## Remaining debt
 
-`Sheet` and `ConfirmDialog` are adopted everywhere a modal existed, with roles, labelling, focus trapping and the z-index table. What is left:
+`Sheet` and `Dialog` are adopted everywhere a modal existed, with roles, labelling, focus trapping and the z-index table. The required-notice gate now traps focus and locks scroll like the rest. What is left:
 
 - `OnboardingShared.tsx` `SimpleDropdown` is not a `Sheet`-backed menu on mobile (see forms.md).

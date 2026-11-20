@@ -24,6 +24,6 @@ border-first look: we borrow its component behavior, not its tonal color system 
 elevation model.
 
 **Status:** the app has been migrated to these rules through shared components (`Button`,
-`FormFooter`, `Sheet`, `ConfirmDialog`, `Notice`, `EmptyState`, `Skeleton`, `Toggle`, and
+`FormFooter`, `Sheet`, `Dialog`, `ConfirmDialog`, `Notice`, `EmptyState`, `Skeleton`, `Toggle`, and
 the class strings in `src/lib/uiClasses.ts`). Each file ends with "Remaining debt": the
 items that need new behaviour or fixed pixel geometry, and so were left as they were.

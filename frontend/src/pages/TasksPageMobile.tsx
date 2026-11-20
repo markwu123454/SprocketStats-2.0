@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react"
 import { useLocation } from "react-router-dom"
-import { ChevronDown, MessageSquare, Plus, Trash2, X } from "lucide-react"
+import { ChevronDown, MessageSquare, Plus, Trash2 } from "lucide-react"
 import { useOnboardedUser, type OnboardedUser } from "@/contexts/authContext"
 import Dropdown from "@/components/ui/Dropdown"
 import Button from "@/components/ui/Button"
@@ -332,8 +332,8 @@ export default function TasksPageMobile() {
                     })}
                 </div>
 
-                {loadError && <div className="mt-3"><ErrorBanner message={loadError} /></div>}
-                {actionError && <div className="mt-3"><ErrorBanner message={actionError} onDismiss={() => setActionError(null)} /></div>}
+                {loadError && <Notice className="mt-3">{loadError}</Notice>}
+                {actionError && <Notice className="mt-3" onDismiss={() => setActionError(null)}>{actionError}</Notice>}
             </div>
 
             {/* Firefox honors scrollbarWidth inline; Chrome/Safari need the
@@ -455,21 +455,6 @@ function SectionToggle({ title, count, open, onToggle }: { title: string; count?
                 <ChevronDown size={16} style={{ transition: "transform 150ms", transform: open ? "none" : "rotate(-90deg)" }} />
             </span>
         </button>
-    )
-}
-
-function ErrorBanner({ message, onDismiss }: { message: string; onDismiss?: () => void }) {
-    return (
-        <Notice>
-            <div className="flex items-center justify-between gap-2">
-                <span>{message}</span>
-                {onDismiss && (
-                    <Button variant="icon" aria-label="Dismiss" className="shrink-0 -my-3 -mr-3" onClick={onDismiss}>
-                        <X size={14} />
-                    </Button>
-                )}
-            </div>
-        </Notice>
     )
 }
 
@@ -821,7 +806,7 @@ function NotesDrawer({ task, board, user }: { task: Task; board: TaskBoard; user
 
     return (
         <div className="flex flex-col gap-3 p-3 rounded-xl border" style={notesDrawerStyle}>
-            {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+            {error && <Notice onDismiss={() => setError(null)}>{error}</Notice>}
 
             {notes === null ? (
                 <div role="status" aria-label="Loading notes" className="flex flex-col gap-2">

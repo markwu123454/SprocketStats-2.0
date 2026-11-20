@@ -1,10 +1,9 @@
-import {useEffect, useId, useMemo, useRef, useState, type KeyboardEvent} from "react"
-import {createPortal} from "react-dom"
+import {useEffect, useId, useMemo, useRef, useState} from "react"
 import {WifiOff, X} from "lucide-react"
+import Dialog from "@/components/ui/Dialog"
 import {useAuth, useOnboardedUser} from "@/contexts/authContext"
 import {withinOfflineWindow} from "@/lib/offline"
 import {dataMatrix, dataMatrixPath} from "@/lib/dataMatrix"
-import {isTopOverlay, lockScroll, pushOverlay, trapTab} from "@/lib/modalStack"
 import {
     codeAt,
     loadMemberCodeKey,
@@ -35,26 +34,10 @@ export default function MyCodeDialog({onClose}: {onClose: () => void}) {
     const user = useOnboardedUser()
     const {offline, holdSession} = useAuth()
     const titleId = useId()
-    const panelRef = useRef<HTMLDivElement>(null)
     const closeRef = useRef<HTMLButtonElement>(null)
-    const [token] = useState(() => Symbol("my-code"))
-    const [opener] = useState<Element | null>(() => document.activeElement)
     const [state, setState] = useState<KeyState>({kind: "loading"})
     const [code, setCode] = useState<string | null>(null)
     const barRef = useRef<HTMLDivElement>(null)
-
-    // Overlay bookkeeping, same as ConfirmDialog: Esc/Tab for the top overlay,
-    // scroll lock, and focus back to the opener on close.
-    useEffect(() => {
-        const unregister = pushOverlay(token)
-        const unlock = lockScroll()
-        closeRef.current?.focus({preventScroll: true})
-        return () => {
-            unregister()
-            unlock()
-            if (opener instanceof HTMLElement && document.contains(opener)) opener.focus({preventScroll: true})
-        }
-    }, [token, opener])
 
     // Keep the screen on while the code is up.
     useEffect(() => {
@@ -133,109 +116,82 @@ export default function MyCodeDialog({onClose}: {onClose: () => void}) {
 
     const symbol = useMemo(() => (code ? dataMatrix(code) : null), [code])
 
-    useEffect(() => {
-        const onDocKey = (e: globalThis.KeyboardEvent) => {
-            const panel = panelRef.current
-            if (!panel || !isTopOverlay(token) || panel.contains(e.target as Node)) return
-            if (e.key === "Escape") {
-                e.preventDefault()
-                onClose()
-            } else trapTab(e, panel)
-        }
-        document.addEventListener("keydown", onDocKey)
-        return () => document.removeEventListener("keydown", onDocKey)
-    }, [token, onClose])
-
-    const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-        e.stopPropagation()
-        const panel = panelRef.current
-        if (!panel || !isTopOverlay(token)) return
-        if (e.key === "Escape") {
-            e.preventDefault()
-            onClose()
-        } else trapTab(e, panel)
-    }
-
     const side = symbol ? symbol.length + MARGIN * 2 : 1
 
-    return createPortal(
+    return (
         // 4px from the screen edges on a phone, so the code is as large as it can
         // be for the kiosk camera. Capped at 480px wide, and by the screen height
         // less the header and time bar (70px) so it still fits in landscape.
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-1" onKeyDown={onKeyDown}>
-            <div className="absolute inset-0 bg-black/70 sds-scrim-enter" aria-hidden="true" onClick={onClose}/>
-            <div
-                ref={panelRef}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby={titleId}
-                tabIndex={-1}
-                className="sds-dialog-enter relative w-full max-w-[min(480px,calc(100dvh-70px))] overflow-hidden rounded-2xl border theme-border theme-bg shadow-2xl outline-none"
-            >
-                <div className="h-14 pl-4 pr-1.5 flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                        <div
-                            aria-hidden="true"
-                            className="size-7 shrink-0"
-                            style={{
-                                backgroundColor: "var(--theme-h1-color)",
-                                mask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
-                                WebkitMask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
-                            }}
-                        />
-                        <h2 id={titleId} className="text-base font-bold theme-h1-color">
-                            Team Sprocket <span className="font-semibold tracking-wider theme-subtext-color">3473</span>
-                        </h2>
-                    </div>
-                    <button
-                        ref={closeRef}
-                        type="button"
-                        onClick={onClose}
-                        aria-label="Close"
-                        className={`size-11 flex items-center justify-center rounded-lg theme-subtext-color hover:opacity-80 ${focusRing}`}
-                    >
-                        <X size={22}/>
-                    </button>
+        <Dialog
+            labelledBy={titleId}
+            onDismiss={onClose}
+            initialFocus={closeRef}
+            scrim="dark"
+            edge="tight"
+            className="max-w-[min(480px,calc(100dvh-70px))] overflow-hidden"
+        >
+            <div className="h-14 pl-4 pr-1.5 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                    <div
+                        aria-hidden="true"
+                        className="size-7 shrink-0"
+                        style={{
+                            backgroundColor: "var(--theme-h1-color)",
+                            mask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
+                            WebkitMask: "url(/sprocket_logo_gear.svg) center/contain no-repeat",
+                        }}
+                    />
+                    <h2 id={titleId} className="text-base font-bold theme-h1-color">
+                        Team Sprocket <span className="font-semibold tracking-wider theme-subtext-color">3473</span>
+                    </h2>
                 </div>
-
-                {state.kind === "ready" || state.kind === "loading" ? (
-                    <>
-                        <div className="aspect-square w-full" style={{background: CODE_LIGHT}}>
-                            {symbol && (
-                                <svg
-                                    viewBox={`0 0 ${side} ${side}`}
-                                    shapeRendering="crispEdges"
-                                    role="img"
-                                    aria-label="Your SprocketStats code"
-                                    className="block size-full"
-                                >
-                                    <path d={dataMatrixPath(symbol, MARGIN)} fill="#000"/>
-                                </svg>
-                            )}
-                        </div>
-                        <div className="h-1.5" style={{background: "var(--theme-border)"}}>
-                            {/* Driven by the frame loop above; React never changes `transform` after mount. */}
-                            <div
-                                ref={barRef}
-                                className="h-full origin-left will-change-transform"
-                                style={{transform: "scaleX(0)", background: "var(--theme-text-contrast)"}}
-                            />
-                        </div>
-                    </>
-                ) : (
-                    <div className="aspect-square w-full border-t border-dashed theme-border flex flex-col items-center justify-center gap-4 p-10 text-center">
-                        <WifiOff size={48} className="theme-subtext-color" aria-hidden="true"/>
-                        <p className="max-w-60 text-base font-semibold theme-text">
-                            {state.kind === "unavailable"
-                                ? "This account can't use a member code"
-                                : state.kind === "offline" && state.expired
-                                    ? "Connect to the internet to refresh your code"
-                                    : "Connect to the internet to set up your code"}
-                        </p>
-                    </div>
-                )}
+                <button
+                    ref={closeRef}
+                    type="button"
+                    onClick={onClose}
+                    aria-label="Close"
+                    className={`size-11 flex items-center justify-center rounded-lg theme-subtext-color hover:opacity-80 ${focusRing}`}
+                >
+                    <X size={22}/>
+                </button>
             </div>
-        </div>,
-        document.body,
+
+            {state.kind === "ready" || state.kind === "loading" ? (
+                <>
+                    <div className="aspect-square w-full" style={{background: CODE_LIGHT}}>
+                        {symbol && (
+                            <svg
+                                viewBox={`0 0 ${side} ${side}`}
+                                shapeRendering="crispEdges"
+                                role="img"
+                                aria-label="Your SprocketStats code"
+                                className="block size-full"
+                            >
+                                <path d={dataMatrixPath(symbol, MARGIN)} fill="#000"/>
+                            </svg>
+                        )}
+                    </div>
+                    <div className="h-1.5" style={{background: "var(--theme-border)"}}>
+                        {/* Driven by the frame loop above; React never changes `transform` after mount. */}
+                        <div
+                            ref={barRef}
+                            className="h-full origin-left will-change-transform"
+                            style={{transform: "scaleX(0)", background: "var(--theme-text-contrast)"}}
+                        />
+                    </div>
+                </>
+            ) : (
+                <div className="aspect-square w-full border-t border-dashed theme-border flex flex-col items-center justify-center gap-4 p-10 text-center">
+                    <WifiOff size={48} className="theme-subtext-color" aria-hidden="true"/>
+                    <p className="max-w-60 text-base font-semibold theme-text">
+                        {state.kind === "unavailable"
+                            ? "This account can't use a member code"
+                            : state.kind === "offline" && state.expired
+                                ? "Connect to the internet to refresh your code"
+                                : "Connect to the internet to set up your code"}
+                    </p>
+                </div>
+            )}
+        </Dialog>
     )
 }

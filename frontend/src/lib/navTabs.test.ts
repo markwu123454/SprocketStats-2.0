@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { CORE_TABS, otherPages } from "./navTabs"
+import { CORE_TABS, isMorePage, moreTabs } from "./navTabs"
 import type { PermPolicy } from "./permissions"
 
 // Policies shaped like the backend's ROLE_DEFINITIONS entries (only the paths
@@ -37,8 +37,30 @@ describe("CORE_TABS", () => {
     })
 })
 
-describe("otherPages", () => {
-    it("leaves a visitor just Settings", () => {
-        expect(otherPages(VISITOR).map(t => t.label)).toEqual(["Settings"])
+describe("moreTabs", () => {
+    it("gives a member Leaderboards and Scouting", () => {
+        expect(moreTabs(MEMBER).map(t => t.label)).toEqual(["Leaderboards", "Scouting"])
+    })
+
+    it("gives alumni Leaderboards only", () => {
+        expect(moreTabs(ALUMNI).map(t => t.label)).toEqual(["Leaderboards"])
+    })
+
+    it("gives a visitor no pages", () => {
+        expect(moreTabs(VISITOR)).toEqual([])
+    })
+})
+
+describe("isMorePage", () => {
+    it("covers the pages the More sheet opens", () => {
+        for (const path of ["/leaderboards", "/scouting/scout", "/control", "/control/members", "/settings"]) {
+            expect(isMorePage(path)).toBe(true)
+        }
+    })
+
+    it("leaves bar pages and look-alike paths to the bar", () => {
+        for (const path of ["/dashboard", "/tasks", "/events/2025casj", "/controls", "/settings-old"]) {
+            expect(isMorePage(path)).toBe(false)
+        }
     })
 })
