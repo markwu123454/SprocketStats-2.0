@@ -72,12 +72,20 @@ async def list_members(user: dict = Depends(require_roster_access)):
     viewing — Captains and Mentors included. Mentors are often adult volunteers
     reachable at a personal (non-org) address, so it isn't shared through the app.
 
-    :param user: The authenticated, authorized user (enforces access; value unused).
+    ``picture`` is null for members who hid their photo from others, except on
+    the viewer's own row.
+
+    :param user: The authenticated, authorized user (enforces access; the
+        viewer's own photo comes from its claims).
     :returns: A list of member rows with id, email, name, display_name,
         picture, role, grade, and team_year.
     """
     rows = await db.list_all_users()
-    return [_row_to_member(r, mask_email=r["role"] == "mentor") for r in rows]
+    members = [_row_to_member(r, mask_email=r["role"] == "mentor") for r in rows]
+    for m in members:
+        if m["id"] == user.get("sub"):
+            m["picture"] = user.get("picture")
+    return members
 
 
 async def _authorize_edits(actor: dict, updates: list["MemberUpdate"]) -> None:

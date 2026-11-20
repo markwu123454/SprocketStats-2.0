@@ -31,6 +31,10 @@ interface BaseUser {
     // Notices targeted at this user's role that they haven't acted on yet,
     // hard-blocking notices first. Always sent by `/auth/me` (empty array if none).
     pending_notifications: PendingNotification[]
+    // True when this user hid their photo from other members (Settings): the
+    // server sends others null in its place, so they see the initial. Optional
+    // because a profile saved on the phone by an older build won't have it.
+    hide_picture?: boolean
 }
 
 /** A signed-in user who hasn't finished onboarding yet — profile fields may be absent. */

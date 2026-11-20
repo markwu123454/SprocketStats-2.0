@@ -119,6 +119,23 @@ async def update_display_name(user_id: str, display_name: str) -> asyncpg.Record
             raise HTTPException(status_code=500, detail="Failed to update display name")
 
 
+async def set_hide_picture(user_id: str, hide: bool) -> bool | None:
+    """Set whether this member's photo is hidden from other members.
+
+    :returns: The stored value, or None when there is no such user.
+    """
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchval(
+                "UPDATE users SET hide_picture = $2 WHERE id = $1 RETURNING hide_picture",
+                user_id,
+                hide,
+            )
+        except Exception as e:
+            logger.error("set_hide_picture failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to update photo setting")
+
+
 async def load_all_account_state() -> list[asyncpg.Record]:
     """Return the ban/approval state of every user, for the in-memory cache.
 
@@ -173,13 +190,16 @@ async def list_all_users() -> list[asyncpg.Record]:
     orders by display name so the grid loads in a stable, human-friendly order
     with un-onboarded users (null ``display_name``) sorted last. This exposes
     email for every user, so the endpoint that calls it must stay permission
-    gated (see ``endpoints.members``).
+    gated (see ``endpoints.members``). ``picture`` is NULL for members who hid
+    their photo from others.
     """
     async with db_connection(DB_NAME) as conn:
         try:
             return await conn.fetch(
                 """
-                SELECT id, email, name, display_name, picture, role, grade, team_year, approved_by, banned_at,
+                SELECT id, email, name, display_name,
+                       CASE WHEN hide_picture THEN NULL ELSE picture END AS picture,
+                       role, grade, team_year, approved_by, banned_at,
                        kiosk_access_until, kiosk_access_no_end
                 FROM users
                 ORDER BY display_name ASC NULLS LAST, email ASC
@@ -308,6 +328,7 @@ __all__ = [
     "ensure_code_number",
     "update_user_onboarding",
     "update_display_name",
+    "set_hide_picture",
     "load_all_account_state",
     "get_users_by_fields",
     "list_all_users",

@@ -28,8 +28,10 @@ export default tseslint.config([
     files: ['**/*.{ts,tsx}'],
     // src/lib/push.ts owns the notification/push API surface. src/main.tsx is the
     // sanctioned bootstrap spot for service-worker *lifecycle* wiring (PWA update
-    // reload) — that's not the notification path, so it's exempt too.
-    ignores: ['src/lib/push.ts', 'src/main.tsx'],
+    // reload) — that's not the notification path, so it's exempt too, as is
+    // src/lib/chunkRecovery.ts (hand over to a waiting worker, or drop it, when a
+    // page's code won't load; every call there is null-guarded).
+    ignores: ['src/lib/push.ts', 'src/main.tsx', 'src/lib/chunkRecovery.ts'],
     rules: {
       'no-restricted-globals': [
         'error',

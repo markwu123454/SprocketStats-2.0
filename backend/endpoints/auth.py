@@ -153,8 +153,8 @@ async def me(user: dict = Depends(get_current_user)):
     """
     await account_state.assert_active(user["sub"])
 
-    # Per-member grants (e.g. kiosk access from the Members page) aren't on the
-    # JWT, so the user row is fetched fresh here for the permissions below,
+    # Per-member settings and grants (the photo setting, kiosk access from the
+    # Members page) aren't on the JWT, so the user row is fetched fresh here,
     # alongside the pending notices.
     pending, row = await asyncio.gather(
         db.get_pending_notifications_for_user(user["sub"], user.get("role")),
@@ -172,6 +172,8 @@ async def me(user: dict = Depends(get_current_user)):
         "grade": user.get("grade"),
         "team_year": user.get("team_year"),
         "onboarding_complete": user.get("onboarding_complete", False),
+        # Whether other members see the monogram instead of this user's photo.
+        "hide_picture": bool(row.get("hide_picture")) if row else False,
         # LEGACY-OFFLINE-CODE: app builds from before the offline-code removal
         # read offline_code.length on the dashboard and crash without it, so
         # send a blank one until phones have updated. Delete in the next
@@ -316,3 +318,28 @@ async def update_display_name(
     response = JSONResponse({"ok": True, "display_name": updated["display_name"]})
     set_auth_cookie(response, issue_jwt(dict(updated)))
     return response
+
+
+class PictureVisibilityRequest(BaseModel):
+    hide_picture: bool
+
+
+@router.patch("/picture-visibility")
+async def update_picture_visibility(
+    body: PictureVisibilityRequest,
+    user: dict = Depends(require_active),
+):
+    """Hide or show the signed-in user's photo to other members.
+
+    While hidden, everyone else gets ``null`` for this user's photo (tasks, task
+    notes, the Members roster) and shows the initial instead; the user still
+    sees their own. Not a JWT claim, so no new cookie is needed.
+
+    :param body: ``{"hide_picture": true}`` to hide, ``false`` to show.
+    :param user: The authenticated user's JWT claims.
+    :returns: ``{"ok": True, "hide_picture": ...}``.
+    """
+    stored = await db.set_hide_picture(user["sub"], body.hide_picture)
+    if stored is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"ok": True, "hide_picture": stored}
