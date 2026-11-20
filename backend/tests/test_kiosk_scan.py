@@ -160,24 +160,51 @@ def test_kiosk_clock_must_be_close(client, store):
     assert store["toggles"] == []
 
 
-def test_code_is_16_digits(store):
-    assert len(code_for(MEMBER_ID)) == 16 and code_for(MEMBER_ID).startswith("0042")
+def test_code_is_24_digits_with_header(store):
+    code = code_for(MEMBER_ID)
+    assert len(code) == 24 and code.startswith("00" + "0042")
 
 
 def test_unknown_member(client, store):
-    resp = scan(client, "9999" + "0" * 12)
+    resp = scan(client, "00" + "9999" + "0" * 18)
     assert resp.status_code == 404
 
 
 def test_code_for_another_number_is_rejected(client, store):
     # Ava's tag under Riley's number: the tag binds the number, so it fails.
-    resp = scan(client, "0007" + code_for(MEMBER_ID)[4:])
+    resp = scan(client, "00" + "0007" + code_for(MEMBER_ID)[6:])
     assert resp.status_code == 409
     assert store["toggles"] == []
 
 
 def test_not_a_member_code(client, store):
     assert scan(client, "hello").status_code == 400
+
+
+def test_inventory_code_is_not_a_check_in(client, store):
+    step = int(time.time() // mc.STEP_SECONDS)
+    code = mc.code_for(mc.member_secret(MEMBER_ID, 1), 42, step, kind=mc.TYPE_ELECTRICAL_INVENTORY)
+    resp = scan(client, code)
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Not a check-in code"
+    assert store["toggles"] == []
+
+
+# LEGACY-16-DIGIT: delete with the warning; see NEXT_UPDATE_CLEANUP.md.
+def test_old_app_code_asks_member_to_update(client, store):
+    resp = scan(client, "0042" + "123456789012")
+    assert resp.status_code == 426
+    assert resp.json()["detail"] == "Update the SprocketStats app on your phone, then try again."
+    assert store["toggles"] == []
+
+
+# LEGACY-16-DIGIT: delete with the warning; see NEXT_UPDATE_CLEANUP.md.
+def test_old_app_code_warns_at_authorize_too(store):
+    resp = _client(None).post("/kiosk/authorize", json={
+        "code": "0007" + "123456789012", "scanned_at": time.time(), "scan_id": str(uuid.uuid4()),
+    })
+    assert resp.status_code == 426
+    assert store["kiosks"] == []
 
 
 def test_legacy_kiosk_must_be_set_up_again(store):

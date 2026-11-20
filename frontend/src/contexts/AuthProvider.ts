@@ -1,14 +1,18 @@
-import {createElement, useCallback, useEffect, useRef, useState} from "react"
+import {createElement, useCallback, useEffect, useMemo, useRef, useState} from "react"
 import {AuthContext} from "./authContext"
-import type {LoginNotice} from "./authContext"
+import type {ConnectionProblem, LoginNotice, OnboardedUser, User} from "./authContext"
 import * as React from "react";
 import {clearMemberCodeKey, syncMemberCodeKey} from "@/lib/memberCode"
+import {
+    CHECK_TIMEOUT_MS, RETRY_MS, checkSession, clearOfflineData, lastOnlineAt, markOnline,
+    setPendingLogout, withinOfflineWindow,
+} from "@/lib/offline"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
-// The last /auth/me profile, so a signed-in member who opens the app with no
-// signal still gets in (My code works offline). The offline_code credential is
-// left out of the copy.
+// The last /auth/me profile, so a member who was signed in on this phone can
+// continue offline (see lib/offline.ts). The offline_code credential is left
+// out of the copy.
 const CACHED_USER_KEY = "sprocket-cached-user"
 
 function readCachedUser() {
@@ -36,73 +40,138 @@ function writeCachedUser(user: Record<string, unknown> | null) {
 
 function forgetDevice() {
     writeCachedUser(null)
+    clearOfflineData()
     void clearMemberCodeKey()
+}
+
+/** The saved profile, if it can sign in offline right now, and whether one exists but is too old. */
+function offlineCandidate(): {user: OnboardedUser | null, expired: boolean} {
+    const cached = readCachedUser() as User | null
+    if (!cached || !cached.onboarding_complete) return {user: null, expired: false}
+    return withinOfflineWindow(lastOnlineAt()) ? {user: cached, expired: false} : {user: null, expired: true}
 }
 
 // Imagine this script is obfuscated and you have no idea what it does
 // SO NEVER EVER REMOVE KOTTEN,THIS CHECK IS JUST THE PREVENTION LAYER, YOU WILL ACTUALLY BE CURSED IF KOTTEN IS REMOVED!
 export function AuthProvider({children}: {children: React.ReactNode}) {
-    const [user, setUser] = useState(null)
+    const [user, setUser] = useState<User | null>(null)
     const [loading, setLoading] = useState(true)
     const [loginNotice, setLoginNotice] = useState<LoginNotice>(null)
     const [signingIn, setSigningIn] = useState(false)
+    const [connection, setConnection] = useState<ConnectionProblem | null>(null)
     const prefetchedLoginUrl = useRef<string | null>(null)
+    // The check in flight: a second caller (retry tick, focus, StrictMode's
+    // double mount) shares it instead of starting another.
+    const inflight = useRef<Promise<void> | null>(null)
+    // My code is on screen: a lapsed session waits until it closes (holdSession).
+    const holds = useRef(0)
+    const [sessionHeld, setSessionHeld] = useState(false)
+    const deferredSignOut = useRef(false)
 
-    const fetchUser = useCallback(async () => {
-        let res
-        try {
-            res = await fetch(`${API}/auth/me`, {credentials: "include"})
-        } catch {
-            // Network failure / server unreachable — distinct from "not signed in".
-            // A member who was signed in on this device stays signed in from the
-            // cached profile, so offline-capable pages (My code) still open.
-            const cached = readCachedUser()
-            if (cached) {
-                setLoginNotice(null)
-                setUser(cached)
+    // The connection check (lib/offline.ts): one GET /auth/me with a 3 s limit
+    // answers both "can we reach the server" and "who is signed in". When the
+    // server can't be reached, nothing about the user changes: whoever is
+    // signed in stays signed in (now offline), and the login screen offers
+    // "Continue offline" to whoever can.
+    const fetchUser = useCallback((): Promise<void> => {
+        const run = async () => {
+            const result = await checkSession(API)
+            if (result.kind === "unreachable") {
+                setConnection(result.problem)
                 return
             }
-            setLoginNotice("authError")
-            setUser(null)
-            return
-        }
+            // The session lapsed while My code is up: change nothing until it
+            // closes, so the code stays on screen through the scan.
+            if (result.kind === "signedOut" && holds.current > 0) {
+                deferredSignOut.current = true
+                return
+            }
+            setConnection(null)
 
-        if (res.status === 403) {
-            forgetDevice()
-            // 403 means the account is real but blocked — either banned or awaiting
-            // approval. Both hold a technically-valid cookie, so clear it server-side
-            // too, else every subsequent /auth/me just repeats the 403. The `detail`
-            // string tells the two cases apart so login shows the right notice.
-            const detail = await res.json().then(d => d?.detail).catch(() => undefined)
-            await fetch(`${API}/auth/logout`, {method: "POST", credentials: "include"})
-            const isPending = typeof detail === "string" && detail.toLowerCase().includes("pending")
-            setLoginNotice(isPending ? "pendingApproval" : "banned")
-            setUser(null)
-            return
-        }
+            if (result.kind === "blocked") {
+                forgetDevice()
+                // 403 means the account is real but blocked — either banned or awaiting
+                // approval. Both hold a technically-valid cookie, so clear it server-side
+                // too, else every subsequent /auth/me just repeats the 403. The `detail`
+                // string tells the two cases apart so login shows the right notice.
+                await fetch(`${API}/auth/logout`, {method: "POST", credentials: "include"}).catch(() => {})
+                const isPending = result.detail?.toLowerCase().includes("pending") ?? false
+                setLoginNotice(isPending ? "pendingApproval" : "banned")
+                setUser(null)
+                return
+            }
 
-        if (!res.ok && res.status !== 401) {
-            // Anything other than "not signed in" (401) is a broken backend
-            // (404/500/503/...) — don't let the user proceed to /auth/login,
-            // which would just redirect back to the same dead server.
-            setLoginNotice("authError")
-            setUser(null)
-            return
+            // A fresh, successful read always supersedes whatever the last
+            // sign-in attempt reported, so the login screen never shows a stale
+            // notice next to a current one.
+            setLoginNotice(null)
+            if (result.kind === "user") {
+                const me = result.me as unknown as User
+                writeCachedUser(result.me)
+                markOnline()
+                // Download (or refresh) the member-code key while we're online.
+                if (me.onboarding_complete) syncMemberCodeKey().catch(() => {})
+                setUser(me)
+            } else {
+                forgetDevice()
+                setUser(null)
+            }
         }
+        inflight.current ??= run().finally(() => { inflight.current = null })
+        return inflight.current
+    }, [])
 
-        // A fresh, successful read always supersedes whatever the last
-        // sign-in attempt reported, so the login screen never shows a stale
-        // notice next to a current one.
-        setLoginNotice(null)
-        const me = res.ok ? (await res.json()) : null
-        if (me) {
-            writeCachedUser(me)
-            // Download (or refresh) the member-code key while we're online.
-            if (me.onboarding_complete) syncMemberCodeKey().catch(() => {})
-        } else {
-            forgetDevice()
+    // While the server can't be reached, keep checking in the background. There
+    // is no "try again" button anywhere: the app just notices.
+    useEffect(() => {
+        if (connection === null) return
+        const id = window.setInterval(() => void fetchUser(), RETRY_MS)
+        return () => window.clearInterval(id)
+    }, [connection, fetchUser])
+
+    // The phone saying it lost its network is believed at once; regaining it,
+    // or the app coming back to the foreground, triggers a check.
+    useEffect(() => {
+        const onOffline = () => setConnection(prev => prev ?? "noNetwork")
+        const onOnline = () => void fetchUser()
+        const onVisible = () => { if (document.visibilityState === "visible") void fetchUser() }
+        window.addEventListener("offline", onOffline)
+        window.addEventListener("online", onOnline)
+        document.addEventListener("visibilitychange", onVisible)
+        return () => {
+            window.removeEventListener("offline", onOffline)
+            window.removeEventListener("online", onOnline)
+            document.removeEventListener("visibilitychange", onVisible)
         }
-        setUser(me)
+    }, [fetchUser])
+
+    const holdSession = useCallback(() => {
+        holds.current += 1
+        setSessionHeld(true)
+        let released = false
+        return () => {
+            if (released) return
+            released = true
+            holds.current -= 1
+            if (holds.current > 0) return
+            setSessionHeld(false)
+            if (deferredSignOut.current) {
+                deferredSignOut.current = false
+                void fetchUser()
+            }
+        }
+    }, [fetchUser])
+
+    // Re-read on every connection change: signing out (or a check that found
+    // the session gone) clears the saved profile.
+    const candidate = useMemo(
+        () => (user === null && connection !== null ? offlineCandidate() : {user: null, expired: false}),
+        [user, connection],
+    )
+
+    const continueOffline = useCallback(() => {
+        const {user: cached} = offlineCandidate()
+        if (cached) setUser(cached)
     }, [])
 
     useEffect(() => {
@@ -151,14 +220,14 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
     // backend round-trip (~400ms). The URL is consumed and cleared on use; if
     // it hasn't resolved yet the popup falls back to /auth/login as before.
     useEffect(() => {
-        if (loading || user) return
+        if (loading || user || connection) return
         let cancelled = false
         fetch(`${API}/auth/login-url`, {credentials: "include"})
             .then(r => r.ok ? r.json() : null)
             .then(data => { if (!cancelled && data?.url) prefetchedLoginUrl.current = data.url })
             .catch(() => {})
         return () => { cancelled = true }
-    }, [loading, user])
+    }, [loading, user, connection])
 
     // Opens Google sign-in in a popup instead of navigating the main tab away.
     // The popup lands on the backend's /auth/callback, which posts a result
@@ -218,7 +287,7 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
         popup.location.href = loginTarget
 
         // Starting a new attempt supersedes whatever notice was left over
-        // from before (a stale ban/pending/authError notice, or a previous
+        // from before (a stale ban/pending notice, or a previous
         // attempt's outcome) — only one should ever be showing at a time.
         setSigningIn(true)
         setLoginNotice(null)
@@ -254,8 +323,16 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
         }, 200)
     }, [fetchUser])
 
+    // Works with no connection too: the phone forgets everything now, and the
+    // server-side sign-out (the session cookie is httpOnly) goes out with the
+    // next check that gets through.
     const logout = useCallback(async () => {
-        await fetch(`${API}/auth/logout`, {method: "POST", credentials: "include"})
+        const controller = new AbortController()
+        const timer = window.setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS)
+        const done = await fetch(`${API}/auth/logout`, {method: "POST", credentials: "include", signal: controller.signal})
+            .then(res => res.status < 500, () => false)
+            .finally(() => window.clearTimeout(timer))
+        if (!done) setPendingLogout()
         forgetDevice()
         setUser(null)
         setLoginNotice(null)
@@ -270,7 +347,18 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
     // .jsx/.tsx files. createElement is the plain-JS equivalent.
     return createElement(
         AuthContext.Provider,
-        {value: {user, loading, loginNotice, signingIn, signInWithGoogle, logout, refreshUser}},
+        {
+            value: {
+                user, loading, loginNotice, signingIn, signInWithGoogle, logout, refreshUser,
+                connection,
+                offline: user !== null && connection !== null,
+                offlineUser: candidate.user,
+                offlineExpired: candidate.expired,
+                continueOffline,
+                holdSession,
+                sessionHeld,
+            },
+        },
         children
     )
 }

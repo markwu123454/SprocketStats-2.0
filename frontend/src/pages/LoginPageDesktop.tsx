@@ -1,10 +1,10 @@
 import type { LoginPageProps } from "./LoginPageRouter";
 import {
     BrandLockup,
-    GoogleButton,
     HeroContent,
     LegalFooter,
     LoginNoticeBanner,
+    SignInAction,
     SignInHeading,
     SponsorFooter,
 } from "@/components/LoginShared";
@@ -49,7 +49,7 @@ export default function LoginPageDesktop({ season, timeInfo, loading, loginNotic
                         <SignInHeading />
                     </div>
 
-                    <GoogleButton loading={loading || signingIn} disabled={loginNotice === "authError"} onClick={signInWithGoogle} />
+                    <SignInAction loading={loading} signingIn={signingIn} signInWithGoogle={signInWithGoogle} />
 
                     <LoginNoticeBanner notice={loginNotice} />
 

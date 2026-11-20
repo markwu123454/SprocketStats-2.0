@@ -24,14 +24,17 @@ const API = import.meta.env.VITE_BACKEND_URL
  */
 export default function NotificationGate() {
     const user = useOnboardedUser()
-    const { refreshUser } = useAuth()
+    const { refreshUser, offline, sessionHeld } = useAuth()
     const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set())
     const [linkOpened, setLinkOpened] = useState(false)
     const [selected, setSelected] = useState<string[]>([])
     const [submitting, setSubmitting] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
-    const current = user.pending_notifications.find(n => !skippedIds.has(n.id)) ?? null
+    // Offline, answering is impossible, so a notice must not block the app:
+    // it comes back with the connection. Nor may one cover My code mid-scan;
+    // it shows once the code is closed.
+    const current = offline || sessionHeld ? null : user.pending_notifications.find(n => !skippedIds.has(n.id)) ?? null
 
     // Reset per-notice local state whenever the notice being shown changes.
     useEffect(() => {

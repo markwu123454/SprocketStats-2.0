@@ -2,15 +2,16 @@ import { useLayoutEffect, useRef, useState } from "react";
 import type { LoginPageProps } from "./LoginPageRouter";
 import {
     BrandLockup,
-    GoogleButton,
     HeroContent,
     LegalFooter,
     LegalFooterCompact,
     LoginNoticeBanner,
+    SignInAction,
     SignInHeading,
     SponsorFooter,
 } from "@/components/LoginShared";
 import { useScrollLock } from "@/lib/useScrollLock";
+import { useAuth } from "@/contexts/authContext";
 
 /* ── Sheet geometry constants ────────────────────────────────────
    Baselines for a sheet showing no error notice. The peek state carries
@@ -48,9 +49,11 @@ export default function LoginPageMobile({ season, timeInfo, loading, loginNotice
     /* ── Error notice measurement ────────────────────────────────
        The notice slot is always mounted and collapses to zero height
        when there is nothing to say, so measuring it covers a notice
-       appearing and clearing. Keyed on loginNotice: that's what changes,
-       and the resize listener picks up a re-wrap on rotation.
+       appearing and clearing. Keyed on what the notice says (the sign-in
+       notice, the connection problem and whether offline sign-in is
+       offered), and the resize listener picks up a re-wrap on rotation.
        ────────────────────────────────────────────────────────────── */
+    const { connection, offlineUser, offlineExpired } = useAuth();
     useLayoutEffect(() => {
         const measure = () => {
             const el = errorRef.current;
@@ -59,7 +62,7 @@ export default function LoginPageMobile({ season, timeInfo, loading, loginNotice
         measure();
         window.addEventListener("resize", measure);
         return () => window.removeEventListener("resize", measure);
-    }, [loginNotice]);
+    }, [loginNotice, connection, offlineUser, offlineExpired]);
 
     const peekHeight   = PEEK_HEIGHT   + errorHeight;
     const expandHeight = EXPAND_HEIGHT + errorHeight;
@@ -296,8 +299,7 @@ export default function LoginPageMobile({ season, timeInfo, loading, loginNotice
                         </div>
 
                         {/* Google button — always visible */}
-                        <GoogleButton loading={loading || signingIn} disabled={loginNotice === "authError"}
-                                      onClick={signInWithGoogle}/>
+                        <SignInAction loading={loading} signingIn={signingIn} signInWithGoogle={signInWithGoogle} />
 
                         {/* Error notice — in normal flow, so a rejected sign-in is
                             visible in the peek state without discovering the drag.

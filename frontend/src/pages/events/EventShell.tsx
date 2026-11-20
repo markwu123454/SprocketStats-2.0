@@ -2,6 +2,8 @@ import { useState, useEffect, useContext, useCallback } from "react"
 import { useParams, Outlet, NavLink, Link, Navigate, useLocation } from "react-router-dom"
 import { Home, Calendar, Users, Package, Trophy, ArrowLeft, CalendarClock, ListTodo } from "lucide-react"
 import { useBootstrapped, BootstrapContext } from "@/contexts/bootstrapContext"
+import { useIsOffline } from "@/contexts/authContext"
+import { OfflineLabel, OfflineUnavailable } from "@/components/Offline"
 import { EventContext } from "@/contexts/eventContext"
 import { fetchEventInfo, fetchEventUpdate, fetchEvents, type EventInfo } from "@/lib/eventApi"
 import Skeleton from "@/components/ui/Skeleton"
@@ -56,6 +58,8 @@ export default function EventShell() {
     const keysReady    = "event_keys" in bootstrapCache
     const knownInvalid = keysReady && !!eventKey && !eventKeys.includes(eventKey)
 
+    // Offline, only the event saved on the phone (bootstrap's current_event) has its page.
+    const offline = useIsOffline()
     const seeded = bootstrapEvent?.event_key === eventKey ? bootstrapEvent : null
     const [info,      setInfo]      = useState<EventInfo | null>(seeded)
     const [loading,   setLoading]   = useState(!seeded)
@@ -112,8 +116,10 @@ export default function EventShell() {
                             className="absolute left-1/2 -translate-x-1/2 text-base font-bold truncate max-w-[55%]"
                             style={{ color: "var(--theme-h1-color)" }}
                         >
-                            {isLoading ? <Skeleton className="h-5 w-36" /> : notFound ? "Event not found" : (info?.event_name ?? eventKey)}
+                            {isLoading && !offline ? <Skeleton className="h-5 w-36" /> : notFound ? "Event not found" : (info?.event_name ?? scheduleEntry?.name ?? eventKey)}
                         </h1>
+                        {/* The app's top bar is hidden on phones inside an event. */}
+                        {offline && <OfflineLabel className="ml-auto pr-1 md:hidden" />}
                     </div>
 
                     {/* Tab row: icon above text — stays mounted (and navigable) even on a 404,
@@ -140,7 +146,11 @@ export default function EventShell() {
                 </div>
 
                 <div className="flex-1 min-h-0 overflow-auto">
-                    {notFound ? (
+                    {offline && !info && !notFound ? (
+                        <div className="h-full flex items-center justify-center">
+                            <OfflineUnavailable what="This event's page" />
+                        </div>
+                    ) : notFound ? (
                         <div className="h-full flex items-center justify-center">
                             <EmptyState
                                 variant="screen"

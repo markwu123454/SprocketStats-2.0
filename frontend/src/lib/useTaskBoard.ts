@@ -1,5 +1,5 @@
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from "react"
-import { useOnboardedUser } from "@/contexts/authContext"
+import { useIsOffline, useOnboardedUser } from "@/contexts/authContext"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { can, getPerm } from "@/lib/permissions"
 import { isTaskBucket, type TaskBucket } from "@/lib/taskBuckets"
@@ -37,6 +37,8 @@ function saveSeenMap(map: Record<string, number>) {
     }
 }
 
+const OFFLINE_ACTION = "Changing tasks needs a connection."
+
 const EMPTY_TASKS: Task[] = []
 const EMPTY_PEOPLE: Person[] = []
 
@@ -54,6 +56,8 @@ export interface TaskBoard {
     canEditTask: (task: Task) => boolean
     /** Edit rights, plus the task's assignee and contributors (status only). */
     canChangeStatus: (task: Task) => boolean
+    /** Showing the copy saved on the phone: every change needs a connection, so pages hide "New task". */
+    offline: boolean
 
     /** ms at local midnight today — pass to isOverdue/rowDue/matchesFilter. */
     todayMs: number
@@ -80,6 +84,7 @@ export interface TaskBoard {
 
 export function useTaskBoard(): TaskBoard {
     const user = useOnboardedUser()
+    const offline = useIsOffline()
     const canAssign = can(user.permissions, "tasks.assign")
 
     const rawSubteam = getPerm(user.permissions, "subteam")
@@ -302,12 +307,19 @@ export function useTaskBoard(): TaskBoard {
         })
     }, [setTasks])
 
+    // Offline the board is read-only: edit and status menus hide, and any other
+    // action says it needs a connection instead of failing on the network.
     function canEditTask(task: Task): boolean {
-        return canAssign || task.created_by === user.id
+        return !offline && (canAssign || task.created_by === user.id)
     }
 
     function canChangeStatus(task: Task): boolean {
-        return canEditTask(task) || task.assignee_id === user.id || task.contributors.some(c => c.id === user.id)
+        return !offline && (canEditTask(task) || task.assignee_id === user.id || task.contributors.some(c => c.id === user.id))
+    }
+
+    function blockedOffline(): boolean {
+        if (offline) setActionError(OFFLINE_ACTION)
+        return offline
     }
 
     function unread(task: Task): number {
@@ -315,6 +327,7 @@ export function useTaskBoard(): TaskBoard {
     }
 
     async function runAction(fn: () => Promise<Task>) {
+        if (blockedOffline()) return
         setActionError(null)
         try {
             applyTask(await fn())
@@ -324,6 +337,7 @@ export function useTaskBoard(): TaskBoard {
     }
 
     async function handleDelete(task: Task) {
+        if (blockedOffline()) return
         const confirmed = await confirmDialog({
             title: "Delete task?",
             body: `"${task.title}" will be deleted. This can't be undone.`,
@@ -349,6 +363,7 @@ export function useTaskBoard(): TaskBoard {
      *  worked. Only claim does this -- other actions keep going through the
      *  plain `runAction` with no extra refetch. */
     async function handleClaim(taskId: string) {
+        if (blockedOffline()) return
         setActionError(null)
         try {
             applyTask(await claimTask(taskId))
@@ -401,7 +416,7 @@ export function useTaskBoard(): TaskBoard {
 
     return {
         tasks, people, loading, loadError, actionError, setActionError,
-        canAssign, mySubteam, canEditTask, canChangeStatus,
+        canAssign, mySubteam, canEditTask, canChangeStatus, offline,
         todayMs, unread,
         runAction, handleClaim, handleDelete, applyTask, bumpNoteCount,
         markNotesRead, cancelMarkNotesRead,

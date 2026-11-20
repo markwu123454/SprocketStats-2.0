@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Pencil, Plus } from "lucide-react"
 import { useEventContext } from "@/contexts/eventContext"
-import { useOnboardedUser } from "@/contexts/authContext"
+import { useIsOffline, useOnboardedUser } from "@/contexts/authContext"
 import { can } from "@/lib/permissions"
 import { patchEventContent, type Instruction, type PackingCategory } from "@/lib/eventApi"
 import { cleanStrings, saveErrorMessage, validateInstruction, validatePackingCategory } from "@/lib/eventContent"
@@ -24,7 +24,9 @@ type Editing =
 export default function PackingPage() {
     const { eventKey, info, updateInfo } = useEventContext()
     const user = useOnboardedUser()
-    const isEditor = can(user.permissions, "events.edit")
+    // Read-only offline: edits need the server.
+    const offline = useIsOffline()
+    const isEditor = !offline && can(user.permissions, "events.edit")
     const [checked, setChecked] = useState<Set<string>>(new Set())
 
     const [editing, setEditing] = useState<Editing>(null)

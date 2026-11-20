@@ -1,6 +1,8 @@
 /**
- * The member's rotating code: 16 digits (4-digit code number + 12-digit tag)
- * shown as a 14x14 Data Matrix and read by a kiosk's camera. Mirrors
+ * The member's rotating code: 24 digits (2-digit header + 4-digit code number +
+ * 18-digit tag) shown as a 16x16 Data Matrix and read by a kiosk's camera.
+ * The header packs a 2-bit format version and a 4-bit type as
+ * version * 16 + type, so a v0 check-in code starts with "00". Mirrors
  * backend/core/member_codes.py.
  *
  * The secret is downloaded once while signed in and online, imported as a
@@ -65,15 +67,26 @@ export function importSecret(b64: string): Promise<CryptoKey> {
     return crypto.subtle.importKey("raw", base64UrlToBytes(b64), {name: "HMAC", hash: "SHA-256"}, false, ["sign"])
 }
 
-/** The 16-digit code for one time step. */
+export const FORMAT_VERSION = 0 // 2 bits
+export const TYPE_CHECKIN = 0 // 4 bits; 1 is reserved for electrical inventory
+const TAG_DIGITS = 18
+
+/** The 2-digit header: version * 16 + type, 00-63. */
+export function codeHeader(version: number, type: number): string {
+    if (version < 0 || version > 3 || type < 0 || type > 15) throw new Error("version is 2 bits and type is 4 bits")
+    return String((version << 4) | type).padStart(2, "0")
+}
+
+/** The 24-digit check-in code for one time step. */
 export async function codeAt(key: CryptoKey, codeNumber: number, step: number): Promise<string> {
+    const header = codeHeader(FORMAT_VERSION, TYPE_CHECKIN)
     const number = String(codeNumber).padStart(4, "0")
     const sig = new Uint8Array(
-        await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`SSID2|${number}|${step}`)),
+        await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`SSID3|${header}|${number}|${step}`)),
     )
     let n = 0n
     for (let i = 0; i < 8; i++) n = (n << 8n) | BigInt(sig[i])
-    return number + (n % 10n ** 12n).toString().padStart(12, "0")
+    return header + number + (n % 10n ** BigInt(TAG_DIGITS)).toString().padStart(TAG_DIGITS, "0")
 }
 
 /** Which step to show at `nowMs`, and how far into it we are (for the timer bar). */

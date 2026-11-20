@@ -2,7 +2,7 @@ import {useCallback, useEffect, useId, useRef, useState, type KeyboardEvent} fro
 import {createPortal} from "react-dom"
 import {CameraOff, LogIn, LogOut, SwitchCamera, X} from "lucide-react"
 import {isTopOverlay, lockScroll, pushOverlay, trapTab} from "@/lib/modalStack"
-import {centerOf, createCodeReader, memberCodeOf, type Point} from "@/lib/codeReader"
+import {centerOf, codeNumberOf, createCodeReader, memberCodeOf, type Point} from "@/lib/codeReader"
 import {focusRing} from "@/lib/uiClasses"
 
 const API = import.meta.env.VITE_BACKEND_URL
@@ -252,7 +252,7 @@ export default function ScannerDialog({onClose}: {onClose: () => void}) {
                 const code = memberCodeOf(found.text)
                 if (found.text !== null && !code) continue // some other DataMatrix: ignore it
                 if (code) {
-                    const number = code.slice(0, 4)
+                    const number = codeNumberOf(code)
                     let a = appearances.get(number)
                     if (a && t - a.lastSeen < GONE_MS) {
                         a.lastSeen = t

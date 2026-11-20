@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { ArrowRight } from "lucide-react";
 import { useTheme } from "@/contexts/themeContext";
-import type { LoginNotice } from "@/contexts/authContext";
+import { useAuth, type ConnectionProblem, type LoginNotice } from "@/contexts/authContext";
 import type { SeasonInfo, TimeInfo } from "@/pages/LoginPageRouter";
+import Avatar from "@/components/Avatar";
 import Notice from "@/components/ui/Notice";
 import { focusRing } from "@/lib/uiClasses";
 
@@ -100,6 +102,40 @@ export function GoogleButton({
             </span>
         </button>
     );
+}
+
+/* ── Continue offline ──────────────────────────────────────────
+   Takes the Google button's place while the server can't be reached and
+   this phone can still sign in offline (lib/offline.ts). Same size and spot,
+   the accent hero style, and the member's initials so it's clear whose
+   saved session it opens. No profile photo: it wouldn't load offline. */
+export function ContinueOfflineButton({ name, firstName, onClick }: { name: string; firstName: string; onClick: () => void }) {
+    return (
+        <button
+            onClick={onClick}
+            type="button"
+            className={`w-full grid items-center gap-3 pl-[11px] pr-[18px] h-[52px] rounded-xl font-sans font-semibold text-[15px] leading-none text-left cursor-pointer hover:opacity-90 active:opacity-70 transition-opacity ${focusRing}`}
+            style={{
+                gridTemplateColumns: "auto 1fr auto",
+                background: "var(--theme-text-contrast)",
+                color: "var(--theme-bg)",
+                boxShadow: "0 6px 18px -8px rgba(0,0,0,.25)",
+            }}
+        >
+            <Avatar name={name} size={30} />
+            <span>Continue offline as {firstName}</span>
+            <ArrowRight size={16} aria-hidden="true" />
+        </button>
+    );
+}
+
+/* ── The sheet's one action: Google sign-in, or Continue offline ── */
+export function SignInAction({ loading, signingIn, signInWithGoogle }: { loading: boolean; signingIn: boolean; signInWithGoogle: () => void }) {
+    const { connection, offlineUser, continueOffline } = useAuth();
+    if (offlineUser) {
+        return <ContinueOfflineButton name={offlineUser.name} firstName={offlineUser.given_name || offlineUser.display_name} onClick={continueOffline} />;
+    }
+    return <GoogleButton loading={loading || signingIn} disabled={connection !== null} onClick={signInWithGoogle} />;
 }
 
 /* ── Brand lockup (gear mark + wordmark) ─────────────────────── */
@@ -215,11 +251,28 @@ function LoginErrorNotice({ children }: { children: React.ReactNode }) {
     );
 }
 
-/* ── Login notice banner — renders the one active LoginNotice, if any ──
-   `notice` is mutually exclusive by construction (see LoginNotice in
-   authContext.ts), so this is a straight switch rather than a stack of
-   independent conditionals. */
+const CONNECTION_PROBLEM: Record<ConnectionProblem, string> = {
+    noNetwork: "No internet connection.",
+    slow: "Your connection is too slow to sign in.",
+    serverDown: "Can't reach the server right now.",
+};
+
+/* ── Login notice banner — renders the one active notice, if any ──
+   Not reaching the server comes first: nothing else can happen until it's
+   back, which the app checks on its own every few seconds, so there is no
+   "try again". Otherwise `notice` is mutually exclusive by construction (see
+   LoginNotice in authContext.ts), so this is a straight switch rather than a
+   stack of independent conditionals. */
 export function LoginNoticeBanner({ notice }: { notice: LoginNotice }) {
+    const { connection, offlineUser, offlineExpired } = useAuth();
+    if (connection) {
+        const next = offlineUser
+            ? " You can continue offline."
+            : offlineExpired
+                ? " Continuing offline needs a sign-in on this phone in the last 30 days."
+                : connection === "noNetwork" ? " Connect to sign in." : "";
+        return <LoginErrorNotice>{CONNECTION_PROBLEM[connection]}{next}</LoginErrorNotice>;
+    }
     switch (notice) {
         case "banned":
             return (
@@ -231,12 +284,6 @@ export function LoginNoticeBanner({ notice }: { notice: LoginNotice }) {
             return (
                 <LoginErrorNotice>
                     Your account is awaiting approval. Ask a captain or mentor to approve you, then sign in again.
-                </LoginErrorNotice>
-            );
-        case "authError":
-            return (
-                <LoginErrorNotice>
-                    Can't reach the server right now. Try again in a moment.
                 </LoginErrorNotice>
             );
         case "signInError":

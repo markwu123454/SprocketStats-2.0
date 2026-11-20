@@ -318,9 +318,11 @@ export default function TasksPageDesktop() {
                         <div className="w-40">
                             <Dropdown value={sort} onChange={v => setSort(v as TaskSort)} options={TASK_SORT_OPTIONS} triggerClassName={dropdownTriggerClassName} menuAlign="right" label="Sort tasks" />
                         </div>
-                        <Button variant={composing ? "outlined" : "filled"} className="shrink-0" onClick={() => void confirmAnyDiscard().then(ok => { if (ok) setComposing(v => !v) })}>
-                            {composing ? "Close" : "New task"}
-                        </Button>
+                        {!board.offline && (
+                            <Button variant={composing ? "outlined" : "filled"} className="shrink-0" onClick={() => void confirmAnyDiscard().then(ok => { if (ok) setComposing(v => !v) })}>
+                                {composing ? "Close" : "New task"}
+                            </Button>
+                        )}
                     </div>
                 </div>
 

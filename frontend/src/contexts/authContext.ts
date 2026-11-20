@@ -67,26 +67,31 @@ export interface OnboardedUser extends BaseUser {
 export type User = PendingUser | OnboardedUser
 
 /**
- * The single reason (if any) the login screen has something to tell the user.
- * Mutually exclusive by construction — AuthProvider only ever has one of
- * these active at a time, replacing whatever was there before rather than
- * layering on top of it.
+ * The single reason (if any) the login screen has something to tell the user
+ * about their account or sign-in attempt. Mutually exclusive by construction —
+ * AuthProvider only ever has one of these active at a time, replacing whatever
+ * was there before rather than layering on top of it. Not reaching the server
+ * at all is `connection`, not a notice.
  *
  *  - `"banned"` — last /auth/me came back 403 "banned": a real account, blocked.
  *  - `"pendingApproval"` — last /auth/me came back 403 "pending approval": onboarded
  *    into a privileged role, awaiting a captain/mentor.
- *  - `"authError"` — last /auth/me failed for a reason other than "not signed
- *    in", banned, or pending (network failure, 404, 500, 503, ...). Signing in
- *    would just hit the same broken backend, so the login UI blocks the button
- *    rather than bouncing the user through a dead redirect.
  *  - `"signInError"` — the OAuth popup reported the exchange itself failed
- *    (Google rejected it, callback error, etc). Distinct from `"authError"`,
- *    which is about the backend being unreachable, not a bad sign-in attempt.
+ *    (Google rejected it, callback error, etc).
  *  - `"signInCancelled"` — the popup closed without ever reporting a result.
  *    In practice almost always the user closing it partway through, not a
  *    failure, so it gets its own non-alarming wording.
  */
-export type LoginNotice = "banned" | "pendingApproval" | "authError" | "signInError" | "signInCancelled" | null
+export type LoginNotice = "banned" | "pendingApproval" | "signInError" | "signInCancelled" | null
+
+/**
+ * Why the last connection check (GET /auth/me, 3 s limit) didn't reach the server:
+ *
+ *  - `"noNetwork"` — the phone has no connection, or the request failed outright.
+ *  - `"slow"` — no answer within the time limit.
+ *  - `"serverDown"` — the server answered with an error (404, 500, 503...).
+ */
+export type ConnectionProblem = "noNetwork" | "slow" | "serverDown"
 
 export interface AuthContextValue {
     user: User | null
@@ -98,6 +103,23 @@ export interface AuthContextValue {
     signInWithGoogle: () => void
     logout: () => Promise<void>
     refreshUser: () => Promise<void>
+    /** Set while the server can't be reached. The app re-checks every 5 s on its own. */
+    connection: ConnectionProblem | null
+    /** Signed in (or still signed in) while the server can't be reached: pages show saved info. */
+    offline: boolean
+    /** Who "Continue offline" would sign in on the login screen, if anyone can. */
+    offlineUser: OnboardedUser | null
+    /** This phone had a signed-in member, but too long ago (30 days) to continue offline. */
+    offlineExpired: boolean
+    continueOffline: () => void
+    /**
+     * Keep the member signed in while something can't be interrupted (My code
+     * on screen): a lapsed session found meanwhile signs them out only once
+     * every hold is released. Returns the release function.
+     */
+    holdSession: () => () => void
+    /** Something holds the session (My code is up): nothing else may cover the screen. */
+    sessionHeld: boolean
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)
@@ -106,6 +128,11 @@ export function useAuth() {
     const ctx = useContext(AuthContext)
     if (!ctx) throw new Error("useAuth must be used inside <AuthProvider>")
     return ctx
+}
+
+/** Whether the app is running on saved info because the server can't be reached. */
+export function useIsOffline(): boolean {
+    return useAuth().offline
 }
 
 /**

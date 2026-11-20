@@ -1,7 +1,8 @@
 import {useEffect, useId, useMemo, useRef, useState, type KeyboardEvent} from "react"
 import {createPortal} from "react-dom"
 import {WifiOff, X} from "lucide-react"
-import {useOnboardedUser} from "@/contexts/authContext"
+import {useAuth, useOnboardedUser} from "@/contexts/authContext"
+import {withinOfflineWindow} from "@/lib/offline"
 import {dataMatrix, dataMatrixPath} from "@/lib/dataMatrix"
 import {isTopOverlay, lockScroll, pushOverlay, trapTab} from "@/lib/modalStack"
 import {
@@ -23,7 +24,7 @@ const CODE_LIGHT = "#bbb"
 type KeyState =
     | {kind: "loading"}
     | {kind: "ready", rec: MemberCodeKey}
-    | {kind: "offline"}
+    | {kind: "offline", expired: boolean}
     | {kind: "unavailable"}
 
 /**
@@ -32,6 +33,7 @@ type KeyState =
  */
 export default function MyCodeDialog({onClose}: {onClose: () => void}) {
     const user = useOnboardedUser()
+    const {offline, holdSession} = useAuth()
     const titleId = useId()
     const panelRef = useRef<HTMLDivElement>(null)
     const closeRef = useRef<HTMLButtonElement>(null)
@@ -68,30 +70,37 @@ export default function MyCodeDialog({onClose}: {onClose: () => void}) {
         }
     }, [])
 
+    // Coming back online while the code is up must not sign the member out
+    // mid-scan if their session lapsed: that waits until this closes.
+    useEffect(() => holdSession(), [holdSession])
+
     // Stored key first (works offline); refresh it when online so the clock
-    // offset stays current and a bumped code version is picked up.
+    // offset stays current and a bumped code version is picked up. A key the
+    // phone hasn't refreshed online in 30 days stops showing, the same limit
+    // as signing in offline (lib/offline.ts).
     useEffect(() => {
         let cancelled = false
         void (async () => {
             const stored = await loadMemberCodeKey(user.id)
+            const usable = stored && withinOfflineWindow(stored.savedAt) ? stored : null
             if (cancelled) return
-            if (stored) setState({kind: "ready", rec: stored})
-            if (!navigator.onLine) {
-                if (!stored) setState({kind: "offline"})
+            if (usable) setState({kind: "ready", rec: usable})
+            if (offline || !navigator.onLine) {
+                if (!usable) setState({kind: "offline", expired: stored !== null})
                 return
             }
             try {
                 const fresh = await syncMemberCodeKey()
                 if (!cancelled) setState({kind: "ready", rec: fresh})
             } catch (err) {
-                if (cancelled || stored) return
-                setState({kind: err instanceof MemberCodeUnavailable ? "unavailable" : "offline"})
+                if (cancelled || usable) return
+                setState(err instanceof MemberCodeUnavailable ? {kind: "unavailable"} : {kind: "offline", expired: stored !== null})
             }
         })()
         return () => {
             cancelled = true
         }
-    }, [user.id])
+    }, [user.id, offline])
 
     // Recompute the code whenever the step changes.
     useEffect(() => {
@@ -205,7 +214,9 @@ export default function MyCodeDialog({onClose}: {onClose: () => void}) {
                         <p className="max-w-60 text-base font-semibold theme-text">
                             {state.kind === "unavailable"
                                 ? "This account can't use a member code"
-                                : "Connect to the internet to set up your code"}
+                                : state.kind === "offline" && state.expired
+                                    ? "Connect to the internet to refresh your code"
+                                    : "Connect to the internet to set up your code"}
                         </p>
                     </div>
                 )}

@@ -381,9 +381,17 @@ async def _member_from_code(body: CodeScanRequest) -> dict:
     """Check a scanned code against the time the kiosk saw it; return the member."""
     if abs(time.time() - body.scanned_at) > member_codes.MAX_SCAN_SKEW_SECONDS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Kiosk clock is off. Restart the kiosk.")
+    if member_codes.is_legacy(body.code):
+        # LEGACY-16-DIGIT: delete in the next update; see NEXT_UPDATE_CLEANUP.md.
+        raise HTTPException(
+            status_code=status.HTTP_426_UPGRADE_REQUIRED,
+            detail="Update the SprocketStats app on your phone, then try again.",
+        )
     parsed = member_codes.parse(body.code)
     if parsed is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Not a SprocketStats code")
+    if parsed.kind != member_codes.TYPE_CHECKIN:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Not a check-in code")
     user = await db.get_user_by_code_number(parsed.code_number)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")

@@ -3,7 +3,7 @@ import { AgGridReact } from "ag-grid-react"
 import type { ColDef, ICellRendererParams, SizeColumnsToFitGridStrategy } from "ag-grid-community"
 import { Check, Pencil, Phone } from "lucide-react"
 import { useEventContext } from "@/contexts/eventContext"
-import { useOnboardedUser } from "@/contexts/authContext"
+import { useIsOffline, useOnboardedUser } from "@/contexts/authContext"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
 import { can } from "@/lib/permissions"
 import { updateRosterMember, type RosterMember } from "@/lib/eventApi"
@@ -153,7 +153,9 @@ interface EditingState {
 export default function RosterPage() {
     const { eventKey, info, updateInfo } = useEventContext()
     const user = useOnboardedUser()
-    const canEdit = can(user.permissions, "events.edit")
+    // Read-only offline: edits need the server.
+    const offline = useIsOffline()
+    const canEdit = !offline && can(user.permissions, "events.edit")
     const [rawEvents] = useBootstrapped<EventEntry[]>("events", [])
 
     const [editing, setEditing] = useState<EditingState | null>(null)
