@@ -12,6 +12,7 @@ import PermGuard from "@/components/wrappers/PermGuard.tsx"
 import UpdatePrompt from "@/components/UpdatePrompt.tsx"
 import ConfirmHost from "@/components/ui/ConfirmDialog"
 import PageErrorBoundary from "@/components/ErrorBoundary"
+import {watchViewport} from "@/lib/viewport"
 
 const LoginPageRouter      = lazy(() => import("@/pages/LoginPageRouter"))
 const OnboardingPageRouter = lazy(() => import("@/pages/OnboardingPageRouter.tsx"))
@@ -48,19 +49,8 @@ function Protected({children}: {children: ReactNode}) {
 }
 
 export default function App() {
-    useLayoutEffect(() => {
-        const setVh = () => {
-            const h = window.visualViewport?.height ?? window.innerHeight
-            document.documentElement.style.setProperty("--real-vh", `${h}px`)
-        }
-        setVh()
-        window.visualViewport?.addEventListener("resize", setVh)
-        window.addEventListener("resize", setVh)
-        return () => {
-            window.visualViewport?.removeEventListener("resize", setVh)
-            window.removeEventListener("resize", setVh)
-        }
-    }, [])
+    // --real-vh and --vv-top: the on-screen area, which a phone keyboard shrinks and slides (lib/viewport.ts).
+    useLayoutEffect(() => watchViewport(), [])
 
     return (
         <ThemeProvider>

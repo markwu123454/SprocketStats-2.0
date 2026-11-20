@@ -6,6 +6,7 @@ import {focusRing, typeTitle} from "@/lib/uiClasses"
 import {SheetDirtyContext, askDiscard} from "@/lib/useDiscardGuard"
 import {prefersReducedMotion} from "@/lib/modalStack"
 import {useOverlay} from "@/lib/useOverlay"
+import {visibleAreaStyle} from "@/lib/viewport"
 
 interface SheetProps {
     title: string
@@ -175,8 +176,10 @@ export default function Sheet({title, onClose, children, footer, kind = "form", 
     return createPortal(
         <SheetDirtyContext.Provider value={registerChildDirty}>
         <div
-            className="fixed inset-x-0 top-0 z-50 flex items-end md:items-center justify-center md:p-4"
-            style={{height: "var(--real-vh, 100dvh)"}}
+            className="fixed inset-x-0 z-50 flex items-end md:items-center justify-center md:p-4"
+            // Pinned to what's on screen, not the page: with the keyboard open, iOS slides the
+            // view down to the focused field, and a `top: 0` sheet would slide off with the page.
+            style={visibleAreaStyle}
             // click and keydown stop here so React parents (a clickable row, a Dropdown) never see them. mousedown is
             // left alone: stopping it would also hide it from document-level outside-click listeners.
             onClick={e => e.stopPropagation()}

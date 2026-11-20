@@ -31,7 +31,7 @@ Choose by the job, then let the breakpoint choose the form.
 | Dismiss on release | Dragged past 25% of height, or flicked faster than 0.5px/ms |
 | Otherwise | Settles back with `ease-sheet` |
 | Without a gesture | Close button, scrim, Esc, or activating the handle |
-| Keyboard | Height follows `--real-vh`; the footer stays above the keyboard |
+| Keyboard | Height follows `--real-vh` and the top follows `--vv-top` (`visibleAreaStyle` in `lib/viewport.ts`), so the sheet stays on screen when iOS slides the view to a focused field; the footer stays above the keyboard |
 | Dirty form | `dirty` prop (or a form calling `useDiscardGuard`): scrim, Esc, close button, handle and a drag past the threshold stop and ask "Discard changes?". Declining keeps the sheet open and a drag settles back with `ease-sheet`. One prompt at a time |
 | Background | Scroll locked with `useScrollLock` |
 | Focus | Trapped; moves to the sheet on open and back to the trigger on close |

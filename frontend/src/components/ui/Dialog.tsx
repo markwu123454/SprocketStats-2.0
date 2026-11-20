@@ -1,6 +1,7 @@
 import {useRef, type ReactNode, type RefObject} from "react"
 import {createPortal} from "react-dom"
 import {useOverlay} from "@/lib/useOverlay"
+import {visibleAreaStyle} from "@/lib/viewport"
 
 /** Stacking layers from the z table in design-system/modals.md. */
 const LAYER_Z = {
@@ -46,7 +47,9 @@ export default function Dialog({
 
     return createPortal(
         <div
-            className={`fixed inset-0 ${LAYER_Z[layer]} flex items-center justify-center ${edge === "tight" ? "p-1" : "p-4"}`}
+            className={`fixed inset-x-0 ${LAYER_Z[layer]} flex items-center justify-center ${edge === "tight" ? "p-1" : "p-4"}`}
+            // Centred in what's on screen, so a phone keyboard can't push it off (lib/viewport.ts).
+            style={visibleAreaStyle}
             // Clicks stop here so React parents (a clickable row, a Dropdown) never see them. An alert
             // dialog also keeps mousedown, so an outside-click listener under it (an open menu) stays put.
             onClick={e => e.stopPropagation()}
