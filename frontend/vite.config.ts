@@ -1,6 +1,6 @@
 import path from "path";
 import {execSync} from "child_process";
-import {defineConfig} from "vite";
+import {defineConfig, type ServerOptions} from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import {VitePWA} from "vite-plugin-pwa";
@@ -12,7 +12,29 @@ const gitHash = (() => {
     catch { return ""; }
 })();
 
-export default defineConfig({
+/**
+ * `npm run dev:phone` (`vite --mode phone`) opens the dev app on a phone on the same
+ * Wi-Fi (CONTRIBUTING.md). The phone can't reach the backend at `localhost`, so every
+ * API call goes to `/api` on this server, which forwards it to the backend on this
+ * computer. It's all one origin then, so the session cookie needs nothing special.
+ */
+function devServer(mode: string): ServerOptions {
+    if (mode !== "phone") return {host: true};
+    // A real VITE_* variable outranks the .env files, and Vite reads env after this config.
+    process.env.VITE_BACKEND_URL = "/api";
+    return {
+        host: true,
+        proxy: {
+            "/api": {
+                target: process.env.DEV_BACKEND_URL ?? "http://127.0.0.1:8000",
+                changeOrigin: true,
+                rewrite: p => p.replace(/^\/api/, ""),
+            },
+        },
+    };
+}
+
+export default defineConfig(({mode}) => ({
     plugins: [
         react(),
         tailwindcss(),
@@ -81,7 +103,5 @@ export default defineConfig({
         emptyOutDir: true,
     },
 
-    server: {
-        host: true
-    },
-});
+    server: devServer(mode),
+}));

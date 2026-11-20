@@ -62,11 +62,13 @@ the project root (`$PROJECT_DIR$/.env`), and vice versa. The committed run confi
 | `.run/backend_ uvicorn.run.xml` | `backend: uvicorn` | Option A (`$PROJECT_DIR$/backend/.env`) |
 | `backend/.run/uvicorn.run.xml` | `uvicorn` | Option B (`$PROJECT_DIR$/.env`) |
 | `frontend/.run/dev.run.xml` | `dev` | Option A (`$PROJECT_DIR$/frontend/package.json`) |
+| `frontend/.run/dev-phone.run.xml` | `dev:phone` | Option A (`$PROJECT_DIR$/frontend/package.json`) |
 
-The frontend has only the one config, and both modes load it. Its `package-json` path has
-been committed in both forms (`$PROJECT_DIR$/package.json` for Option B,
+The frontend's configs (`dev`, and `dev:phone` for [testing on a phone](#testing-on-a-phone))
+are each loaded by both modes. The `dev` config's `package-json` path has been committed in
+both forms (`$PROJECT_DIR$/package.json` for Option B,
 `$PROJECT_DIR$/frontend/package.json` for Option A) several times, as it was fixed up for
-whichever layout the committer had open. Keep it in the Option A form, and don't hand-edit
+whichever layout the committer had open. Keep both in the Option A form, and don't hand-edit
 any config to match the other mode's expectations.
 
 ## Environment setup
@@ -90,6 +92,39 @@ any config to match the other mode's expectations.
 - **Frontend**: Node.js 24+, dependencies in `frontend/package.json`. Install with `npm ci`
   from `frontend/` (uses the committed `package-lock.json`), and set `VITE_BACKEND_URL` in
   `frontend/.env` (gitignored), e.g. `VITE_BACKEND_URL=http://localhost:8000`.
+
+## Testing on a phone
+
+Use this for anything that only shows on a real phone, like the iOS keyboard pushing sheets
+around. The phone opens the dev server on your computer over the network.
+
+1. Start the backend as usual, with `ENV=development` in `backend/.env`.
+2. Start the frontend in phone mode: `npm run dev:phone` from `frontend/`, or the `dev:phone`
+   run config. It's the normal dev server, except the app calls the API at `/api` on the dev
+   server itself, which forwards to the backend at `127.0.0.1:8000` (set `DEV_BACKEND_URL`
+   to change that). The phone can't reach `localhost:8000`, since that's the phone.
+3. On the phone, open one of the `Network:` addresses Vite prints. Use the one on the same
+   network as the phone: your Wi-Fi address, or the `100.x` address if both devices run
+   Tailscale.
+4. Tap **Dev sign-in** at the top of the login page and pick a user. Google sign-in doesn't
+   work here, because Google only sends you back to `localhost` or a registered domain.
+
+**Dev sign-in** lists every user in the dev database, including pending, banned and not-yet-
+onboarded ones, so those screens can be tested too. It lives in
+`backend/endpoints/dev_auth.py` and `frontend/src/components/DevSignIn.tsx`. The backend
+only adds its routes with `ENV=development`, and production builds of the frontend leave it
+out. It also works on your computer, if you don't want to use Google there.
+
+**If the phone can't load the page**, Windows Firewall is probably blocking it. That
+happens when Windows calls your Wi-Fi a **Public** network: either set the network to
+Private (on a network you trust) and allow Node.js through the firewall on private networks,
+or use Tailscale on both devices. School and guest Wi-Fi often stop devices from reaching
+each other at all; Tailscale gets around that.
+
+**What doesn't work over plain `http`:** the phone treats `http://192.168…` as insecure,
+so the browser turns off what needs HTTPS: My code (it signs codes with Web Crypto), the
+check-in scanner (camera), push notifications and the service worker. Everything else,
+including sheets, forms and the keyboard, behaves as in production.
 
 ## Before opening a PR
 

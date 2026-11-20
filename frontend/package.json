@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:phone": "vite --mode phone",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
