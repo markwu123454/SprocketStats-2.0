@@ -26,6 +26,7 @@ Budget about **90 minutes** for a first run. Everything below fits in the free t
 | Database (PostgreSQL) | Neon | Serverless Postgres, branch-per-environment           |
 | Sign-in | Google Cloud Console | OAuth 2.0: members log in with school Google accounts |
 | ML labeling | Label Studio | Scouting-data labeling pipeline                       |
+| Live event data | The Blue Alliance, FRC Nexus | Matches, rankings, queueing and inspection on event pages |
 
 The backend needs the database and Google OAuth to boot. Label Studio and web push can be stubbed out at first if you only want the team-ops features (attendance, meetings, members, notifications).
 
@@ -33,7 +34,7 @@ The backend needs the database and Google OAuth to boot. Label Studio and web pu
 
 ## Before you start
 
-Create accounts on [Neon](https://neon.com), [Fly.io](https://fly.io), [Vercel](https://vercel.com), [Google Cloud Console](https://console.cloud.google.com), and [Label Studio](https://labelstud.io). Install the [Fly CLI](https://fly.io/docs/flyctl/install/) and the [Vercel CLI](https://vercel.com/docs/cli).
+Create accounts on [Neon](https://neon.com), [Fly.io](https://fly.io), [Vercel](https://vercel.com), [Google Cloud Console](https://console.cloud.google.com), [Label Studio](https://labelstud.io), [The Blue Alliance](https://www.thebluealliance.com/account), and [FRC Nexus](https://frc.nexus). Install the [Fly CLI](https://fly.io/docs/flyctl/install/) and the [Vercel CLI](https://vercel.com/docs/cli).
 
 ---
 
@@ -63,9 +64,9 @@ postgresql://user:password@ep-xxx-pooler.region.aws.neon.tech/dbname?sslmode=req
 
 That's your `DATABASE_URL`. Use the pooled endpoint, not the direct one, the backend opens a connection pool of up to 20.
 
-**You do not need to run any migrations.** The backend calls `init_db()` and `run_migrations()` on startup ([backend/main.py:85](backend/main.py:85)), and every statement is `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`. Tables appear on first boot.
+**You do not need to run any migrations.** The backend calls `init_db()` and `run_migrations()` on startup ([backend/main.py:155](backend/main.py:155)), and every statement is `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`. Tables appear on first boot.
 
-If you want the Label Studio labeling pipeline, create a **second** Neon database and save its connection string as `DATABASE_URL_LABEL_STUDIO`. This one is currently optional, it's commented out of the required list in [backend/main.py:24](backend/main.py:24).
+If you want the Label Studio labeling pipeline, create a **second** Neon database and save its connection string as `DATABASE_URL_LABEL_STUDIO`. This one is currently optional, it's commented out of the required list in [backend/main.py:25](backend/main.py:25).
 
 ---
 
@@ -79,7 +80,7 @@ Set the authorized redirect URI to your backend's callback:
 https://<your-fly-app>.fly.dev/auth/callback
 ```
 
-The path is `/auth/callback` — the auth router is mounted at `/auth` ([backend/endpoints/__init__.py:13](backend/endpoints/__init__.py:13)) and the callback route is named `callback` ([backend/endpoints/auth.py:43](backend/endpoints/auth.py:43)). It must match exactly, including `https://`.
+The path is `/auth/callback` — the auth router is mounted at `/auth` ([backend/endpoints/__init__.py:19](backend/endpoints/__init__.py:19)) and the callback route is named `callback` ([backend/endpoints/auth.py:101](backend/endpoints/auth.py:101)). It must match exactly, including `https://`.
 
 Save the client ID and secret as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
 
@@ -99,7 +100,20 @@ These are read at import time in [backend/endpoints/label_studio_client.py](back
 
 ---
 
-## 5. Generate VAPID keys
+## 5. Team number, The Blue Alliance and FRC Nexus
+
+Event pages show your team's matches and the event rankings from The Blue Alliance, and queueing and inspection status from FRC Nexus (`GET /events/{key}/info` and `/events/{key}/update`).
+
+**Change the team number first.** It is hardcoded as `TEAM_KEY = "frc3473"` in [backend/endpoints/events.py:22](backend/endpoints/events.py:22). Set it to `frc<your number>`, or your event pages will list Team Sprocket's matches.
+
+- `TBA_API_KEY`: a Read API key, created on your [TBA account page](https://www.thebluealliance.com/account)
+- `NEXUS_API_KEY`: an API key from [FRC Nexus](https://frc.nexus)
+
+Both are read with a blank default ([backend/core/external.py:58](backend/core/external.py:58)), so the backend starts without them. Event pages then load with no matches, rankings or queue status.
+
+---
+
+## 6. Generate VAPID keys
 
 Web push notifications need a VAPID keypair. With `pywebpush` already in the backend dependencies:
 
@@ -114,7 +128,7 @@ That writes `private_key.pem` / `public_key.pem`. Convert them to the URL-safe b
 
 ---
 
-## 6. Deploy the backend to Fly
+## 7. Deploy the backend to Fly
 
 From `backend/`:
 
@@ -132,19 +146,21 @@ flyctl secrets set \
   GOOGLE_CLIENT_ID="..." \
   GOOGLE_CLIENT_SECRET="..." \
   FRONTEND_URL="https://your-app.vercel.app" \
-  CORS_ORIGIN="https://your-app.vercel.app" \
+  CORS_ORIGINS="https://your-app.vercel.app" \
   LABEL_STUDIO_URL="https://..." \
   LABEL_STUDIO_TOKEN="..." \
   LABEL_STUDIO_PROJECT_ID="7" \
+  TBA_API_KEY="..." \
+  NEXUS_API_KEY="..." \
   VAPID_PUBLIC_KEY="..." \
   VAPID_PRIVATE_KEY="..." \
   VAPID_CLAIM_EMAIL="mailto:you@yourteam.org" \
   ENV="production"
 ```
 
-`FRONTEND_URL` must have **no trailing slash**, it's concatenated directly into a redirect ([backend/endpoints/auth.py:60](backend/endpoints/auth.py:60)). `CORS_ORIGIN` must be the exact origin, scheme included.
+`FRONTEND_URL` must have **no trailing slash**, it's concatenated directly into a redirect ([backend/endpoints/auth.py:60](backend/endpoints/auth.py:60)). `CORS_ORIGINS` is a comma-separated list of exact origins, scheme included and no trailing slash; one origin is enough unless you serve the frontend from more than one domain.
 
-You won't know the Vercel URL until step 7, use a placeholder, then re-run `flyctl secrets set` for those two afterward.
+You won't know the Vercel URL until step 8, use a placeholder, then re-run `flyctl secrets set` for those two afterward.
 
 ```bash
 flyctl deploy
@@ -154,7 +170,7 @@ Check it: `flyctl logs`. A successful boot creates the tables and starts uvicorn
 
 ---
 
-## 7. Deploy the frontend to Vercel
+## 8. Deploy the frontend to Vercel
 
 From `frontend/`:
 
@@ -166,11 +182,11 @@ vercel --prod
 
 `VITE_BACKEND_URL` is the only frontend variable. It's baked in at **build time**, so changing it requires a redeploy, not just an env update.
 
-Now go back and fix `FRONTEND_URL` / `CORS_ORIGIN` on Fly, and add the real callback URL in Google Cloud Console.
+Now go back and fix `FRONTEND_URL` / `CORS_ORIGINS` on Fly, and add the real callback URL in Google Cloud Console.
 
 ---
 
-## 8. Wire up CI
+## 9. Wire up CI
 
 The workflows in [.github/workflows](.github/workflows) auto-deploy on push to `main`, backend when `backend/**` changes, frontend when `frontend/**` changes. Add these under **Settings → Secrets and variables → Actions**:
 
@@ -185,11 +201,11 @@ Both deploy workflows open a GitHub issue labeled `incident` when a deployment f
 
 ---
 
-## 9. Seed your first admin
+## 10. Seed your first admin
 
 **Seeding the first admin is done directly in the database, by design.** SprocketStats ships with no default administrator and no bootstrap token, there are no credentials baked into the source for someone to look up. The tradeoff is that a fresh installation has nobody who can approve the first account, so you seed it yourself with SQL once.
 
-Sign in through the app to create your user row. `captain` and `mentor` both carry `requires_approval: True` ([backend/core/permissions.py:54](backend/core/permissions.py:54)), and an unapproved account is rejected with `403 Account pending approval` ([backend/core/account_state.py:60](backend/core/account_state.py:60)), expected at this point.
+Sign in through the app to create your user row. `captain` and `mentor` both carry `requires_approval: True` ([backend/core/permissions.py:59](backend/core/permissions.py:59)), and an unapproved account is rejected with `403 Account pending approval` ([backend/core/account_state.py:68](backend/core/account_state.py:68)), expected at this point.
 
 Then, in the Neon SQL editor:
 
@@ -207,7 +223,7 @@ WHERE email = 'you@yourteam.org';
 
 Sign out and back in. You can now approve everyone else from the Members page.
 
-Note that changing a user's role clears `approved_by` ([backend/db/users.py:176](backend/db/users.py:176)), an approval vouches for a specific role. If you change your own role later, you'll need this SQL again.
+Note that changing a user's role clears `approved_by` ([backend/db/users.py:234](backend/db/users.py:234)), an approval vouches for a specific role. If you change your own role later, you'll need this SQL again.
 
 ---
 
@@ -215,7 +231,7 @@ Note that changing a user's role clears `approved_by` ([backend/db/users.py:176]
 
 **Backend** (Fly secrets).
 
-`REQUIRED_ENV_VARS` ([backend/main.py:14](backend/main.py:14)) is the **warn list**, the set the app names on startup if unset. It is deliberately broader than the set the app cannot run without, so that a missing optional variable is visible in the logs instead of silent. The **If missing** column is what actually happens.
+`REQUIRED_ENV_VARS` ([backend/main.py:15](backend/main.py:15)) is the **warn list**, the set the app names on startup if unset. It is deliberately broader than the set the app cannot run without, so that a missing optional variable is visible in the logs instead of silent. The **If missing** column is what actually happens.
 
 | Variable | Warned | If missing | Notes |
 | --- | --- | --- | --- |
@@ -226,12 +242,15 @@ Note that changing a user's role clears `approved_by` ([backend/db/users.py:176]
 | `GOOGLE_CLIENT_SECRET` | yes | process dies at import | |
 | `LABEL_STUDIO_URL` | yes | process dies at import | no trailing slash |
 | `LABEL_STUDIO_TOKEN` | yes | process dies at import | |
-| `CORS_ORIGIN` | in production | process dies at import | exact origin; unused when `ENV=development` |
+| `CORS_ORIGINS` | in production | process dies at import | comma-separated exact origins; unused when `ENV=development` |
 | `FRONTEND_URL` | yes | **runs**, OAuth redirects to `None/...` | no trailing slash |
 | `VAPID_PUBLIC_KEY` | yes | **runs**, web push broken | |
 | `VAPID_PRIVATE_KEY` | yes | **runs**, web push broken | |
 | `LABEL_STUDIO_PROJECT_ID` | yes | **runs**, defaults to `7` | |
 | `VAPID_CLAIM_EMAIL` | no | **runs**, defaults to `mailto:admin@example.com` | push services may reject the default |
+| `TBA_API_KEY` | no | **runs**, event pages show no matches or rankings | The Blue Alliance Read API key (step 5) |
+| `NEXUS_API_KEY` | no | **runs**, event pages show no queueing or inspection status | FRC Nexus API key (step 5) |
+| `MOCK_EXTERNAL` | no | **runs** against the real APIs | `true` replaces TBA and Nexus with canned data from `backend/core/mock_data.py`; for local development only |
 | `TEAM_TIMEZONE` | no | **runs**, defaults to `America/Los_Angeles` | IANA zone; used for meeting/event reminder times and to read the naive local times in `events.start_time` |
 | `ATTENDANCE_CODE_KEY` | for member codes | **runs**; `/attendance/code_key`, `/kiosk/scan` and `/kiosk/authorize` fail | random 32+ bytes. Every member's code secret is derived from it, so changing it invalidates every phone's code until each comes back online once. A secret: set it with `flyctl secrets set`. |
 | `DATABASE_URL_DIRECT` | no | **runs**, kiosk QR events are in-memory only (correct for a single machine) | Neon **direct** (non-pooled) connection string. Set it when running more than one Fly machine so kiosk QR-claim SSE events reach the right machine via Postgres `LISTEN/NOTIFY`. The LISTEN connection is only open while a kiosk is connected. |
@@ -252,11 +271,11 @@ Note that changing a user's role clears `approved_by` ([backend/db/users.py:176]
 
 Whether the app then survives depends on how each variable is read, see the **If missing** column above. Variables read as `os.environ["X"]` at module import raise `KeyError` and the process dies; ones read with `.get()` leave the app running with that feature broken. `DATABASE_URL` is its own case: it fails when the pool is first created during startup.
 
-**`403 Account pending approval`.** Expected before seeding, see step 9.
+**`403 Account pending approval`.** Expected before seeding, see step 10.
 
 **OAuth `redirect_uri_mismatch`.** The Google Console URI must exactly match `https://<fly-app>.fly.dev/auth/callback`, no trailing slash, `https` not `http`.
 
-**CORS errors in the browser.** `CORS_ORIGIN` must be the exact Vercel origin. With `ENV=development` the backend allows all origins ([backend/main.py:110](backend/main.py:110)); in production it allows exactly one.
+**CORS errors in the browser.** `CORS_ORIGINS` must contain the exact Vercel origin. With `ENV=development` the backend allows all origins ([backend/main.py:183](backend/main.py:183)); in production it allows only the origins listed.
 
 **Frontend calls `undefined/...`.** `VITE_BACKEND_URL` wasn't set at build time. Set it and redeploy.
 
