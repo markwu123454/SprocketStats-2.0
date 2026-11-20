@@ -1,4 +1,4 @@
-import {cleanupOutdatedCaches, precacheAndRoute} from "workbox-precaching";
+import {addPlugins, cleanupOutdatedCaches, precacheAndRoute} from "workbox-precaching";
 import {clientsClaim} from "workbox-core";
 import {registerRoute} from "workbox-routing";
 import {NetworkFirst, StaleWhileRevalidate} from "workbox-strategies";
@@ -19,6 +19,21 @@ clientsClaim();
 
 // Drop precaches left behind by older workbox versions.
 cleanupOutdatedCaches();
+
+// Never keep a page under a script, stylesheet or image URL. A host that
+// answers missing files with index.html (status 200) would otherwise leave this
+// device serving HTML as JavaScript, which breaks that page until the chunk is
+// renamed. Refused during install, the precache fails and the next update
+// check tries again; the worker already running keeps serving.
+const refuseHtmlForAssets = {
+    cacheWillUpdate: async ({request, response}) => {
+        const path = new URL(request.url).pathname;
+        const isAsset = /\.(m?js|css|png|jpe?g|gif|svg|webp|avif|ico|woff2?|json|wasm)$/i.test(path);
+        const isHtml = (response.headers.get("content-type") || "").includes("text/html");
+        return isAsset && isHtml ? null : response;
+    },
+};
+addPlugins([refuseHtmlForAssets]);
 
 precacheAndRoute(self.__WB_MANIFEST);
 
@@ -45,6 +60,7 @@ registerRoute(
         cacheName: "images",
         plugins: [
             new CacheableResponsePlugin({statuses: [200]}),
+            refuseHtmlForAssets,
             new ExpirationPlugin({maxEntries: 300, maxAgeSeconds: 60 * 24 * 60 * 60, purgeOnQuotaError: true}),
         ],
     })
