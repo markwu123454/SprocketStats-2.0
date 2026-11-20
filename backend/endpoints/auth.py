@@ -153,9 +153,8 @@ async def me(user: dict = Depends(get_current_user)):
     """
     await account_state.assert_active(user["sub"])
 
-    # offline_code isn't on the JWT (kept out of the signed,
-    # decodable-by-anyone-with-the-cookie token since it's a standalone
-    # credential -- see endpoints.kiosk), so the user row is fetched fresh here,
+    # Per-member grants (e.g. kiosk access from the Members page) aren't on the
+    # JWT, so the user row is fetched fresh here for the permissions below,
     # alongside the pending notices.
     pending, row = await asyncio.gather(
         db.get_pending_notifications_for_user(user["sub"], user.get("role")),
@@ -173,7 +172,11 @@ async def me(user: dict = Depends(get_current_user)):
         "grade": user.get("grade"),
         "team_year": user.get("team_year"),
         "onboarding_complete": user.get("onboarding_complete", False),
-        "offline_code": row["offline_code"] if row else None,
+        # LEGACY-OFFLINE-CODE: app builds from before the offline-code removal
+        # read offline_code.length on the dashboard and crash without it, so
+        # send a blank one until phones have updated. Delete in the next
+        # update; see NEXT_UPDATE_CLEANUP.md.
+        "offline_code": "",
         "permissions": permissions_for_user({**dict(row), "role": user.get("role")}) if row else get_permissions_for_role(user.get("role")),
         "pending_notifications": [
             {

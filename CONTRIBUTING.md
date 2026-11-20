@@ -2,14 +2,18 @@
 
 ## IDE project setup
 
-`.idea/` is gitignored on purpose — it holds per-machine state (interpreter paths, SDK
-registry names, window layout) that shouldn't be shared. The two exceptions are the `.run/`
-folders (portable run configurations) and `.idea/.name` (just the plain-text project display
-name, sets the root project's name to `sprocketstats` in the IDE window/title regardless of
-what folder you cloned the repo into). Everything else in `.idea/` regenerates locally the
-first time your IDE opens the code, and the module name it lands on depends on **how** you
-open it. Pick one of the two supported modes below and set it up accordingly — don't mix
-them.
+The root `.gitignore` ignores the repo-root `.idea/`, which holds per-machine state
+(interpreter paths, SDK registry names, window layout) that shouldn't be shared. The one
+exception there is `.idea/.name`, the plain-text project display name, which sets the root
+project's name to `sprocketstats` in the IDE window/title regardless of what folder you
+cloned the repo into. Everything else in the root `.idea/` regenerates locally the first
+time your IDE opens the code, and the module name it lands on depends on **how** you open
+it. Pick one of the two supported modes below and set it up accordingly — don't mix them.
+
+`backend/.idea/` and `frontend/.idea/` are different: they are the project settings for
+Option B and are committed (module files, inspection profiles, and in `backend/` the SDK
+name and database connections). Each has its own `.gitignore` that keeps per-user state
+(`workspace.xml`, `shelf/`, `dataSources.local.xml`, and so on) out of git.
 
 Naming, once set up correctly: the root project is `sprocketstats`, the backend module is
 `backend` (from `backend/pyproject.toml`), the frontend module is `frontend` (from
@@ -28,45 +32,73 @@ the backend, and plain PyCharm Community can't run the frontend).
    `frontend/package.json`.
 3. Point the `backend` module's interpreter at `backend/.venv` (create it first if it
    doesn't exist yet — see backend setup below).
-4. Run configs `backend: uvicorn` and `frontend: dev` (from `/.run/`) should now show up
-   in the run configuration dropdown and work as-is.
+4. Run configs `backend: uvicorn` (from `/.run/`) and `dev` (from `frontend/.run/`) should
+   now show up in the run configuration dropdown and work as-is. The dropdown also lists
+   `uvicorn` from `backend/.run/`; that one is for Option B and won't find `.env` here.
 
 ### Option B — separate IDE windows per app
 
 Open `backend/` and `frontend/` as two independent projects, each in whichever IDE fits
 (PyCharm for `backend/`, PyCharm or WebStorm for `frontend/`).
 
-1. Open `backend/` directly as a project root in PyCharm. It auto-imports from
-   `backend/pyproject.toml` and names the module `backend`.
-2. Open `frontend/` directly as a project root in PyCharm or WebStorm. It auto-imports
-   from `frontend/package.json` and names the module `frontend`.
-3. Run configs `uvicorn` (in `backend/.run/`) and `dev` (in `frontend/.run/`) work as-is
-   in their respective windows.
+1. Open `backend/` directly as a project root in PyCharm. It picks up the committed
+   `backend/.idea/` and names the module `backend`. The committed SDK name is
+   `Python 3.11 (backend)`; point it at `backend/.venv`.
+2. Open `frontend/` directly as a project root in PyCharm or WebStorm. It picks up the
+   committed `frontend/.idea/` and names the module `frontend`.
+3. Run config `uvicorn` (in `backend/.run/`) works as-is. The frontend's `dev` config is
+   written for Option A (see below), so in this window start the dev server with the run
+   icon next to the `dev` script in `package.json`, or `npm run dev` in a terminal.
 
 ### Why this matters
 
 The two modes aren't interchangeable at the file level: a run config's `$PROJECT_DIR$`
 macro resolves to whatever folder is the project root, so a path that's correct when
 opened at the repo root (`$PROJECT_DIR$/backend/.env`) is wrong when `backend/` itself is
-the project root (`$PROJECT_DIR$/.env`), and vice versa. That's why there are two sets of
-run configs — `/.run/` for Option A, `backend/.run/` + `frontend/.run/` for Option B — and
-why you shouldn't hand-edit one to match the other's expectations.
+the project root (`$PROJECT_DIR$/.env`), and vice versa. The committed run configs are:
+
+| File | Config name | Written for |
+| --- | --- | --- |
+| `.run/backend_ uvicorn.run.xml` | `backend: uvicorn` | Option A (`$PROJECT_DIR$/backend/.env`) |
+| `backend/.run/uvicorn.run.xml` | `uvicorn` | Option B (`$PROJECT_DIR$/.env`) |
+| `frontend/.run/dev.run.xml` | `dev` | Option A (`$PROJECT_DIR$/frontend/package.json`) |
+
+The frontend has only the one config, and both modes load it. Its `package-json` path has
+been committed in both forms (`$PROJECT_DIR$/package.json` for Option B,
+`$PROJECT_DIR$/frontend/package.json` for Option A) several times, as it was fixed up for
+whichever layout the committer had open. Keep it in the Option A form, and don't hand-edit
+any config to match the other mode's expectations.
 
 ## Environment setup
 
 - **Backend**: Python 3.11+, dependencies in `backend/pyproject.toml`. Create a venv inside
   `backend/` (`backend/.venv`) and install with `pip install -e ".[test]"` from `backend/`.
-  Create `backend/.env` (gitignored, not committed) with the variables listed in
-  [SELF_HOSTING.md § Environment variable reference](SELF_HOSTING.md#environment-variable-reference)
-  — for local dev you generally only need `DATABASE_URL`, `SESSION_SECRET`, `JWT_SECRET`,
-  `GOOGLE_CLIENT_ID`/`SECRET`, and `ENV=development`; the rest have safe defaults or only
-  matter for features you're actively touching.
+  Run the tests with `pytest` from `backend/`; they need no database or `.env`. Create `backend/.env`
+  (gitignored, not committed) with the variables listed in
+  [SELF_HOSTING.md § Environment variable reference](SELF_HOSTING.md#environment-variable-reference).
+  For local dev you generally need:
+  - `DATABASE_URL`, `SESSION_SECRET`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`/`SECRET`, and
+    `ENV=development`.
+  - `LABEL_STUDIO_URL` and `LABEL_STUDIO_TOKEN`. The backend won't start without them,
+    because they're read at import time; any URL and a dummy token will do if you aren't
+    working on labeling.
+  - Optionally `MOCK_EXTERNAL=true`, which replaces The Blue Alliance and FRC Nexus with
+    canned data so event pages work without API keys or a network.
+
+  The rest have safe defaults or only matter for features you're actively touching.
+  `CORS_ORIGINS` isn't needed: with `ENV=development` the backend allows every origin.
 - **Frontend**: Node.js 24+, dependencies in `frontend/package.json`. Install with `npm ci`
-  from `frontend/` (uses the committed `package-lock.json`).
+  from `frontend/` (uses the committed `package-lock.json`), and set `VITE_BACKEND_URL` in
+  `frontend/.env` (gitignored), e.g. `VITE_BACKEND_URL=http://localhost:8000`.
 
 ## Before opening a PR
 
-- Don't commit `.idea/` or any personal IDE state (it's gitignored for a reason — accidental
-  commits of local interpreter names or absolute machine paths have happened before).
-- If you touch a `.run/*.xml` file, check whether the same logical config exists in both
-  `/.run/` and the per-app `.run/` folder, and keep both in sync using the path rules above.
+- Don't commit personal IDE state: anything in the root `.idea/` besides `.name` (it's
+  gitignored for a reason), or changes your IDE made to the committed files in
+  `backend/.idea/` and `frontend/.idea/` that only record your machine, such as a
+  different interpreter name or absolute paths. Accidental commits of both have happened
+  before.
+- If `frontend/.run/dev.run.xml` shows up in your diff, check its `package-json` path is
+  still `$PROJECT_DIR$/frontend/package.json` before committing it.
+- If you touch a backend run config, make the same change in both `/.run/` and
+  `backend/.run/`, using the path rules above.

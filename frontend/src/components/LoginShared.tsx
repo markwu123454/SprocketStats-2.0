@@ -107,9 +107,9 @@ export function GoogleButton({
 /* ── Continue offline ──────────────────────────────────────────
    Takes the Google button's place while the server can't be reached and
    this phone can still sign in offline (lib/offline.ts). Same size and spot,
-   the accent hero style, and the member's initials so it's clear whose
-   saved session it opens. No profile photo: it wouldn't load offline. */
-export function ContinueOfflineButton({ name, firstName, onClick }: { name: string; firstName: string; onClick: () => void }) {
+   the accent hero style, and the member's profile photo (served from the
+   browser's cache) so it's clear whose saved session it opens. */
+export function ContinueOfflineButton({ name, firstName, picture, onClick }: { name: string; firstName: string; picture?: string; onClick: () => void }) {
     return (
         <button
             onClick={onClick}
@@ -122,7 +122,7 @@ export function ContinueOfflineButton({ name, firstName, onClick }: { name: stri
                 boxShadow: "0 6px 18px -8px rgba(0,0,0,.25)",
             }}
         >
-            <Avatar name={name} size={30} />
+            <Avatar name={name} picture={picture} size={30} />
             <span>Continue offline as {firstName}</span>
             <ArrowRight size={16} aria-hidden="true" />
         </button>
@@ -133,7 +133,7 @@ export function ContinueOfflineButton({ name, firstName, onClick }: { name: stri
 export function SignInAction({ loading, signingIn, signInWithGoogle }: { loading: boolean; signingIn: boolean; signInWithGoogle: () => void }) {
     const { connection, offlineUser, continueOffline } = useAuth();
     if (offlineUser) {
-        return <ContinueOfflineButton name={offlineUser.name} firstName={offlineUser.given_name || offlineUser.display_name} onClick={continueOffline} />;
+        return <ContinueOfflineButton name={offlineUser.name} firstName={offlineUser.given_name || offlineUser.display_name} picture={offlineUser.picture} onClick={continueOffline} />;
     }
     return <GoogleButton loading={loading || signingIn} disabled={connection !== null} onClick={signInWithGoogle} />;
 }

@@ -13,6 +13,7 @@ import Skeleton from "@/components/ui/Skeleton"
 import Toggle from "@/components/ui/Toggle"
 import AreaInput from "@/components/tasks/AreaInput"
 import HelpTip from "@/components/tasks/HelpTip"
+import TaskAvatar from "@/components/tasks/TaskAvatar"
 import { BUCKET_OPTIONS, TASK_BUCKETS, bucketLabel } from "@/lib/taskBuckets"
 import {
     addContributor, addNote, createTask, deleteNote, fetchNotes, leaveTask, removeContributor, reviewTask, unreviewTask, updateTask,
@@ -20,8 +21,8 @@ import {
     type CreateTaskInput, type Person, type Task, type TaskNote, type TaskPriority, type UpdateTaskInput,
 } from "@/lib/tasksApi"
 import {
-    DANGER_RED, PRIORITY_COLOR, AVATAR_INK, failMessage, TASK_SORT_OPTIONS, CRITICAL_BADGE_STYLE, priorityChoices,
-    tint, tintColor, avatarBg, initialOf, formatRelativeTime, formatPosted, rowDue, assigneeOptions, compareTasks, compareDone,
+    DANGER_RED, PRIORITY_COLOR, failMessage, TASK_SORT_OPTIONS, CRITICAL_BADGE_STYLE, priorityChoices,
+    tint, tintColor, formatRelativeTime, formatPosted, rowDue, assigneeOptions, compareTasks, compareDone,
     matchesFilter, type SettableStatus, type TaskFilter, type TaskSort, type TasksPageState, type WhoFilter,
     areaSuggestions, TASK_FIELD_HELP,
 } from "@/lib/taskFormat"
@@ -831,7 +832,7 @@ function NotesDrawer({ task, board, user }: { task: Task; board: TaskBoard; user
                     const canDelete = note.author_id === user.id || board.canAssign
                     return (
                         <div key={note.id} className="flex items-start gap-2">
-                            <span className="flex-none flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold" style={noteAvatarStyle(note.author_name)}>{initialOf(note.author_name)}</span>
+                            <TaskAvatar name={note.author_name} picture={note.author_picture} />
                             <div className="flex-1 min-w-0">
                                 <div className="text-xs theme-subtext-color">
                                     <span className="font-bold theme-text">{note.author_name ?? "Someone"}</span> · {formatRelativeTime(note.created_at)}
@@ -866,10 +867,6 @@ function NotesDrawer({ task, board, user }: { task: Task; board: TaskBoard; user
 
 const notesDrawerStyle: CSSProperties = {
     background: tintDark("--theme-bg", 70), borderColor: tint("--theme-border", 50),
-}
-function noteAvatarStyle(name: string | null): CSSProperties {
-    // Avatar swatches are data-identity colours (see taskFormat AVATAR_COLORS).
-    return { color: AVATAR_INK, background: avatarBg(name ?? "?") }
 }
 
 // ── Bottom sheets ────────────────────────────────────────────────────────

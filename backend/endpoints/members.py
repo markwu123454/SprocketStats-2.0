@@ -73,8 +73,8 @@ async def list_members(user: dict = Depends(require_roster_access)):
     reachable at a personal (non-org) address, so it isn't shared through the app.
 
     :param user: The authenticated, authorized user (enforces access; value unused).
-    :returns: A list of member rows with id, email, name, display_name, role,
-        grade, and team_year.
+    :returns: A list of member rows with id, email, name, display_name,
+        picture, role, grade, and team_year.
     """
     rows = await db.list_all_users()
     return [_row_to_member(r, mask_email=r["role"] == "mentor") for r in rows]
@@ -324,6 +324,7 @@ def _row_to_member(r, *, mask_email: bool = False) -> dict:
         "email": None if mask_email else r["email"],
         "name": r["name"],
         "display_name": r["display_name"],
+        "picture": r["picture"],
         "role": r["role"],
         "grade": r["grade"],
         "team_year": r["team_year"],

@@ -11,8 +11,7 @@ import {
 const API = import.meta.env.VITE_BACKEND_URL
 
 // The last /auth/me profile, so a member who was signed in on this phone can
-// continue offline (see lib/offline.ts). The offline_code credential is left
-// out of the copy.
+// continue offline (see lib/offline.ts).
 const CACHED_USER_KEY = "sprocket-cached-user"
 
 function readCachedUser() {
@@ -27,9 +26,7 @@ function readCachedUser() {
 function writeCachedUser(user: Record<string, unknown> | null) {
     try {
         if (user) {
-            const {offline_code: _omit, ...rest} = user
-            void _omit
-            localStorage.setItem(CACHED_USER_KEY, JSON.stringify(rest))
+            localStorage.setItem(CACHED_USER_KEY, JSON.stringify(user))
         } else {
             localStorage.removeItem(CACHED_USER_KEY)
         }

@@ -10,8 +10,10 @@ import FormFooter from "@/components/ui/FormFooter"
 import Notice from "@/components/ui/Notice"
 import Sheet from "@/components/ui/Sheet"
 import Skeleton from "@/components/ui/Skeleton"
+import Avatar from "@/components/Avatar"
 import AreaInput from "@/components/tasks/AreaInput"
 import HelpTip from "@/components/tasks/HelpTip"
+import TaskAvatar from "@/components/tasks/TaskAvatar"
 import { BUCKET_OPTIONS, TASK_BUCKETS, bucketLabel } from "@/lib/taskBuckets"
 import {
     addContributor, addNote, createTask, deleteNote, fetchNotes, leaveTask, removeContributor, reviewTask, unreviewTask, updateTask,
@@ -19,8 +21,8 @@ import {
     type CreateTaskInput, type Person, type Task, type TaskNote, type TaskPriority, type UpdateTaskInput,
 } from "@/lib/tasksApi"
 import {
-    DANGER_RED, PRIORITY_COLOR, AVATAR_INK, failMessage, CRITICAL_BADGE_STYLE, priorityChoices,
-    tint, tintColor, avatarBg, initialOf, formatRelativeTime, formatPosted, isOverdue, rowDue, assigneeOptions,
+    DANGER_RED, PRIORITY_COLOR, failMessage, CRITICAL_BADGE_STYLE, priorityChoices,
+    tint, tintColor, initialOf, formatRelativeTime, formatPosted, isOverdue, rowDue, assigneeOptions,
     compareTasks, compareDone, matchesFilter, areaSuggestions, TASK_SORT_OPTIONS, TASK_FIELD_HELP,
     type SettableStatus, type WhoFilter, type Quick, type TaskSort, type TasksPageState,
 } from "@/lib/taskFormat"
@@ -670,7 +672,10 @@ function TaskRow({
     const disabledTitle = "Only the creator, a lead, or someone on this task can update its status"
 
     const avatarPeople = task.assignee_id
-        ? [{ id: task.assignee_id, name: task.assignee_name ?? "Assigned" }, ...task.contributors.map(c => ({ id: c.id, name: c.display_name }))]
+        ? [
+            { id: task.assignee_id, name: task.assignee_name ?? "Assigned", picture: task.assignee_picture },
+            ...task.contributors.map(c => ({ id: c.id, name: c.display_name, picture: c.picture })),
+        ]
         : []
 
     const chipUnread = unread > 0
@@ -770,18 +775,13 @@ function TaskRow({
 
                     <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", width: 76 }}>
                         {avatarPeople.map((p, i) => (
-                            <span
+                            <TaskAvatar
                                 key={p.id}
+                                name={p.name}
+                                picture={p.picture}
                                 title={p.name}
-                                className="text-xs font-bold"
-                                style={{
-                                    width: 24, height: 24, borderRadius: "50%", display: "grid", placeItems: "center",
-                                    marginLeft: i === 0 ? 0 : -6,
-                                    border: "1.5px solid var(--theme-bg)", background: avatarBg(p.name), color: AVATAR_INK,
-                                }}
-                            >
-                                {initialOf(p.name)}
-                            </span>
+                                style={{ marginLeft: i === 0 ? 0 : -6, border: "1.5px solid var(--theme-bg)" }}
+                            />
                         ))}
                         {!task.assignee_id && (
                             <button
@@ -948,12 +948,7 @@ function TaskRow({
                                 <div style={{ display: "flex", alignItems: "center", gap: 9, minHeight: 38, flexWrap: "wrap" }}>
                                     {task.assignee_id && (
                                         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                            <span style={{
-                                                width: 24, height: 24, borderRadius: "50%", display: "grid", placeItems: "center",
-                                                color: AVATAR_INK, background: avatarBg(task.assignee_name ?? "?"),
-                                            }} className="text-xs font-bold">
-                                                {initialOf(task.assignee_name)}
-                                            </span>
+                                            <TaskAvatar name={task.assignee_name} picture={task.assignee_picture} />
                                             <span className="text-sm theme-text">{task.assignee_name}</span>
                                         </span>
                                     )}
@@ -998,6 +993,7 @@ function TaskRow({
                         taskId={task.id}
                         currentUserId={currentUser.id}
                         currentUserGivenName={currentUser.display_name}
+                        currentUserPicture={currentUser.picture}
                         canAssign={canAssign}
                         unreadCount={unread}
                         draft={draft}
@@ -1115,6 +1111,7 @@ interface NotesThreadProps {
     taskId: string
     currentUserId: string
     currentUserGivenName: string
+    currentUserPicture?: string
     canAssign: boolean
     unreadCount: number
     draft: string
@@ -1124,7 +1121,7 @@ interface NotesThreadProps {
 
 /** The expanded row's right column -- fetches lazily on mount (i.e. every
  *  time a row expands, since only one row is ever expanded at a time). */
-function NotesThread({ taskId, currentUserId, currentUserGivenName, canAssign, unreadCount, draft, onDraftChange, onNoteCountChange }: NotesThreadProps) {
+function NotesThread({ taskId, currentUserId, currentUserGivenName, currentUserPicture, canAssign, unreadCount, draft, onDraftChange, onNoteCountChange }: NotesThreadProps) {
     const [notes, setNotes] = useState<TaskNote[] | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [posting, setPosting] = useState(false)
@@ -1202,12 +1199,7 @@ function NotesThread({ taskId, currentUserId, currentUserGivenName, canAssign, u
                         const canDelete = mine || canAssign
                         return (
                             <div key={note.id} style={{ display: "flex", gap: 10, padding: "9px 8px 9px 0", borderTop: i === 0 ? "none" : "1px solid var(--ag-grid-row-border)" }}>
-                                <span style={{
-                                    width: 24, height: 24, flex: "none", borderRadius: "50%", display: "grid", placeItems: "center",
-                                    color: AVATAR_INK, background: avatarBg(note.author_name ?? "?"),
-                                }} className="text-xs font-bold">
-                                    {initialOf(note.author_name)}
-                                </span>
+                                <TaskAvatar name={note.author_name} picture={note.author_picture} />
                                 <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
                                     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 7px" }}>
                                         <span className="text-xs font-bold theme-h1-color">{note.author_name ?? "Someone"}</span>
@@ -1237,12 +1229,13 @@ function NotesThread({ taskId, currentUserId, currentUserGivenName, canAssign, u
             )}
 
             <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                <span style={{
-                    width: 24, height: 24, flex: "none", borderRadius: "50%", display: "grid", placeItems: "center",
-                    color: "var(--theme-bg)", background: "var(--theme-text-contrast)",
-                }} className="text-xs font-bold">
-                    {initialOf(currentUserGivenName)}
-                </span>
+                <Avatar
+                    name={currentUserGivenName}
+                    picture={currentUserPicture}
+                    size={24}
+                    monogram={initialOf(currentUserGivenName)}
+                    monogramStyle={{ background: "var(--theme-text-contrast)", color: "var(--theme-bg)", fontSize: 12, fontWeight: 700 }}
+                />
                 <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
                     <textarea
                         value={draft}

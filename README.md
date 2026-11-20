@@ -1,7 +1,7 @@
 # SprocketStats — FRC Scouting & Team Operations
 
 [![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.13-blue)
+![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
 ![Node.js](https://img.shields.io/badge/Node.js-24.12-brightgreen)
 
 SprocketStats is an open source **scouting and team operations** platform for **FIRST Robotics Competition (FRC)** teams, built for fast and reliable match data collection and for running the team behind it.
