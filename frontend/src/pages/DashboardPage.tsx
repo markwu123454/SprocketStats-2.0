@@ -418,23 +418,32 @@ export default function DashboardPage() {
                             <KeyRound size={18} className="theme-text-contrast opacity-80" />
                         </div>
 
-                        <div className="flex items-center gap-2">
-                            <p className="text-2xl font-mono font-bold theme-text tracking-[0.3em]">
-                                {codeVisible ? user.offline_code : "•".repeat(user.offline_code.length)}
+                        {user.offline_code ? (
+                            <>
+                                <div className="flex items-center gap-2">
+                                    <p className="text-2xl font-mono font-bold theme-text tracking-[0.3em]">
+                                        {codeVisible ? user.offline_code : "•".repeat(user.offline_code.length)}
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCodeVisible(v => !v)}
+                                        aria-label={codeVisible ? "Hide account code" : "Show account code"}
+                                        aria-pressed={codeVisible}
+                                        className="p-1.5 rounded-lg theme-subtext-color hover:theme-button-hover transition-colors"
+                                    >
+                                        {codeVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                </div>
+                                <p className="text-xs theme-subtext-color">
+                                    Do not share this code with others.
+                                </p>
+                            </>
+                        ) : (
+                            // Signed in offline: the code isn't saved on the phone.
+                            <p className="text-sm theme-subtext-color">
+                                Your account code shows once you're back online. My code works offline.
                             </p>
-                            <button
-                                type="button"
-                                onClick={() => setCodeVisible(v => !v)}
-                                aria-label={codeVisible ? "Hide account code" : "Show account code"}
-                                aria-pressed={codeVisible}
-                                className="p-1.5 rounded-lg theme-subtext-color hover:theme-button-hover transition-colors"
-                            >
-                                {codeVisible ? <EyeOff size={16} /> : <Eye size={16} />}
-                            </button>
-                        </div>
-                        <p className="text-xs theme-subtext-color">
-                            Do not share this code with others.
-                        </p>
+                        )}
                     </div>
                 )}
             </div>

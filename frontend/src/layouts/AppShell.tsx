@@ -9,6 +9,7 @@ import { OfflineLabel } from "@/components/Offline"
 import Sheet from "@/components/ui/Sheet"
 import { focusRing, menuRowClass } from "@/lib/uiClasses"
 import NotificationGate from "@/components/NotificationGate.tsx"
+import PageErrorBoundary from "@/components/ErrorBoundary"
 import { can, getPerm } from "@/lib/permissions"
 import { CORE_TABS, OTHER_TAB, otherPages } from "@/lib/navTabs"
 import { visibleSections, type ControlSection } from "@/lib/controlSections"
@@ -279,7 +280,9 @@ export default function AppShell() {
                 </aside>
 
                 <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden theme-scrollbar">
-                    <Outlet />
+                    <PageErrorBoundary>
+                        <Outlet />
+                    </PageErrorBoundary>
                 </main>
             </div>
 

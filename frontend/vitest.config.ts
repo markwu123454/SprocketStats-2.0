@@ -1,3 +1,4 @@
+import path from "path"
 import { defineConfig } from "vitest/config"
 
 // Separate from vite.config.ts on purpose: unit tests don't need the PWA
@@ -5,6 +6,9 @@ import { defineConfig } from "vitest/config"
 // collection down. Add `environment: "jsdom"` here once we start testing code
 // that touches the DOM / browser globals (e.g. the notification helpers).
 export default defineConfig({
+    resolve: {
+        alias: { "@": path.resolve(__dirname, "./src") },
+    },
     test: {
         environment: "node",
         include: ["src/**/*.test.ts", "src/**/*.test.tsx"],

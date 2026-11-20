@@ -43,6 +43,18 @@ export default defineConfig({
 
             injectManifest: {
                 maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MB
+                // The app's code plus the images every screen shows, so it
+                // looks the same offline: season art, wordmarks, logos, icons
+                // (~200 KB). Not the 3,800 team icons or the big PNG/GIF
+                // originals; sw.js keeps other images once they've been seen.
+                globPatterns: [
+                    "**/*.{js,css,html}",
+                    "**/*.svg",
+                    "seasons/*/expanded.avif",
+                    "human_signal_*.png",
+                    "pwa/*.png",
+                    "favicon.ico",
+                ],
             },
 
             injectRegister: "auto",
