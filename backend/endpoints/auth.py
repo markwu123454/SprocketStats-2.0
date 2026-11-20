@@ -172,6 +172,11 @@ async def me(user: dict = Depends(get_current_user)):
         "grade": user.get("grade"),
         "team_year": user.get("team_year"),
         "onboarding_complete": user.get("onboarding_complete", False),
+        # LEGACY-OFFLINE-CODE: app builds from before the offline-code removal
+        # read offline_code.length on the dashboard and crash without it, so
+        # send a blank one until phones have updated. Delete in the next
+        # update; see NEXT_UPDATE_CLEANUP.md.
+        "offline_code": "",
         "permissions": permissions_for_user({**dict(row), "role": user.get("role")}) if row else get_permissions_for_role(user.get("role")),
         "pending_notifications": [
             {
