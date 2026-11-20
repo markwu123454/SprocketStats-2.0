@@ -86,7 +86,10 @@ _CODE_NUMBER_SEQ_DDL = "CREATE SEQUENCE IF NOT EXISTS users_code_number_seq MINV
 
 
 async def _create_offline_code_functions(conn) -> None:
-    """Install the checksum helpers required by ``users.offline_code``."""
+    """Install the checksum helpers the old ``users.offline_code`` column used.
+
+    Only migration 1 calls this now: a fresh database still replays it, and
+    migration 17 then drops the column and these functions again."""
     await conn.execute("""
         CREATE OR REPLACE FUNCTION public.damm_check(digits TEXT)
         RETURNS INTEGER
@@ -219,7 +222,6 @@ async def init_db():
                 # Same lock as run_migrations, so app processes starting at once
                 # don't race each other's CREATE TABLE IF NOT EXISTS.
                 await conn.execute("SELECT pg_advisory_xact_lock($1)", _SCHEMA_LOCK_KEY)
-                await _create_offline_code_functions(conn)
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         id                  TEXT        PRIMARY KEY,
@@ -236,7 +238,6 @@ async def init_db():
                         team_year           TEXT,
                         approved_by         TEXT        REFERENCES users(id),
                         banned_at           TIMESTAMPTZ,
-                        offline_code        TEXT        NOT NULL UNIQUE DEFAULT gen_offline_code(),
                         code_version        INTEGER     NOT NULL DEFAULT 1,
                         code_number         INTEGER     UNIQUE,
                         CONSTRAINT onboarded_fields_present CHECK (
@@ -247,10 +248,6 @@ async def init_db():
                                 AND display_name IS NOT NULL
                                 AND role IS NOT NULL
                             )
-                        ),
-                        CONSTRAINT users_offline_code_format CHECK (
-                            offline_code ~ '^[0-9]{8}$'
-                            AND is_valid_offline_code(offline_code)
                         )
                     )
                 """)
@@ -996,6 +993,19 @@ async def _migration_0016_attendance_checkout_method(conn) -> None:
     )
 
 
+async def _migration_0017_drop_offline_code(conn) -> None:
+    """Drop ``users.offline_code`` and the functions that generated and checked
+    it. Nothing reads it any more: kiosks check members in from their rotating
+    member codes, and the offline-code kiosk endpoints are gone. Dropping the
+    column also drops its UNIQUE and format constraints and its
+    ``gen_offline_code()`` default, which frees the functions to be dropped.
+    The codes themselves are not kept anywhere."""
+    await conn.execute("ALTER TABLE users DROP COLUMN IF EXISTS offline_code")
+    await conn.execute("DROP FUNCTION IF EXISTS public.gen_offline_code()")
+    await conn.execute("DROP FUNCTION IF EXISTS public.is_valid_offline_code(TEXT)")
+    await conn.execute("DROP FUNCTION IF EXISTS public.damm_check(TEXT)")
+
+
 # Append-only: never edit or renumber a migration that has shipped. Each must
 # be idempotent against init_db's current schema, because a fresh database
 # gets that schema first and then runs every migration.
@@ -1016,6 +1026,7 @@ _MIGRATIONS = [
     (14, _migration_0014_member_code_numbers),
     (15, _migration_0015_kiosk_access_grants),
     (16, _migration_0016_attendance_checkout_method),
+    (17, _migration_0017_drop_offline_code),
 ]
 
 

@@ -24,10 +24,6 @@ KIOSK_COOKIE_NAME = "kiosk_auth"
 KIOSK_TOKEN_PURPOSE = "attendance_kiosk"
 
 
-class VerifyCodeRequest(BaseModel):
-    code: str = Field(min_length=1)
-
-
 class VerifyIdRequest(BaseModel):
     id: str = Field(min_length=1)
 
@@ -35,11 +31,6 @@ class VerifyIdRequest(BaseModel):
 class VerifyIdResponse(BaseModel):
     name: str
     status: Literal["checked_in", "checked_out"]
-
-
-class VerifyCheckinCodeRequest(BaseModel):
-    member_code: str = Field(min_length=1)
-    admin_code: str = Field(min_length=1)
 
 
 def _assert_active_user(user: dict) -> None:
@@ -58,15 +49,6 @@ def _assert_kiosk_role(user: dict) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User cannot authorize an attendance kiosk",
         )
-
-
-def _issue_kiosk_token(user_id: str) -> str:
-    """Legacy token from the offline-code setup: names the person, not a kiosk."""
-    return jwt.encode(
-        {"sub": user_id, "purpose": KIOSK_TOKEN_PURPOSE},
-        JWT_SECRET,
-        algorithm=JWT_ALGORITHM,
-    )
 
 
 def _issue_registered_kiosk_token(kiosk_id: str, authorized_by: str) -> str:
@@ -91,7 +73,7 @@ def _set_kiosk_cookie(response: Response, token: str) -> None:
 
 
 def _registered_kiosk_id(kiosk_auth: str | None) -> str | None:
-    """The kiosk id in a registered-kiosk cookie, or None (no cookie, legacy, invalid)."""
+    """The kiosk id in a registered-kiosk cookie, or None (no cookie, an old person-named cookie, invalid)."""
     if not kiosk_auth:
         return None
     try:
@@ -131,22 +113,24 @@ async def require_verified_kiosk(
             detail="Invalid kiosk authorization",
         )
 
-    # Registered kiosks carry their own id; legacy tokens name the person who
-    # typed their offline code. Either way the result is that person's user row
-    # (old endpoints key off its "id"), plus the kiosk id when there is one.
-    kiosk_id: str | None = None
-    user_id = sub
-    if payload.get("kind") == "kiosk":
-        kiosk = await db.get_kiosk(sub)
-        if kiosk is None or kiosk["revoked_at"] is not None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Kiosk deauthorized",
-            )
-        kiosk_id = sub
-        user_id = kiosk["authorized_by"]
+    # Only kiosks registered by scanning a member code are accepted. Older
+    # cookies that name a person instead of a kiosk row (no "kind") can't be
+    # revoked, so those kiosks have to be set up again.
+    if payload.get("kind") != "kiosk":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Set this kiosk up again",
+        )
+    kiosk = await db.get_kiosk(sub)
+    if kiosk is None or kiosk["revoked_at"] is not None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Kiosk deauthorized",
+        )
 
-    user = await db.get_user(user_id)
+    # The result is the row of the member who set the kiosk up (still allowed
+    # to run kiosks), plus the kiosk id.
+    user = await db.get_user(kiosk["authorized_by"])
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -154,43 +138,8 @@ async def require_verified_kiosk(
         )
     _assert_active_user(user)
     _assert_kiosk_role(user)
-    if kiosk_id is not None:
-        await db.touch_kiosk(kiosk_id)
-    return {**dict(user), "kiosk_id": kiosk_id}
-
-
-async def require_registered_kiosk(kiosk: dict = Depends(require_verified_kiosk)) -> dict:
-    """A kiosk set up by scanning a code. Legacy offline-code kiosks must be set up again."""
-    if not kiosk.get("kiosk_id"):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Set this kiosk up again",
-        )
-    return kiosk
-
-
-@router.post("/verify_code")
-async def verify_code(body: VerifyCodeRequest, response: Response) -> bool:
-    user = await db.get_user_by_offline_code(body.code)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid offline code")
-
-    _assert_active_user(user)
-    _assert_kiosk_role(user)
-    _set_kiosk_cookie(response, _issue_kiosk_token(user["id"]))
-    return True
-
-
-@router.post("/lookup_member")
-async def lookup_member(
-        body: VerifyCodeRequest,
-        _: dict = Depends(require_verified_kiosk),
-) -> dict:
-    user = await db.get_user_by_offline_code(body.code)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
-    _assert_active_user(user)
-    return {"name": user["display_name"] or user["given_name"] or "Unknown User"}
+    await db.touch_kiosk(sub)
+    return {**dict(user), "kiosk_id": sub}
 
 
 @router.post("/verify_id", response_model=VerifyIdResponse)
@@ -209,32 +158,6 @@ async def verify_id(
 
     return VerifyIdResponse(
         name=user["display_name"] or user["given_name"] or "Unknown User",
-        status=attendance_status,
-    )
-
-
-@router.post("/verify_checkin_code", response_model=VerifyIdResponse)
-async def verify_checkin_code(
-        body: VerifyCheckinCodeRequest,
-        _: dict = Depends(require_verified_kiosk),
-) -> VerifyIdResponse:
-    admin = await db.get_user_by_offline_code(body.admin_code)
-    if admin is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin code")
-    _assert_active_user(admin)
-    _assert_kiosk_role(admin)
-
-    member = await db.get_user_by_offline_code(body.member_code)
-    if member is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
-    _assert_active_user(member)
-
-    attendance_status = await db.toggle_kiosk_attendance(member["id"])
-    if attendance_status is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
-
-    return VerifyIdResponse(
-        name=member["display_name"] or member["given_name"] or "Unknown User",
         status=attendance_status,
     )
 
@@ -441,7 +364,7 @@ async def authorize_kiosk(body: CodeScanRequest, request: Request, response: Res
 @router.post("/scan", response_model=CodeScanResponse)
 async def scan_code(
         body: CodeScanRequest,
-        kiosk: dict = Depends(require_registered_kiosk),
+        kiosk: dict = Depends(require_verified_kiosk),
 ) -> CodeScanResponse:
     """Check a member in or out from the code the kiosk's camera read."""
     return await _record_scan(body, kiosk["kiosk_id"], source="kiosk_code")

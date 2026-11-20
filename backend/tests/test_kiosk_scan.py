@@ -10,9 +10,11 @@ import uuid
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from jose import jwt
 
 import db
 from core import member_codes as mc
+from core.security import JWT_ALGORITHM, JWT_SECRET
 from endpoints import kiosk as kiosk_mod
 from endpoints.kiosk import require_verified_kiosk, router as kiosk_router
 
@@ -207,11 +209,51 @@ def test_old_app_code_warns_at_authorize_too(store):
     assert store["kiosks"] == []
 
 
-def test_legacy_kiosk_must_be_set_up_again(store):
-    legacy = _client({"id": CAPTAIN_ID, "kiosk_id": None})
-    resp = scan(legacy, code_for(MEMBER_ID))
+@pytest.fixture
+def real_auth(store, monkeypatch):
+    """A client whose kiosk cookie is checked for real, against one registered kiosk."""
+    kiosks = {"K-ABC123": {"id": "K-ABC123", "authorized_by": CAPTAIN_ID, "revoked_at": None}}
+
+    async def get_user(uid):
+        return USERS.get(uid)
+
+    async def get_kiosk(kiosk_id):
+        return kiosks.get(kiosk_id)
+
+    async def touch_kiosk(kiosk_id):
+        pass
+
+    monkeypatch.setattr(db, "get_user", get_user)
+    monkeypatch.setattr(db, "get_kiosk", get_kiosk)
+    monkeypatch.setattr(db, "touch_kiosk", touch_kiosk)
+    return _client(None)
+
+
+def _person_named_token(user_id: str) -> str:
+    """The cookie the removed offline-code setup issued: it names a person, not a kiosk."""
+    return jwt.encode({"sub": user_id, "purpose": kiosk_mod.KIOSK_TOKEN_PURPOSE}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def test_person_named_kiosk_cookie_must_be_set_up_again(real_auth, store):
+    real_auth.cookies.set("kiosk_auth", _person_named_token(CAPTAIN_ID))
+    resp = scan(real_auth, code_for(MEMBER_ID))
     assert resp.status_code == 401
+    assert resp.json()["detail"] == "Set this kiosk up again"
+    assert real_auth.post("/kiosk/verify_id", json={"id": MEMBER_ID}).status_code == 401
     assert store["toggles"] == []
+
+
+def test_registered_kiosk_cookie_checks_card_in(real_auth, store):
+    real_auth.cookies.set("kiosk_auth", kiosk_mod._issue_registered_kiosk_token("K-ABC123", CAPTAIN_ID))
+    resp = real_auth.post("/kiosk/verify_id", json={"id": MEMBER_ID})
+    assert resp.status_code == 200
+    assert resp.json() == {"name": "Ava Chen", "status": "checked_in"}
+    assert store["toggles"] == [(MEMBER_ID, "kiosk")]
+
+
+def test_offline_code_endpoints_are_gone(client):
+    for path in ("/kiosk/verify_code", "/kiosk/lookup_member", "/kiosk/verify_checkin_code"):
+        assert client.post(path, json={"code": "12345678"}).status_code == 404
 
 
 def test_authorize_with_captain_code_sets_kiosk_cookie(store):

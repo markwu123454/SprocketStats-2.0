@@ -2,7 +2,7 @@ import {useEffect, useState, type ReactNode} from "react"
 import { Link } from "react-router-dom"
 import { useIsOffline, useOnboardedUser } from "@/contexts/authContext"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
-import { Calendar, Eye, EyeOff, KeyRound, ChevronRight, ListChecks, LogIn, QrCode, ScanLine, UserX } from "lucide-react"
+import { Calendar, ChevronRight, ListChecks, LogIn, QrCode, ScanLine, UserX } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
 import MyCodeDialog from "@/components/MyCodeDialog"
 import ScannerDialog from "@/components/ScannerDialog"
@@ -76,7 +76,6 @@ export default function DashboardPage() {
     const [rawEvents, setRawEvents] = useBootstrapped<EventEntry[]>("events", [])
     const [currentEvent]            = useBootstrapped<EventInfo | null>("current_event", null)
     const [eventKeys]               = useBootstrapped<string[]>("event_keys", [])
-    const [codeVisible, setCodeVisible] = useState(false)
     const [showCode, setShowCode] = useState(false)
     const [showScanner, setShowScanner] = useState(false)
     const [tasks, setTasks] = useBootstrapped<Task[] | null>("tasks", null)
@@ -185,11 +184,6 @@ export default function DashboardPage() {
         ? meetingAbsencesFor(absences, target.id, user.id)
         : { mine: undefined, others: [] }
     const showOthersAbsent = canViewOthersAbsences(user.permissions) && othersAbsent.length > 0
-
-    // Grade/team_year are only ever set for roles that require school info
-    // (see OnboardingRequest.validate_school_info_required on the backend) --
-    // mentors/alumni never have them, so their absence gates this card.
-    const hasSchoolInfo = Boolean(user.grade && user.team_year)
 
     const myTasks = (tasks ?? [])
         .filter(t => (t.assignee_id === user.id || t.contributors.some(c => c.id === user.id)) && (t.status === "todo" || t.status === "doing"))
@@ -410,42 +404,6 @@ export default function DashboardPage() {
                     </div>
                 )}
 
-                {/* Offline account code -- only for roles with school info on file */}
-                {hasSchoolInfo && (
-                    <div className="rounded-xl border p-5 flex flex-col gap-3 backdrop-blur-sm" style={cardStyle}>
-                        <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium theme-text opacity-70">Your account code</span>
-                            <KeyRound size={18} className="theme-text-contrast opacity-80" />
-                        </div>
-
-                        {user.offline_code ? (
-                            <>
-                                <div className="flex items-center gap-2">
-                                    <p className="text-2xl font-mono font-bold theme-text tracking-[0.3em]">
-                                        {codeVisible ? user.offline_code : "•".repeat(user.offline_code.length)}
-                                    </p>
-                                    <button
-                                        type="button"
-                                        onClick={() => setCodeVisible(v => !v)}
-                                        aria-label={codeVisible ? "Hide account code" : "Show account code"}
-                                        aria-pressed={codeVisible}
-                                        className="p-1.5 rounded-lg theme-subtext-color hover:theme-button-hover transition-colors"
-                                    >
-                                        {codeVisible ? <EyeOff size={16} /> : <Eye size={16} />}
-                                    </button>
-                                </div>
-                                <p className="text-xs theme-subtext-color">
-                                    Do not share this code with others.
-                                </p>
-                            </>
-                        ) : (
-                            // Signed in offline: the code isn't saved on the phone.
-                            <p className="text-sm theme-subtext-color">
-                                Your account code shows once you're back online. My code works offline.
-                            </p>
-                        )}
-                    </div>
-                )}
             </div>
         </div>
     )
