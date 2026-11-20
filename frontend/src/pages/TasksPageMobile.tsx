@@ -419,7 +419,7 @@ export default function TasksPageMobile() {
                 )}
             </div>
 
-            {!board.offline && (
+            {!board.offline && !board.readOnly && (
                 <Button variant="fab" aria-label="New task" onClick={() => setNewTaskOpen(true)}>
                     <Plus size={21} />
                 </Button>
@@ -529,6 +529,7 @@ function TaskCard({ task, board, user, people, todayMs, highlighted, pickerOpen,
     // rather than ship controls guaranteed to fail, the same rule
     // `ContributorsSection` uses on desktop.
     const contributorsAllowed = !!task.assignee_id && !done
+    const readOnly = board.readOnly
 
     const excludeIds = new Set([task.assignee_id, ...task.contributors.map(c => c.id)])
     const addOtherOptions = people.filter(p => !excludeIds.has(p.id)).map(p => ({ value: p.id, label: p.display_name }))
@@ -538,7 +539,7 @@ function TaskCard({ task, board, user, people, todayMs, highlighted, pickerOpen,
     // as the desktop row disabling its badge when `done`.
     // Anyone may send a review task back to doing, so everyone gets the
     // picker on a review task -- just without the options they can't use.
-    const canTogglePicker = (canChangeStatus || review) && !done
+    const canTogglePicker = (canChangeStatus || review) && !done && !readOnly
     const pickerChoices = canChangeStatus ? PICKER_CHOICES : PICKER_CHOICES.filter(c => c === "doing" || c === task.status)
 
     function pick(status: SettableStatus) {
@@ -547,7 +548,9 @@ function TaskCard({ task, board, user, people, todayMs, highlighted, pickerOpen,
     }
 
     let primary: ReactNode = null
-    if (!task.assignee_id) {
+    if (readOnly) {
+        // Nothing to do on a task this role can only view.
+    } else if (!task.assignee_id) {
         primary = <Button className="w-full" onClick={() => void board.handleClaim(task.id)}>Claim task</Button>
     } else if (review) {
         // The backend 403s the finisher marking their own task reviewed
@@ -612,13 +615,13 @@ function TaskCard({ task, board, user, people, todayMs, highlighted, pickerOpen,
                 <span>{ownerLine(task)}</span>
             </div>
 
-            {contributorsAllowed && (
+            {contributorsAllowed && !(readOnly && task.contributors.length === 0) && (
                 <div className="flex flex-col gap-2 pt-0.5 border-t" style={{ borderColor: tint("--theme-border", 45) }}>
                     {task.contributors.length > 0 && (
                         <div className="flex flex-wrap items-center gap-1.5">
                             <span className={`${typeH2} theme-subtext-color`}>With</span>
                             {task.contributors.map(c => {
-                                const removable = board.canAssign || c.id === user.id
+                                const removable = !readOnly && (board.canAssign || c.id === user.id)
                                 return (
                                     <span key={c.id} className="flex items-center gap-1 py-1 rounded-full text-xs font-semibold theme-text" style={contributorPillStyle(removable)}>
                                         {c.display_name}
@@ -638,7 +641,7 @@ function TaskCard({ task, board, user, people, todayMs, highlighted, pickerOpen,
                             })}
                         </div>
                     )}
-                    <div className="flex flex-col gap-2">
+                    {!readOnly && <div className="flex flex-col gap-2">
                         {/* One control, never both -- the same either/or the web
                             board draws ("+ Add" for the authority set, "+ Join"
                             for everyone else). A lead picking anyone from the
@@ -666,7 +669,7 @@ function TaskCard({ task, board, user, people, todayMs, highlighted, pickerOpen,
                                 Release task
                             </Button>
                         )}
-                    </div>
+                    </div>}
                 </div>
             )}
 
@@ -826,10 +829,10 @@ function NotesDrawer({ task, board, user }: { task: Task; board: TaskBoard; user
                     <Skeleton className="h-10 w-full" />
                 </div>
             ) : notes.length === 0 ? (
-                <EmptyState>No notes yet — leave context for whoever picks this up.</EmptyState>
+                <EmptyState>{board.readOnly ? "No notes yet." : "No notes yet — leave context for whoever picks this up."}</EmptyState>
             ) : (
                 notes.map(note => {
-                    const canDelete = note.author_id === user.id || board.canAssign
+                    const canDelete = !board.readOnly && (note.author_id === user.id || board.canAssign)
                     return (
                         <div key={note.id} className="flex items-start gap-2">
                             <TaskAvatar name={note.author_name} picture={note.author_picture} />
@@ -849,18 +852,22 @@ function NotesDrawer({ task, board, user }: { task: Task; board: TaskBoard; user
                 })
             )}
 
-            <textarea
-                placeholder="Add a note…"
-                aria-label="Add a note"
-                value={draft}
-                onChange={e => setDraft(e.target.value)}
-                rows={2}
-                maxLength={2000}
-                className={`${inputClass} w-full resize-none`}
-            />
-            <Button className="self-end" onClick={() => void handlePost()} disabled={!canPost}>
-                {posting ? "Posting…" : "Post"}
-            </Button>
+            {!board.readOnly && (
+                <>
+                    <textarea
+                        placeholder="Add a note…"
+                        aria-label="Add a note"
+                        value={draft}
+                        onChange={e => setDraft(e.target.value)}
+                        rows={2}
+                        maxLength={2000}
+                        className={`${inputClass} w-full resize-none`}
+                    />
+                    <Button className="self-end" onClick={() => void handlePost()} disabled={!canPost}>
+                        {posting ? "Posting…" : "Post"}
+                    </Button>
+                </>
+            )}
         </div>
     )
 }

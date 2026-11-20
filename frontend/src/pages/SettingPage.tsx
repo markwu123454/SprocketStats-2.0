@@ -41,8 +41,8 @@ export default function SettingPage() {
     const [nameDraft, setNameDraft] = useState("")
     const [nameSaving, setNameSaving] = useState(false)
     const [nameError, setNameError] = useState<string | null>(null)
-    const [photoSaving, setPhotoSaving] = useState(false)
-    const [photoError, setPhotoError] = useState<string | null>(null)
+    const [pictureSaving, setPictureSaving] = useState(false)
+    const [pictureError, setPictureError] = useState<string | null>(null)
     // Dirty while the inline name field holds something other than the saved name.
     const confirmDiscard = useDiscardGuard(editingName && nameDraft !== user.display_name)
     const { theme, setTheme } = useTheme()
@@ -137,9 +137,9 @@ export default function SettingPage() {
         }
     }
 
-    async function setPhotoShown(shown: boolean) {
-        setPhotoSaving(true)
-        setPhotoError(null)
+    async function setPictureShown(shown: boolean) {
+        setPictureSaving(true)
+        setPictureError(null)
         try {
             const res = await fetch(`${API}/auth/picture-visibility`, {
                 method: "PATCH",
@@ -150,9 +150,9 @@ export default function SettingPage() {
             if (!res.ok) throw new Error()
             await refreshUser()
         } catch {
-            setPhotoError("Couldn't change your photo setting")
+            setPictureError("Couldn't change your profile picture setting")
         } finally {
-            setPhotoSaving(false)
+            setPictureSaving(false)
         }
     }
 
@@ -266,25 +266,21 @@ export default function SettingPage() {
                     <div className="flex items-center gap-3">
                         <ImageOff size={16} className="theme-subtext-color shrink-0" />
                         <div>
-                            <p className="text-sm font-medium theme-text">Show my photo to others</p>
+                            <p className="text-sm font-medium theme-text">Let other members see my profile picture</p>
                             <p className="text-xs theme-subtext-color">
-                                {offline
-                                    ? "Changing this needs a connection"
-                                    : user.hide_picture
-                                        ? "Other members see your initial instead of your Google photo"
-                                        : "Other members see your Google photo on tasks and the roster"}
+                                {offline ? "Changing this needs a connection" : "When off, they see your initial instead"}
                             </p>
                         </div>
                     </div>
                     <Toggle
-                        aria-label="Show my photo to others"
+                        aria-label="Let other members see my profile picture"
                         checked={!user.hide_picture}
-                        disabled={offline || photoSaving}
-                        onChange={shown => void setPhotoShown(shown)}
+                        disabled={offline || pictureSaving}
+                        onChange={shown => void setPictureShown(shown)}
                     />
                 </div>
-                {photoError && (
-                    <p className={`px-4 py-3 ${fieldErrorClass}`}>{photoError}</p>
+                {pictureError && (
+                    <p className={`px-4 py-3 ${fieldErrorClass}`}>{pictureError}</p>
                 )}
 
                 <Button

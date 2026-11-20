@@ -23,8 +23,8 @@ export const CORE_TABS: NavTab[] = [
     { to: "/meetings",     label: "Meetings",     icon: CalendarCheck,   mobile: true },
     { to: "/events",       label: "Events",       icon: Milestone,       mobile: true },
     { to: "/tasks",        label: "Tasks",        icon: ListChecks,      mobile: true, visible: p => can(p, "tasks.view") },
-    { to: "/leaderboards", label: "Leaderboards", icon: Trophy },
-    { to: "/scouting",     label: "Scouting",     icon: ClipboardList },
+    { to: "/leaderboards", label: "Leaderboards", icon: Trophy,          visible: p => can(p, "leaderboards.view") },
+    { to: "/scouting",     label: "Scouting",     icon: ClipboardList,   visible: p => can(p, "scouting.view") },
 ]
 
 export const CONTROL_PANEL_TAB: NavTab = {

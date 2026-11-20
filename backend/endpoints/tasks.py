@@ -6,17 +6,17 @@ from pydantic import BaseModel
 
 import db
 from core import push_notify
-from core.permissions import has_task_authority, role_requires_approval, task_buckets
-from core.security import require_active
+from core.permissions import can, get_permissions_for_role, has_task_authority, role_requires_approval, task_buckets
+from core.security import require_access
 
 router = APIRouter()
 
-# Every Task Assignments endpoint is open to any authenticated, active user --
-# there is no dedicated `tasks.view` gate beyond that, since every role's policy
-# grants it (see core.permissions.ROLE_DEFINITIONS). require_active layers in
-# the banned/pending-approval re-check on top of plain login, matching the other
-# write-capable routers in this codebase.
-require_task_access = require_active
+# Reading the board needs `tasks.view` (everyone but visitors); changing
+# anything on it -- creating, claiming, joining, moving, reviewing, notes --
+# needs `tasks.participate`, which alumni don't have, so they see a read-only
+# board. Both layer in the banned/pending-approval re-check (require_access).
+require_task_view = require_access(permissions="tasks.view")
+require_task_participate = require_access(permissions="tasks.participate")
 
 _VALID_PRIORITIES = {"critical", "high", "med", "low"}
 # "Perish if not done" -- sits above high, and only the authority set may set
@@ -121,26 +121,28 @@ def _decode_contributors(value) -> list[dict]:
 
 
 @router.get("")
-async def list_tasks(event_key: str | None = None, user: dict = Depends(require_task_access)):
+async def list_tasks(event_key: str | None = None, user: dict = Depends(require_task_view)):
     """Every task, or with `?event_key=` only the ones linked to that event."""
     rows = await db.list_tasks(event_key)
     return [_row_to_task(r, user) for r in rows]
 
 
 @router.get("/people")
-async def list_people(_: dict = Depends(require_task_access)):
-    """Assignable people: approved, onboarded, non-banned. Names + ids only --
-    never email, unlike the leads-only `/members` roster."""
+async def list_people(_: dict = Depends(require_task_view)):
+    """Assignable people: approved, onboarded, non-banned, and able to take
+    part in tasks (not alumni or visitors). Names + ids only -- never email,
+    unlike the leads-only `/members` roster."""
     rows = await db.list_task_people()
     return [
         {"id": r["id"], "display_name": r["display_name"]}
         for r in rows
         if not (role_requires_approval(r["role"]) and r["approved_by"] is None)
+        and can(get_permissions_for_role(r["role"]), "tasks.participate")
     ]
 
 
 @router.post("")
-async def create_task(body: TaskCreate, user: dict = Depends(require_task_access)):
+async def create_task(body: TaskCreate, user: dict = Depends(require_task_participate)):
     """Create a task. Anyone may create one; only the authority set may set
     `assignee_id` on creation (403 otherwise)."""
     title = body.title.strip()
@@ -176,7 +178,7 @@ async def create_task(body: TaskCreate, user: dict = Depends(require_task_access
 
 
 @router.patch("/{task_id}")
-async def update_task(task_id: str, body: TaskUpdate, user: dict = Depends(require_task_access)):
+async def update_task(task_id: str, body: TaskUpdate, user: dict = Depends(require_task_participate)):
     """Edit a task. Caller must be in the authority set or the task's creator,
     except that the assignee and contributors may send a status-only change,
     and anyone may send a `review` task back to `doing`. Moving a `done` task
@@ -317,9 +319,9 @@ async def update_task(task_id: str, body: TaskUpdate, user: dict = Depends(requi
 
 
 @router.post("/{task_id}/claim")
-async def claim_task(task_id: str, user: dict = Depends(require_task_access)):
+async def claim_task(task_id: str, user: dict = Depends(require_task_participate)):
     """Claim any unassigned task, in any bucket: assigns the caller to
-    themselves and bumps `todo` -> `doing`. Open to every authenticated user."""
+    themselves and bumps `todo` -> `doing`. Open to everyone who can take part."""
     existing = await db.get_task(task_id)
     if existing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
@@ -334,7 +336,7 @@ async def claim_task(task_id: str, user: dict = Depends(require_task_access)):
 
 
 @router.post("/{task_id}/contributors")
-async def add_contributor(task_id: str, body: ContributorAdd | None = None, user: dict = Depends(require_task_access)):
+async def add_contributor(task_id: str, body: ContributorAdd | None = None, user: dict = Depends(require_task_participate)):
     """Add a contributor to an already-assigned task. Any active user may add
     themselves (the default, bodyless call); naming someone else via
     `user_id` requires the authority set. Adding someone who is already a
@@ -371,7 +373,7 @@ async def add_contributor(task_id: str, body: ContributorAdd | None = None, user
 
 
 @router.delete("/{task_id}/contributors/{user_id}")
-async def remove_contributor(task_id: str, user_id: str, user: dict = Depends(require_task_access)):
+async def remove_contributor(task_id: str, user_id: str, user: dict = Depends(require_task_participate)):
     """Remove someone from a task's contributor list; a no-op if they weren't
     one. The literal `user_id` `"me"` resolves to the caller, so removing
     yourself needs no authority. Removing someone else requires the authority
@@ -399,7 +401,7 @@ async def remove_contributor(task_id: str, user_id: str, user: dict = Depends(re
 
 
 @router.post("/{task_id}/review")
-async def review_task(task_id: str, user: dict = Depends(require_task_access)):
+async def review_task(task_id: str, user: dict = Depends(require_task_participate)):
     """Mark an in-review task reviewed (-> `done`). The authority set may review
     their own finished work; everyone else may not -- enforced here, not just
     hidden in the UI."""
@@ -420,7 +422,7 @@ async def review_task(task_id: str, user: dict = Depends(require_task_access)):
 
 
 @router.post("/{task_id}/unreview")
-async def unreview_task(task_id: str, user: dict = Depends(require_task_access)):
+async def unreview_task(task_id: str, user: dict = Depends(require_task_participate)):
     """Reopen a done task for re-review (-> `review`, clears `reviewed_by`).
     Authority set only."""
     existing = await db.get_task(task_id)
@@ -440,7 +442,7 @@ async def unreview_task(task_id: str, user: dict = Depends(require_task_access))
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_task(task_id: str, user: dict = Depends(require_task_access)):
+async def delete_task(task_id: str, user: dict = Depends(require_task_participate)):
     """Delete a task. Authority set or the task's creator only."""
     existing = await db.get_task(task_id)
     if existing is None:
@@ -450,8 +452,8 @@ async def delete_task(task_id: str, user: dict = Depends(require_task_access)):
 
 
 @router.get("/{task_id}/notes")
-async def list_notes(task_id: str, user: dict = Depends(require_task_access)):
-    """List a task's note thread, oldest first. Open to any active user."""
+async def list_notes(task_id: str, user: dict = Depends(require_task_view)):
+    """List a task's note thread, oldest first. Open to anyone who can see the board."""
     existing = await db.get_task(task_id)
     if existing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
@@ -461,8 +463,8 @@ async def list_notes(task_id: str, user: dict = Depends(require_task_access)):
 
 
 @router.post("/{task_id}/notes")
-async def create_note(task_id: str, body: NoteCreate, user: dict = Depends(require_task_access)):
-    """Add a note to a task. Open to any active user."""
+async def create_note(task_id: str, body: NoteCreate, user: dict = Depends(require_task_participate)):
+    """Add a note to a task. Open to anyone who can take part."""
     existing = await db.get_task(task_id)
     if existing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
@@ -478,7 +480,7 @@ async def create_note(task_id: str, body: NoteCreate, user: dict = Depends(requi
 
 
 @router.delete("/{task_id}/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_note(task_id: str, note_id: str, user: dict = Depends(require_task_access)):
+async def delete_note(task_id: str, note_id: str, user: dict = Depends(require_task_participate)):
     """Delete a note. The note's own author or the authority set only; 404 if
     the note doesn't exist or belongs to a different task."""
     note = await db.get_task_note(note_id)

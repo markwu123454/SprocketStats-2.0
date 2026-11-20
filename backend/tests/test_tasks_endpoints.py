@@ -5,21 +5,24 @@ to an in-memory FakeStore that mimics the `tasks` + `users` tables' relevant
 shape (joins, status defaults) closely enough to exercise the business rules
 the endpoints themselves enforce -- assign/reassign authority, the
 review-not-by-the-finisher rule, and reopen clearing finished_by/reviewed_by.
-Auth is bypassed via a FastAPI dependency override on `require_active` (which
-`require_task_access` in endpoints/tasks.py is bound to), so each test picks
-the calling user directly instead of forging a JWT cookie.
+Login is bypassed via a FastAPI dependency override on `get_current_user`
+(and the ban/approval cache check is stubbed), so each test picks the calling
+user directly instead of forging a JWT cookie, while the real `tasks.view` /
+`tasks.participate` gates still run against that user's role.
 """
 
 import uuid
 from datetime import datetime, timezone
+
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import db
-from core import push_notify
-from core.security import require_active
+from core import account_state, push_notify
+from core.security import get_current_user
 from endpoints.tasks import router as tasks_router
 
 CAPTAIN = {"sub": "captain-1", "role": "captain"}
@@ -260,15 +263,16 @@ def store(monkeypatch):
 
 
 @pytest.fixture
-def app():
+def app(monkeypatch):
+    monkeypatch.setattr(account_state, "assert_active", AsyncMock())
     fastapi_app = FastAPI()
     fastapi_app.include_router(tasks_router, prefix="/tasks")
     return fastapi_app
 
 
 def _as(app: FastAPI, user: dict) -> TestClient:
-    """A TestClient acting as `user` (overrides the require_active/require_task_access gate)."""
-    app.dependency_overrides[require_active] = lambda: user
+    """A TestClient signed in as `user`; the route's own role gate still runs."""
+    app.dependency_overrides[get_current_user] = lambda: user
     return TestClient(app)
 
 

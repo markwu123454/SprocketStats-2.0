@@ -30,6 +30,10 @@ interface MemberRow {
     role: string | null
     grade: string | null
     team_year: string | null
+    // A visitor's own FIRST team from onboarding ("FRC" / "FTC" / "FLL" and the
+    // number), or null when they aren't on one or weren't asked.
+    first_program?: string | null
+    first_team_number?: number | null
     // Id of the captain/mentor who approved this member's identity + role, or
     // null if nobody has yet. Approving is one-way (no unapprove) and, like
     // banning, is staged locally and only persisted via its dedicated endpoint
@@ -157,10 +161,12 @@ function goesByOf(m: MemberRow): string {
         : !m.email ? "Email hidden" : ""
 }
 
-/** Leads/members show their subteam (paired with a Lead badge); other roles show their label. */
+/** Leads/members show their subteam (paired with a Lead badge); other roles show their label.
+ *  A visitor's own FIRST team, when they gave one, follows it ("Visitor · FTC 12345"). */
 function roleTextOf(m: MemberRow, role: RoleCatalogEntry | undefined): string {
-    return role ? (role.subteam ? role.label.replace(/ (Lead|Member)$/, "") : role.label)
+    const label = role ? (role.subteam ? role.label.replace(/ (Lead|Member)$/, "") : role.label)
         : m.role ? pretty(m.role) : "—"
+    return m.first_program && m.first_team_number ? `${label} · ${m.first_program} ${m.first_team_number}` : label
 }
 
 function MemberAvatar({ name, picture, size = 32 }: { name: string; picture: string | null; size?: number }) {

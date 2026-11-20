@@ -336,6 +336,9 @@ def _row_to_member(r, *, mask_email: bool = False) -> dict:
         "role": r["role"],
         "grade": r["grade"],
         "team_year": r["team_year"],
+        # A visitor's own FIRST team, when they gave one at onboarding.
+        "first_program": r.get("first_program"),
+        "first_team_number": r.get("first_team_number"),
         "approved_by": r["approved_by"],
         "banned_at": r["banned_at"].isoformat() if r["banned_at"] else None,
         **_kiosk_access_of(r),

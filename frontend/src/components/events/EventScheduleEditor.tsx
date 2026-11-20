@@ -67,7 +67,7 @@ export default function EventScheduleEditor({ event: existing, onSaved, onCancel
     // A blank stand-in keeps every draft initializer below working unchanged.
     const event = existing ?? ({ name: "", start: "", location: "", type: "", id: -1 } as EventEntry & { id: number })
     const [name, setName] = useState(event.name)
-    const [location, setLocation] = useState(event.location)
+    const [location, setLocation] = useState(event.location ?? "")
     const [type, setType] = useState(event.type)
     const [start, setStart] = useState(() => splitMoment(event.start))
     const [end, setEnd] = useState(() => splitMoment(event.end))

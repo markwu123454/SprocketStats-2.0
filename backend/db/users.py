@@ -75,17 +75,20 @@ async def ensure_code_number(user_id: str) -> int | None:
 
 
 async def update_user_onboarding(
-    user_id: str, display_name: str, role: str, grade: str | None, team_year: str | None
+    user_id: str, display_name: str, role: str, grade: str | None, team_year: str | None,
+    first_program: str | None = None, first_team_number: int | None = None,
 ) -> asyncpg.Record:
     async with db_connection(DB_NAME) as conn:
         try:
             return await conn.fetchrow(
                 """
                 UPDATE users
-                SET display_name = $2,
-                    role         = $3,
-                    grade        = $4,
-                    team_year    = $5,
+                SET display_name      = $2,
+                    role              = $3,
+                    grade             = $4,
+                    team_year         = $5,
+                    first_program     = $6,
+                    first_team_number = $7,
                     -- Backfill name/given_name from the onboarding display name when
                     -- Google didn't supply them, so an onboarded user always has both.
                     -- COALESCE keeps any real Google value and never clobbers it.
@@ -100,6 +103,8 @@ async def update_user_onboarding(
                 role,
                 grade,
                 team_year,
+                first_program,
+                first_team_number,
             )
         except Exception as e:
             logger.error("update_user_onboarding failed: %s", e)
@@ -133,7 +138,7 @@ async def set_hide_picture(user_id: str, hide: bool) -> bool | None:
             )
         except Exception as e:
             logger.error("set_hide_picture failed: %s", e)
-            raise HTTPException(status_code=500, detail="Failed to update photo setting")
+            raise HTTPException(status_code=500, detail="Failed to update profile picture setting")
 
 
 async def load_all_account_state() -> list[asyncpg.Record]:
@@ -199,7 +204,7 @@ async def list_all_users() -> list[asyncpg.Record]:
                 """
                 SELECT id, email, name, display_name,
                        CASE WHEN hide_picture THEN NULL ELSE picture END AS picture,
-                       role, grade, team_year, approved_by, banned_at,
+                       role, grade, team_year, first_program, first_team_number, approved_by, banned_at,
                        kiosk_access_until, kiosk_access_no_end
                 FROM users
                 ORDER BY display_name ASC NULLS LAST, email ASC

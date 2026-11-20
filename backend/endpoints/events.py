@@ -7,7 +7,7 @@ import db
 from core import push_notify
 from core.external import nexus, tba
 from core.permissions import can, get_permissions_for_role
-from core.security import get_current_user, require_access, require_active
+from core.security import require_access
 from db.comp_events import (
     CheckInRequest,
     CompEventContent,
@@ -24,6 +24,14 @@ TEAM_KEY = "frc3473"
 # Bound at module level (like require_meeting_time in endpoints/meeting_hours.py)
 # so tests can override it directly instead of forging a role on a real user.
 require_event_edit = require_access(permissions="events.edit")
+# Event hubs (itinerary, packing list, the roster with phone numbers, live match
+# data) and check-in. Roles without it (visitors) get only the trimmed schedule
+# from GET /events.
+require_event_details = require_access(permissions="events.details")
+require_signed_in = require_access()
+
+# What a role without `events.details` sees of each schedule entry.
+_PUBLIC_EVENT_FIELDS = ("id", "name", "start", "end", "type")
 
 
 def _parse_schedule_date(value: str | None) -> date | None:
@@ -71,8 +79,13 @@ def _enforce_check_in_open(schedule: dict | None) -> None:
 
 
 @router.get("")
-async def list_events(_: dict = Depends(get_current_user)):
-    return await db.get_events()
+async def list_events(user: dict = Depends(require_signed_in)):
+    """The season schedule. Roles without `events.details` get each event's
+    name, dates and type only: no location, description, links or hub key."""
+    events = await db.get_events()
+    if can(get_permissions_for_role(user.get("role")), "events.details"):
+        return events
+    return [{k: e[k] for k in _PUBLIC_EVENT_FIELDS if k in e} for e in events]
 
 
 @router.post("/schedule", status_code=201)
@@ -157,7 +170,7 @@ def _require_event_role(role: str, keys: list[str]) -> None:
 
 
 @router.get("/{event_key}/check-in")
-async def get_check_in_status(event_key: str, user: dict = Depends(require_active)):
+async def get_check_in_status(event_key: str, user: dict = Depends(require_event_details)):
     """Whether the calling user is on `event_key`'s roster, and whether
     they've dismissed its check-in prompt."""
     on_roster = await db.is_on_roster(event_key, str(user["sub"]))
@@ -177,8 +190,8 @@ async def _set_dismissed(event_key: str, user: dict, dismissed: bool) -> dict:
 
 
 def _display_name(user: dict) -> str:
-    # display_name is null for an account that hasn't finished onboarding
-    # (require_active doesn't check that), but RosterMember.display_name is a
+    # display_name can be null on a session from before onboarding finished
+    # (the role gate doesn't check onboarding), but RosterMember.display_name is a
     # required str -- fall back through other JWT claims so the roster entry
     # (and any later PUT /content round-trip of it through CompEventContent)
     # always has a non-empty name.
@@ -191,13 +204,13 @@ def _with_visible_roster(row: dict) -> dict:
 
 
 @router.post("/{event_key}/check-in/dismiss")
-async def dismiss_check_in(event_key: str, user: dict = Depends(require_active)):
+async def dismiss_check_in(event_key: str, user: dict = Depends(require_event_details)):
     """Hide `event_key`'s check-in prompt for the caller. Idempotent."""
     return await _set_dismissed(event_key, user, True)
 
 
 @router.delete("/{event_key}/check-in/dismiss")
-async def undismiss_check_in(event_key: str, user: dict = Depends(require_active)):
+async def undismiss_check_in(event_key: str, user: dict = Depends(require_event_details)):
     """Bring back a dismissed check-in prompt. Idempotent."""
     return await _set_dismissed(event_key, user, False)
 
@@ -206,7 +219,7 @@ async def undismiss_check_in(event_key: str, user: dict = Depends(require_active
 async def check_in(
     event_key: str,
     body: CheckInRequest | None = None,
-    user: dict = Depends(require_active),
+    user: dict = Depends(require_event_details),
 ):
     """Self check-in: append the caller to `event_key`'s roster, with their
     chosen role (one of the event's own check-in roles; with no body or no
@@ -243,7 +256,7 @@ async def patch_roster_member(
     event_key: str,
     user_id: str,
     body: RosterUpdate,
-    user: dict = Depends(require_active),
+    user: dict = Depends(require_event_details),
 ):
     """Update one roster member's `role` and/or `days` (any subset; at least
     one required). Two independent authorizations, both enforced before
@@ -339,7 +352,7 @@ def _live_payload(matches, rankings, nexus_data) -> dict:
 # ── Primary endpoints ──────────────────────────────────────────────────────────
 
 @router.get("/{event_key}/info")
-async def get_event_info(event_key: str, _: dict = Depends(get_current_user)):
+async def get_event_info(event_key: str, _: dict = Depends(require_event_details)):
     row = await db.get_comp_event(event_key)
     if not row:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -348,7 +361,7 @@ async def get_event_info(event_key: str, _: dict = Depends(get_current_user)):
 
 
 @router.get("/{event_key}/update")
-async def get_event_update(event_key: str, _: dict = Depends(get_current_user)):
+async def get_event_update(event_key: str, _: dict = Depends(require_event_details)):
     matches, rankings, nexus_data = await _fetch_live(event_key)
     return _live_payload(matches, rankings, nexus_data)
 
@@ -367,7 +380,7 @@ async def get_current_event_info(user: dict) -> dict | None:
         return None
 
 @router.get("/list_events")
-async def list_event_keys(_: dict = Depends(get_current_user)) -> list[str]:
+async def list_event_keys(_: dict = Depends(require_event_details)) -> list[str]:
     """Event keys with a hub page. Backs the `event_keys` bootstrap entry so the
     frontend can tell a real event from a 404 without a per-event fetch."""
     return await db.get_comp_event_keys()

@@ -8,6 +8,7 @@ import {BootstrapProvider} from "@/contexts/BootstrapProvider"
 
 import AuthWrapper from "@/components/wrappers/AuthWrapper.tsx"
 import ControlGuard from "@/components/wrappers/ControlGuard.tsx"
+import PermGuard from "@/components/wrappers/PermGuard.tsx"
 import UpdatePrompt from "@/components/UpdatePrompt.tsx"
 import ConfirmHost from "@/components/ui/ConfirmDialog"
 import PageErrorBoundary from "@/components/ErrorBoundary"
@@ -86,7 +87,9 @@ export default function App() {
                                         <Route path="/meetings" element={<MeetingsPage/>}/>
                                         <Route path="/attendance" element={<Navigate to="/meetings" replace/>}/>
                                         <Route path="/events" element={<EventsPage/>}/>
-                                        <Route path="/events/:eventKey" element={<EventShell/>}>
+                                        {/* Pages a role can't see bounce to the dashboard; the
+                                            server refuses their data either way. */}
+                                        <Route path="/events/:eventKey" element={<PermGuard perm="events.details"><EventShell/></PermGuard>}>
                                             <Route index element={<EventHubPage/>}/>
                                             <Route path="itinerary" element={<ItineraryPage/>}/>
                                             <Route path="packing"   element={<PackingPage/>}/>
@@ -94,12 +97,12 @@ export default function App() {
                                             <Route path="tasks"     element={<EventTasksPage/>}/>
                                             <Route path="comp"      element={<CompPage/>}/>
                                         </Route>
-                                        <Route path="/leaderboards" element={<LeaderboardsPage/>}/>
+                                        <Route path="/leaderboards" element={<PermGuard perm="leaderboards.view"><LeaderboardsPage/></PermGuard>}/>
                                         <Route path="/checkin"     element={<CheckinPage/>}/>
                                         <Route path="/other"       element={<OtherPage/>}/>
-                                        <Route path="/scouting"    element={<ScoutingPage/>}/>
-                                        <Route path="/scouting/scout" element={<ScoutingFormPage/>}/>
-                                        <Route path="/tasks"       element={<TasksPage/>}/>
+                                        <Route path="/scouting"    element={<PermGuard perm="scouting.view"><ScoutingPage/></PermGuard>}/>
+                                        <Route path="/scouting/scout" element={<PermGuard perm="scouting.view"><ScoutingFormPage/></PermGuard>}/>
+                                        <Route path="/tasks"       element={<PermGuard perm="tasks.view"><TasksPage/></PermGuard>}/>
                                         <Route path="/control"     element={<ControlPanelHub/>}/>
                                         <Route path="/control/meeting"        element={<ControlGuard section="meeting"><MeetingPage/></ControlGuard>}/>
                                         <Route path="/control/upcoming-event" element={<ControlGuard section="upcoming-event"><UpcomingEventPage/></ControlGuard>}/>

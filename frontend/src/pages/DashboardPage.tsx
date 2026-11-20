@@ -85,6 +85,9 @@ export default function DashboardPage() {
     const [checkoutError, setCheckoutError] = useState(false)
 
     const canViewTasks = can(user.permissions, "tasks.view")
+    // Visitors get event names and meeting times only: no event hub, check-in, or absences.
+    const canViewEventDetails = can(user.permissions, "events.details")
+    const canViewMeetingDetails = can(user.permissions, "meetings.details")
     const canScan = can(user.permissions, "kiosk.authorize")
 
     // The bootstrap schedule is a snapshot from app load -- refetch so a
@@ -178,7 +181,7 @@ export default function DashboardPage() {
 
     // Absences for the meeting the card above is about: the one in progress
     // until it ends, then the next. Visibility is filtered server-side.
-    const { absences, loading: absencesLoading } = useMeetingAbsences()
+    const { absences, loading: absencesLoading } = useMeetingAbsences(0, canViewMeetingDetails)
     const target = current ?? next
     const { mine: myAbsence, others: othersAbsent } = target && !absencesLoading
         ? meetingAbsencesFor(absences, target.id, user.id)
@@ -230,7 +233,7 @@ export default function DashboardPage() {
             {/* Active event card -- only rendered when an event is currently happening,
                 or its check-in has opened ahead of it. There is no separate
                 "upcoming event" card by design. */}
-            {active && (
+            {active && canViewEventDetails && (
                 <ActiveEventCard active={active} hasHub={hasHub} eventKey={key} seed={seeded} userId={user.id} />
             )}
 

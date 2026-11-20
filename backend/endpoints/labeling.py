@@ -5,7 +5,7 @@ import time
 from fastapi import APIRouter, Depends
 
 import db
-from core.security import get_current_user
+from core.security import require_access
 from .label_studio_client import (
     LABEL_STUDIO_PROJECT_ID,
     get_contributions,
@@ -16,9 +16,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Scouting data: closed to alumni and visitors.
+require_scouting = require_access(permissions="scouting.view")
+
 
 @router.get("")
-async def get_labeling(_: dict = Depends(get_current_user)):
+async def get_labeling(_: dict = Depends(require_scouting)):
     t_total = time.perf_counter()
     project_id = LABEL_STUDIO_PROJECT_ID
 

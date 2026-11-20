@@ -52,6 +52,9 @@ export interface TaskBoard {
 
     /** Viewer facts, resolved once from `useOnboardedUser()`. */
     canAssign: boolean
+    /** The role can see the board but not change it (no `tasks.participate`,
+     *  i.e. alumni): pages hide every control that would write. */
+    readOnly: boolean
     mySubteam: TaskBucket | null
     canEditTask: (task: Task) => boolean
     /** Edit rights, plus the task's assignee and contributors (status only). */
@@ -86,6 +89,7 @@ export function useTaskBoard(): TaskBoard {
     const user = useOnboardedUser()
     const offline = useIsOffline()
     const canAssign = can(user.permissions, "tasks.assign")
+    const readOnly = !can(user.permissions, "tasks.participate")
 
     const rawSubteam = getPerm(user.permissions, "subteam")
     const mySubteam = typeof rawSubteam === "string" && isTaskBucket(rawSubteam) ? rawSubteam : null
@@ -308,13 +312,14 @@ export function useTaskBoard(): TaskBoard {
     }, [setTasks])
 
     // Offline the board is read-only: edit and status menus hide, and any other
-    // action says it needs a connection instead of failing on the network.
+    // action says it needs a connection instead of failing on the network. A
+    // read-only role never gets edit or status rights.
     function canEditTask(task: Task): boolean {
-        return !offline && (canAssign || task.created_by === user.id)
+        return !offline && !readOnly && (canAssign || task.created_by === user.id)
     }
 
     function canChangeStatus(task: Task): boolean {
-        return !offline && (canEditTask(task) || task.assignee_id === user.id || task.contributors.some(c => c.id === user.id))
+        return !offline && !readOnly && (canEditTask(task) || task.assignee_id === user.id || task.contributors.some(c => c.id === user.id))
     }
 
     function blockedOffline(): boolean {
@@ -416,7 +421,7 @@ export function useTaskBoard(): TaskBoard {
 
     return {
         tasks, people, loading, loadError, actionError, setActionError,
-        canAssign, mySubteam, canEditTask, canChangeStatus, offline,
+        canAssign, readOnly, mySubteam, canEditTask, canChangeStatus, offline,
         todayMs, unread,
         runAction, handleClaim, handleDelete, applyTask, bumpNoteCount,
         markNotesRead, cancelMarkNotesRead,
