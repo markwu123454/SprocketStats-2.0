@@ -30,7 +30,7 @@ export default function MoreSheet({ onClose }: { onClose: () => void }) {
     const isCurrent = (to: string) => pathname === to || pathname.startsWith(to + "/")
 
     return (
-        <Sheet title="Menu" kind="form" labelledByTitleHidden onClose={onClose} className="px-2 pt-0 pb-2">
+        <Sheet title="Menu" kind="form" labelledByTitleHidden onClose={onClose} className="px-2 pt-3 pb-2">
             <div className="px-3 pb-3 border-b theme-border flex items-center gap-3">
                 <Avatar name={user.name} picture={user.picture} size={40} />
                 <AccountSummary className="flex-1" />

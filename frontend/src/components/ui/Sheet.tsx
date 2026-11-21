@@ -16,7 +16,7 @@ interface SheetProps {
     footer?: ReactNode
     /** "form": up to 92% of the visible height; also a centred dialog from md. "menu": up to 60%, mobile only. */
     kind?: "form" | "menu"
-    /** Keep the title for assistive tech but don't show it. */
+    /** Keep the title for assistive tech but don't show it. On a phone the header is then just the drag handle (which closes the sheet); desktop keeps an X. */
     labelledByTitleHidden?: boolean
     /** REPLACES the scroller's default padding (`px-4 md:px-6 pt-2 pb-4`). */
     className?: string
@@ -210,8 +210,11 @@ export default function Sheet({title, onClose, children, footer, kind = "form", 
                     >
                         <span className="block w-8 h-1 rounded-full bg-[var(--theme-outline)]"/>
                     </button>
-                    <div className={`flex items-center gap-2 pl-4 md:pl-6 pr-2 md:pr-4 md:pt-2 ${labelledByTitleHidden ? "justify-end" : ""}`}>
-                        <h2 id={titleId} className={labelledByTitleHidden ? "sr-only" : `flex-1 min-w-0 truncate theme-h1-color ${typeTitle}`}>{title}</h2>
+                    {/* With the title hidden this row would hold only the X, so on a phone it's left
+                        out: the handle above is the close button there. Desktop has no handle, so keeps it. */}
+                    {labelledByTitleHidden && <h2 id={titleId} className="sr-only">{title}</h2>}
+                    <div className={`items-center gap-2 pl-4 md:pl-6 pr-2 md:pr-4 md:pt-2 ${labelledByTitleHidden ? "hidden md:flex justify-end" : "flex"}`}>
+                        {!labelledByTitleHidden && <h2 id={titleId} className={`flex-1 min-w-0 truncate theme-h1-color ${typeTitle}`}>{title}</h2>}
                         <Button variant="icon" data-no-drag aria-label="Close" onClick={() => void requestClose()}><X size={18}/></Button>
                     </div>
                 </div>
