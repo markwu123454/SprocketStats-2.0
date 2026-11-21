@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react"
 import { AgGridReact } from "ag-grid-react"
 import type { ColDef, ICellRendererParams, SizeColumnsToFitGridStrategy } from "ag-grid-community"
+import "@/lib/agGrid"
 import { Check, Pencil, Phone } from "lucide-react"
 import { useEventContext } from "@/contexts/eventContext"
 import { useIsOffline, useOnboardedUser } from "@/contexts/authContext"
