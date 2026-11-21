@@ -8,6 +8,16 @@ primary_region = 'lax'
 
 [build]
 
+[env]
+  # Fly's proxy ends HTTPS and forwards plain HTTP with X-Forwarded-Proto: https.
+  # Uvicorn only believes that header from FORWARDED_ALLOW_IPS (default 127.0.0.1),
+  # and the proxy isn't 127.0.0.1, so without this every URL the app builds starts
+  # with http:// -- including the Google sign-in callback, which then doesn't match
+  # the https:// one registered with Google (redirect_uri_mismatch). Only Fly's
+  # proxy reaches the app, and the kiosk rate limit reads Fly-Client-IP, which the
+  # proxy sets itself.
+  FORWARDED_ALLOW_IPS = '*'
+
 [http_service]
   internal_port = 8000
   force_https = true
