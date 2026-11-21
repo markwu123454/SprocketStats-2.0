@@ -100,8 +100,8 @@ Use this for anything that only shows on a real phone, like the iOS keyboard pus
 around. The phone opens the dev server on your computer over the network.
 
 1. Start the backend as usual, with `ENV=development` in `backend/.env`.
-2. Start the frontend in phone mode: `npm run dev:phone` from `frontend/`, or the `dev:phone`
-   run config. It's the normal dev server, except the app calls the API at `/api` on the dev
+2. Start the frontend in phone mode: `npm run dev:phone` from `frontend/`, or the
+   `frontend: dev:phone` run config (`dev:phone` with `frontend/` open on its own). It's the normal dev server, except the app calls the API at `/api` on the dev
    server itself, which forwards to the backend at `127.0.0.1:8000` (set `DEV_BACKEND_URL`
    to change that). The phone can't reach `localhost:8000`, since that's the phone.
 3. On the phone, open one of the `Network:` addresses Vite prints. Use the one on the same
