@@ -52,8 +52,8 @@ export function useMembersRoster() {
     const { user } = useAuth()
 
     // Bootstrap pre-seeds — null means "not yet resolved", [] means "resolved but empty"
-    const [bMembers] = useBootstrapped<MemberRow[] | null>("members", null)
-    const [bTagMap]  = useBootstrapped<Record<string, string[]> | null>("tag_assignments", null)
+    const [bMembers, setBMembers] = useBootstrapped<MemberRow[] | null>("members", null)
+    const [bTagMap, setBTagMap]   = useBootstrapped<Record<string, string[]> | null>("tag_assignments", null)
 
     const [rows, setRows] = useState<MemberRow[]>(() => (bMembers ? withTags(bMembers, bTagMap) : []))
     const [catalog, setCatalog] = useBootstrapped<RoleCatalogEntry[]>("roles", [])
@@ -69,6 +69,8 @@ export function useMembersRoster() {
     const [loading, setLoading] = useState(bMembers === null)
     // Tracks whether the real load() has started; prevents bootstrap from overwriting fresh data.
     const loadStarted = useRef(false)
+    // Set once the server's roster is on screen.
+    const haveFresh = useRef(false)
     const [error, setError] = useState<string | null>(null)
     // Members with an approve/ban/unban on its way to the server, so it can't be pressed twice.
     const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set())
@@ -95,6 +97,7 @@ export function useMembersRoster() {
             const tagMap: Record<string, string[]> = tRes.ok ? await tRes.json() as Record<string, string[]> : {}
             if (rRes.ok) setCatalog(await rRes.json() as RoleCatalogEntry[])
             setRows(withTags(members, tagMap))
+            haveFresh.current = true
         } catch {
             setError("Couldn't load members")
         } finally {
@@ -103,6 +106,14 @@ export function useMembersRoster() {
     }, [setCatalog])
 
     useEffect(() => { void load() }, [load])
+
+    // Once the server's roster is on screen, it (and every change made here) is
+    // what the page starts from next time, not the roster from app load.
+    useEffect(() => {
+        if (!haveFresh.current) return
+        setBMembers(rows)
+        setBTagMap(Object.fromEntries(rows.map(r => [r.id, r.tags])))
+    }, [rows, setBMembers, setBTagMap])
 
     const roleById = useMemo(() => new Map(catalog.map(c => [c.value, c])), [catalog])
     const order = useMemo(() => rosterOrder(catalog), [catalog])

@@ -2,7 +2,7 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest"
 import {
     OFFLINE_LOGIN_MS, checkSession, clearOfflineData, hasPendingLogout, lastOnlineAt, loadOfflineSnapshot,
-    markOnline, pickOfflineKeys, saveOfflineSnapshot, setPendingLogout, withinOfflineWindow,
+    markOnline, pickOfflineKeys, saveOfflineSnapshot, setPendingLogout, updateOfflineSnapshot, withinOfflineWindow,
 } from "./offline"
 
 const API = "https://api.example.test"
@@ -50,6 +50,25 @@ describe("saved bootstrap", () => {
         expect(loadOfflineSnapshot("member-2")).toBeNull()
         clearOfflineData()
         expect(loadOfflineSnapshot("member-1")).toBeNull()
+    })
+
+    it("takes a newer value for one key and keeps the rest and the saved time", () => {
+        saveOfflineSnapshot("member-1", {tasks: ["old"], meetings: ["m"]}, 99)
+        updateOfflineSnapshot("member-1", "tasks", ["fresh"], 500)
+        expect(loadOfflineSnapshot("member-1")).toEqual({userId: "member-1", savedAt: 99, data: {tasks: ["fresh"], meetings: ["m"]}})
+    })
+
+    it("never saves a control-panel key from a page", () => {
+        saveOfflineSnapshot("member-1", {meetings: ["m"]}, 99)
+        updateOfflineSnapshot("member-1", "members", ["secret"])
+        expect(loadOfflineSnapshot("member-1")?.data).toEqual({meetings: ["m"]})
+    })
+
+    it("starts a snapshot when the phone has none, or only another member's", () => {
+        saveOfflineSnapshot("member-2", {meetings: ["theirs"]}, 99)
+        updateOfflineSnapshot("member-1", "tasks", ["mine"], 500)
+        expect(loadOfflineSnapshot("member-1")).toEqual({userId: "member-1", savedAt: 500, data: {tasks: ["mine"]}})
+        expect(loadOfflineSnapshot("member-2")).toBeNull()
     })
 })
 
