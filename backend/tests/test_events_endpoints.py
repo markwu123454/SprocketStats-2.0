@@ -8,12 +8,12 @@ the endpoints enforce -- idempotent check-in (role/phone/days all held fixed
 on repeat calls), roster/links/event_name never touched by the content PATCH,
 the 404-never-creates rule, and the day-range check against a schedule row.
 
-Auth is bypassed via a FastAPI dependency override on `require_active` (the
-login-only gate on the check-in and roster-update routes) the same way
-test_tasks_endpoints.py does it; the roster-update route's `events.edit`
-authorization is plain inline logic, so overriding `require_active` to supply
-a real caller is enough to exercise it for real -- no dependency-override
-trick needed. The content-PATCH and PUT routes are different: they're gated
+Login is bypassed via a FastAPI dependency override on `get_current_user`
+(with the ban/approval cache check stubbed) the same way
+test_tasks_endpoints.py does it, so the check-in and roster-update routes'
+real `events.details` gate runs against the caller's role; the roster-update
+route's `events.edit` authorization is plain inline logic, exercised for real
+the same way. The content-PATCH and PUT routes are different: they're gated
 by `require_access(...)` instances (one named, `require_event_edit`; one
 anonymous), so their permission-denied/round-trip tests instead override only
 `get_current_user` and stub out the account-state ban/approval check, letting
@@ -21,13 +21,15 @@ the real permission dependency run against a role that does/doesn't hold the
 needed capability.
 """
 
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import core.account_state as account_state
 import db
-from core.security import get_current_user, require_active
+from core.security import get_current_user
 from endpoints.events import require_event_edit
 from endpoints.events import router as events_router
 
@@ -211,16 +213,18 @@ def store(monkeypatch):
 
 
 @pytest.fixture
-def app():
+def app(monkeypatch):
+    monkeypatch.setattr(account_state, "assert_active", AsyncMock())
     fastapi_app = FastAPI()
     fastapi_app.include_router(events_router, prefix="/events")
     return fastapi_app
 
 
 def _as(app: FastAPI, user: dict) -> TestClient:
-    """A TestClient acting as `user` (overrides the require_active gate used
-    by the check-in routes, and the require_event_edit gate used by PATCH)."""
-    app.dependency_overrides[require_active] = lambda: user
+    """A TestClient signed in as `user` (the check-in routes' real
+    `events.details` gate runs), with the require_event_edit gate used by
+    PATCH overridden."""
+    app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[require_event_edit] = lambda: user
     return TestClient(app)
 
@@ -280,8 +284,8 @@ def test_check_in_404_unknown_event(app, store):
 
 
 def test_check_in_falls_back_when_display_name_claim_is_none(app, store):
-    # An account that hasn't finished onboarding has a null display_name
-    # claim (require_active doesn't check onboarding), but the roster entry
+    # A session from before onboarding finished can carry a null display_name
+    # claim (the role gate doesn't check onboarding), but the roster entry
     # must still get a non-empty string name -- see RosterMember.display_name.
     store.add_event("2026test")
     user = {"sub": "pending-1", "role": "cad_member", "display_name": None, "name": "Pending User"}
@@ -461,7 +465,7 @@ def test_check_in_repeat_call_keeps_original_days(app, store):
 
 # ── PATCH roster/{user_id}: role and/or days ────────────────────────────
 #
-# The route's dependency is just `require_active` (login) now -- `_as(app,
+# The route's dependency is `require_event_details` -- `_as(app,
 # user)` supplies the real caller, and the endpoint's own inline
 # `events.edit` check runs for real against that user's actual role. No
 # dependency-override trick is needed to exercise it, unlike the

@@ -11,13 +11,27 @@ logger = logging.getLogger(__name__)
 # so there is one canonical joined shape rather than a raw variant and a joined
 # variant that could drift apart. A picture is NULL when its owner hid it from
 # others (users.hide_picture); endpoints.tasks puts the viewer's own back.
+#
+# A banned member disappears from every task while banned, without changing the
+# stored row, so unbanning brings them back: their id and name read as NULL
+# wherever they appear, so a task they had claimed reads as unclaimed (and a
+# `doing` one as `todo`), anyone can claim it (see claim_task), and their
+# contributions and notes don't show or count. The columns are listed rather
+# than `t.*` so those masks replace the stored values.
 _SELECT_TASK = """
-    SELECT t.*,
-           a.display_name AS assignee_name,
-           CASE WHEN a.hide_picture THEN NULL ELSE a.picture END AS assignee_picture,
-           c.display_name AS created_by_name,
-           f.display_name AS finished_by_name,
-           r.display_name AS reviewed_by_name,
+    SELECT t.id, t.title, t.area, t.bucket, t.priority,
+           CASE WHEN a.banned_at IS NOT NULL AND t.status = 'doing' THEN 'todo' ELSE t.status END AS status,
+           CASE WHEN a.banned_at IS NULL THEN t.assignee_id END AS assignee_id,
+           t.due_date,
+           CASE WHEN c.banned_at IS NULL THEN t.created_by END AS created_by,
+           CASE WHEN f.banned_at IS NULL THEN t.finished_by END AS finished_by,
+           CASE WHEN r.banned_at IS NULL THEN t.reviewed_by END AS reviewed_by,
+           t.event_key, t.created_at, t.updated_at,
+           CASE WHEN a.banned_at IS NULL THEN a.display_name END AS assignee_name,
+           CASE WHEN a.banned_at IS NULL AND NOT a.hide_picture THEN a.picture END AS assignee_picture,
+           CASE WHEN c.banned_at IS NULL THEN c.display_name END AS created_by_name,
+           CASE WHEN f.banned_at IS NULL THEN f.display_name END AS finished_by_name,
+           CASE WHEN r.banned_at IS NULL THEN r.display_name END AS reviewed_by_name,
            COALESCE(
                (SELECT json_agg(json_build_object(
                            'id', u.id, 'display_name', u.display_name,
@@ -25,10 +39,12 @@ _SELECT_TASK = """
                        ) ORDER BY tc.added_at)
                 FROM task_contributors tc
                 JOIN users u ON u.id = tc.user_id
-                WHERE tc.task_id = t.id),
+                WHERE tc.task_id = t.id AND u.banned_at IS NULL),
                '[]'::json
            ) AS contributors,
-           (SELECT count(*) FROM task_notes n WHERE n.task_id = t.id) AS note_count
+           (SELECT count(*) FROM task_notes n
+            LEFT JOIN users nu ON nu.id = n.author_id
+            WHERE n.task_id = t.id AND nu.banned_at IS NULL) AS note_count
     FROM tasks t
     LEFT JOIN users a ON a.id = t.assignee_id
     LEFT JOIN users c ON c.id = t.created_by
@@ -220,7 +236,8 @@ async def update_task(task_id: str, fields: dict) -> asyncpg.Record | None:
 async def claim_task(task_id: str, user_id: str) -> asyncpg.Record | None:
     """Assign `user_id` to an unassigned task, bumping `todo` -> `doing`.
 
-    The `WHERE assignee_id IS NULL` guard re-checks at the database level, so
+    A task claimed by a member who is now banned counts as unassigned, as it
+    reads (see _SELECT_TASK). The guard re-checks at the database level, so
     this is race-safe even though the endpoint already checked the task was
     unassigned before calling -- two simultaneous claims can't both succeed.
 
@@ -236,7 +253,9 @@ async def claim_task(task_id: str, user_id: str) -> asyncpg.Record | None:
                 SET assignee_id = $2,
                     status = CASE WHEN status = 'todo' THEN 'doing' ELSE status END,
                     updated_at = now()
-                WHERE id = $1 AND assignee_id IS NULL
+                WHERE id = $1
+                  AND (assignee_id IS NULL
+                       OR assignee_id IN (SELECT id FROM users WHERE banned_at IS NOT NULL))
                 RETURNING id
                 """,
                 task_id,
@@ -413,7 +432,10 @@ async def list_task_notes(task_id: str) -> list[asyncpg.Record]:
     """Return every note on `task_id`, oldest first, with the author's display name joined in."""
     async with db_connection(DB_NAME) as conn:
         try:
-            return await conn.fetch(_SELECT_NOTE + " WHERE n.task_id = $1 ORDER BY n.created_at ASC", task_id)
+            # A banned member's notes are hidden while they're banned (see _SELECT_TASK).
+            return await conn.fetch(
+                _SELECT_NOTE + " WHERE n.task_id = $1 AND u.banned_at IS NULL ORDER BY n.created_at ASC", task_id,
+            )
         except Exception as e:
             logger.error("list_task_notes failed: %s", e)
             raise HTTPException(status_code=500, detail="Failed to fetch notes")

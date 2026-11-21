@@ -17,7 +17,9 @@ export default function MeetingsPage() {
     const user = useOnboardedUser()
     const { meetings, loading, error, retry } = useMeetings()
     const [absenceRevision, setAbsenceRevision] = useState(0)
-    const { absences, loading: absencesLoading, error: absencesError, retry: retryAbsences } = useMeetingAbsences(absenceRevision)
+    // Without it (visitors) the server sends meeting times only: no agendas or absences.
+    const showDetails = can(user.permissions, "meetings.details")
+    const { absences, loading: absencesLoading, error: absencesError, retry: retryAbsences } = useMeetingAbsences(absenceRevision, showDetails)
     const grouped = useMemo(() => absencesByMeeting(absences), [absences])
     const canViewAbsences = canViewOthersAbsences(user.permissions)
     const roleLabels = useRoleLabels(canViewAbsences)
@@ -63,18 +65,18 @@ export default function MeetingsPage() {
                         const live = start.getTime() <= now
                         const mine = grouped.get(meeting.id)?.find(absence => absence.user_id === user.id)
                         const others = (grouped.get(meeting.id) ?? []).filter(absence => absence.user_id !== user.id)
-                        const hasAgenda = meeting.agenda.trim() !== ""
+                        const hasAgenda = (meeting.agenda ?? "").trim() !== ""
                         return <section key={meeting.id} className={`rounded-2xl border theme-border p-3.5 ${CARD_BG}`}>
                                 <span className="sr-only">{meetingDate(meeting.start_time)}</span>
                                 {isNext && <p className={`${eyebrow} theme-text-contrast`}>{live ? "Live now" : `Next · ${relativeDayLabel(meeting.start_time, now)}`}</p>}
                                 <h2 className="text-[19px] font-bold theme-h1-color break-words my-1">{meeting.meeting_purpose || "Team meeting"}</h2>
-                                <p className="text-sm theme-subtext-color">{meetingTime(meeting)}{hoursMultiplier(meeting) > 1 && ` · ${multiplierLabel(hoursMultiplier(meeting))} hours`}{!isNext && !hasAgenda && " · No agenda"}</p>
-                                {(isNext || hasAgenda) && <div className="mt-3 border-t border-dashed theme-border pt-2.5 text-[13px] theme-subtext-color">
+                                <p className="text-sm theme-subtext-color">{meetingTime(meeting)}{hoursMultiplier(meeting) > 1 && ` · ${multiplierLabel(hoursMultiplier(meeting))} hours`}{showDetails && !isNext && !hasAgenda && " · No agenda"}</p>
+                                {showDetails && (isNext || hasAgenda) && <div className="mt-3 border-t border-dashed theme-border pt-2.5 text-[13px] theme-subtext-color">
                                     {hasAgenda
                                         ? <><p>Agenda</p><p className="mt-1 text-sm theme-text whitespace-pre-wrap break-words">{meeting.agenda}</p></>
                                         : <p>Agenda · none shared yet</p>}
                                 </div>}
-                                {!absencesLoading && !absencesError && <MeetingAbsenceRow meeting={meeting} mine={mine} others={canViewAbsences ? others : undefined} roleLabels={roleLabels} onChanged={() => setAbsenceRevision(value => value + 1)} />}
+                                {showDetails && !absencesLoading && !absencesError && <MeetingAbsenceRow meeting={meeting} mine={mine} others={canViewAbsences ? others : undefined} roleLabels={roleLabels} onChanged={() => setAbsenceRevision(value => value + 1)} />}
                         </section>
                     })}
                             </div>

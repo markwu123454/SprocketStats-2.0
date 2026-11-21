@@ -15,12 +15,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import db
+import core.account_state as account_state
 import core.push_notify as push_notify
 from core.attendance_rules import (
     ATTENDANCE_ACTIVE_FROM, credited_seconds_by_member, hours_multiplier, meeting_checkin_seconds,
 )
 from core.permissions import absence_push_roles, can_view_absence, has_absence_view, sees_whole_team, tracks_attendance
-from core.security import require_active
+from core.security import get_current_user
 from endpoints import meeting_hours
 from endpoints.meeting_hours import router
 
@@ -133,11 +134,12 @@ def setup(monkeypatch):
     monkeypatch.setattr(meeting_hours, "absence_push", notify.build)
     monkeypatch.setattr(meeting_hours, "kick_outbox", notify.kick)
 
+    monkeypatch.setattr(account_state, "assert_active", AsyncMock())
     app = FastAPI()
     app.include_router(router, prefix="/meeting-hours")
 
     def client(user_id="me"):
-        app.dependency_overrides[require_active] = lambda: {"sub": user_id, "role": USERS[user_id][1]}
+        app.dependency_overrides[get_current_user] = lambda: {"sub": user_id, "role": USERS[user_id][1]}
         return TestClient(app)
 
     notify.checkins = checkins

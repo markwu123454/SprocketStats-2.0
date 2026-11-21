@@ -1,10 +1,12 @@
-import {useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode} from "react"
+import {useCallback, useEffect, useId, useRef, type PointerEvent, type ReactNode} from "react"
 import {createPortal} from "react-dom"
 import {X} from "lucide-react"
 import Button from "@/components/ui/Button"
 import {focusRing, typeTitle} from "@/lib/uiClasses"
 import {SheetDirtyContext, askDiscard} from "@/lib/useDiscardGuard"
-import {isTopOverlay, lockScroll, prefersReducedMotion, pushOverlay, trapTab} from "@/lib/modalStack"
+import {prefersReducedMotion} from "@/lib/modalStack"
+import {useOverlay} from "@/lib/useOverlay"
+import {visibleAreaStyle} from "@/lib/viewport"
 
 interface SheetProps {
     title: string
@@ -14,7 +16,7 @@ interface SheetProps {
     footer?: ReactNode
     /** "form": up to 92% of the visible height; also a centred dialog from md. "menu": up to 60%, mobile only. */
     kind?: "form" | "menu"
-    /** Keep the title for assistive tech but don't show it. */
+    /** Keep the title for assistive tech but don't show it. On a phone the header is then just the drag handle (which closes the sheet); desktop keeps an X. */
     labelledByTitleHidden?: boolean
     /** REPLACES the scroller's default padding (`px-4 md:px-6 pt-2 pb-4`). */
     className?: string
@@ -40,9 +42,6 @@ export default function Sheet({title, onClose, children, footer, kind = "form", 
     const timers = useRef<number[]>([])
     const drag = useRef<{startY: number, pointerId: number, active: boolean, samples: {y: number, t: number}[]} | null>(null)
     const onCloseRef = useRef(onClose)
-    const [token] = useState(() => Symbol("sheet"))
-    // Read during the first render, before any child autofocus has moved focus.
-    const [opener] = useState<Element | null>(() => document.activeElement)
 
     const dirtyRef = useRef(dirty)
     const childDirty = useRef(0)
@@ -98,48 +97,15 @@ export default function Sheet({title, onClose, children, footer, kind = "form", 
         else onDeclined?.()
     }, [dismiss])
 
-    // Open: register on the overlay stack, lock scroll, move focus in. Close: undo all three.
+    // Overlay stack, scroll lock, focus in and back, Tab trap, and Esc (shared with Dialog).
+    // A child that autofocuses (Dropdown search) keeps focus; otherwise the panel takes it.
+    const onRootKeyDown = useOverlay(panelRef, {onEscape: () => void requestClose()})
+
+    // A pending close timer must not fire after the sheet is gone.
     useEffect(() => {
-        const unregister = pushOverlay(token)
-        const unlock = lockScroll()
-        const panel = panelRef.current
-        // A child that autofocuses (Dropdown search) has already claimed focus; otherwise take it.
-        if (panel && !panel.contains(document.activeElement)) panel.focus({preventScroll: true})
         const pending = timers.current
-        return () => {
-            unregister()
-            unlock()
-            pending.forEach(window.clearTimeout)
-            if (opener instanceof HTMLElement && opener !== document.body && document.contains(opener)) {
-                opener.focus({preventScroll: true})
-            }
-        }
-    }, [token, opener])
-
-    // Keys while focus is outside every sheet (e.g. after clicking the scrim of something else).
-    useEffect(() => {
-        const onDocKey = (e: globalThis.KeyboardEvent) => {
-            const panel = panelRef.current
-            if (!panel || !isTopOverlay(token) || panel.contains(e.target as Node) || e.defaultPrevented) return
-            if (e.key === "Escape") { e.preventDefault(); void requestClose() }
-            else trapTab(e, panel)
-        }
-        document.addEventListener("keydown", onDocKey)
-        return () => document.removeEventListener("keydown", onDocKey)
-    }, [token, requestClose])
-
-    const onRootKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-        // The portal's React parents must not see this: a Sheet inside a Dropdown or clickable row stays self-contained.
-        e.stopPropagation()
-        const panel = panelRef.current
-        if (!panel || !isTopOverlay(token)) return
-        if (e.key === "Escape" && !e.defaultPrevented) {
-            e.preventDefault()
-            void requestClose()
-        } else {
-            trapTab(e, panel)
-        }
-    }
+        return () => pending.forEach(window.clearTimeout)
+    }, [])
 
     // ── Drag (header and handle only) ──────────────────────────────────────
     const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
@@ -210,8 +176,10 @@ export default function Sheet({title, onClose, children, footer, kind = "form", 
     return createPortal(
         <SheetDirtyContext.Provider value={registerChildDirty}>
         <div
-            className="fixed inset-x-0 top-0 z-50 flex items-end md:items-center justify-center md:p-4"
-            style={{height: "var(--real-vh, 100dvh)"}}
+            className="fixed inset-x-0 z-50 flex items-end md:items-center justify-center md:p-4"
+            // Pinned to what's on screen, not the page: with the keyboard open, iOS slides the
+            // view down to the focused field, and a `top: 0` sheet would slide off with the page.
+            style={visibleAreaStyle}
             // click and keydown stop here so React parents (a clickable row, a Dropdown) never see them. mousedown is
             // left alone: stopping it would also hide it from document-level outside-click listeners.
             onClick={e => e.stopPropagation()}
@@ -242,8 +210,11 @@ export default function Sheet({title, onClose, children, footer, kind = "form", 
                     >
                         <span className="block w-8 h-1 rounded-full bg-[var(--theme-outline)]"/>
                     </button>
-                    <div className={`flex items-center gap-2 pl-4 md:pl-6 pr-2 md:pr-4 md:pt-2 ${labelledByTitleHidden ? "justify-end" : ""}`}>
-                        <h2 id={titleId} className={labelledByTitleHidden ? "sr-only" : `flex-1 min-w-0 truncate theme-h1-color ${typeTitle}`}>{title}</h2>
+                    {/* With the title hidden this row would hold only the X, so on a phone it's left
+                        out: the handle above is the close button there. Desktop has no handle, so keeps it. */}
+                    {labelledByTitleHidden && <h2 id={titleId} className="sr-only">{title}</h2>}
+                    <div className={`items-center gap-2 pl-4 md:pl-6 pr-2 md:pr-4 md:pt-2 ${labelledByTitleHidden ? "hidden md:flex justify-end" : "flex"}`}>
+                        {!labelledByTitleHidden && <h2 id={titleId} className={`flex-1 min-w-0 truncate theme-h1-color ${typeTitle}`}>{title}</h2>}
                         <Button variant="icon" data-no-drag aria-label="Close" onClick={() => void requestClose()}><X size={18}/></Button>
                     </div>
                 </div>

@@ -10,7 +10,7 @@ from core.attendance_rules import (
     ATTENDANCE_ACTIVE_FROM, MAX_HOURS_MULTIPLIER, MIN_HOURS_MULTIPLIER, hours_multiplier, meeting_checkin_seconds,
 )
 from core.permissions import (
-    can_view_absence, get_perm, get_permissions_for_role, has_absence_view, role_requires_approval, sees_whole_team,
+    can, can_view_absence, get_perm, get_permissions_for_role, has_absence_view, role_requires_approval, sees_whole_team,
     tracks_attendance,
 )
 from core.discord_notify import discord_configured, notify_meetings_created
@@ -24,6 +24,11 @@ router = APIRouter()
 # Scheduling and agenda editing are independently permission-gated.
 require_meeting_time = require_access(permissions="control_panel.meeting_time")
 require_meeting_agenda = require_access(permissions="control_panel.meeting_agenda")
+# Agendas and absence reports. Roles without it (visitors) see meeting times only.
+require_meeting_details = require_access(permissions="meetings.details")
+
+# What a role without `meetings.details` sees of each meeting.
+_PUBLIC_MEETING_FIELDS = ("id", "start_time", "end_time", "meeting_purpose")
 
 
 MAX_RECURRING_OCCURRENCES = 200
@@ -64,10 +69,13 @@ class MeetingHoursWrite(BaseModel):
 
 
 @router.get("")
-async def list_meetings(_: dict = Depends(require_active)):
-    """Scheduled meetings and agendas, visible to active signed-in members."""
-    rows = await db.list_all_meeting_hours()
-    return [_row_to_meeting(r) for r in rows]
+async def list_meetings(user: dict = Depends(require_active)):
+    """Scheduled meetings and agendas, visible to active signed-in members.
+    Roles without `meetings.details` get times and purposes only."""
+    meetings = [_row_to_meeting(r) for r in await db.list_all_meeting_hours()]
+    if can(get_permissions_for_role(user.get("role")), "meetings.details"):
+        return meetings
+    return [{k: m[k] for k in _PUBLIC_MEETING_FIELDS} for m in meetings]
 
 
 MAX_ABSENCE_REASON = 500
@@ -115,7 +123,7 @@ async def _open_meeting(meeting_id: str):
 
 # Declared before any `/{meeting_id}` GET route so "absences" is never read as an id.
 @router.get("/absences")
-async def list_absences(user: dict = Depends(require_active)):
+async def list_absences(user: dict = Depends(require_meeting_details)):
     """The caller's own absences plus every absence their role may view."""
     rows = await db.list_meeting_absences()
     visible = [r for r in rows if r["user_id"] == user["sub"] or can_view_absence(user.get("role"), r["role"])]
@@ -178,7 +186,7 @@ async def attendance_overview(user: dict = Depends(require_active)):
 
 
 @router.put("/{meeting_id}/absence")
-async def report_absence(meeting_id: str, body: AbsenceWrite, user: dict = Depends(require_active)):
+async def report_absence(meeting_id: str, body: AbsenceWrite, user: dict = Depends(require_meeting_details)):
     meeting = await _open_meeting(meeting_id)
     # Built up front so it can be queued in the same transaction as the absence
     # (and so survive a restart); only queued if the absence turns out new.
@@ -201,7 +209,7 @@ async def report_absence(meeting_id: str, body: AbsenceWrite, user: dict = Depen
 
 
 @router.delete("/{meeting_id}/absence")
-async def withdraw_absence(meeting_id: str, user: dict = Depends(require_active)):
+async def withdraw_absence(meeting_id: str, user: dict = Depends(require_meeting_details)):
     await _open_meeting(meeting_id)
     if not await db.delete_meeting_absence(meeting_id, user["sub"]):
         raise HTTPException(status_code=404, detail="No absence reported for this meeting")

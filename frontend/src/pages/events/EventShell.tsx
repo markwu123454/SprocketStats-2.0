@@ -24,7 +24,7 @@ const TABS: { label: string; icon: typeof Home; to: "" | HubTab; end: boolean }[
 export default function EventShell() {
     const { eventKey } = useParams<{ eventKey: string }>()
     const location = useLocation()
-    const [bootstrapEvent] = useBootstrapped<EventInfo | null>("current_event", null)
+    const [bootstrapEvent, setBootstrapEvent] = useBootstrapped<EventInfo | null>("current_event", null)
     const [eventKeys] = useBootstrapped<string[]>("event_keys", [])
     const [scheduleEvents, setScheduleEvents] = useBootstrapped<EventEntry[]>("events", [])
 
@@ -90,6 +90,14 @@ export default function EventShell() {
     }, [eventKey, notFound, archived])
 
     const isLoading = loading && !knownInvalid
+
+    // Fresh info for the event bootstrap carries (the current one) is what this
+    // page and the dashboard start from next time, not the copy from app load.
+    useEffect(() => {
+        if (info && bootstrapEvent && info.event_key === bootstrapEvent.event_key && info !== bootstrapEvent) {
+            setBootstrapEvent(info)
+        }
+    }, [info, bootstrapEvent, setBootstrapEvent])
 
     const updateInfo = useCallback((patch: Partial<EventInfo>) => {
         setInfo(prev => prev ? { ...prev, ...patch } : prev)

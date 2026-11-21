@@ -221,11 +221,25 @@ def _clean_display_name(v: str) -> str:
     return v
 
 
+FIRST_PROGRAMS = ("FRC", "FTC", "FLL")
+MAX_FIRST_TEAM_NUMBER = 999_999
+
+
+def asks_first_team(role: str | None) -> bool:
+    """Whether onboarding asks this role for a FIRST team (visitors only)."""
+    return get_permissions_for_role(role).get("level") == "visitor"
+
+
 class OnboardingRequest(BaseModel):
     display_name: str
     role: str
     grade: str | None = None
     team_year: str | None = None
+    # A visitor's own FIRST team, if they're on one: program and number
+    # together, or neither. Older app builds don't send these, so a visitor
+    # who leaves them out still onboards (unknown team).
+    first_program: str | None = None
+    first_team_number: int | None = None
 
     @field_validator("display_name")
     @classmethod
@@ -262,6 +276,22 @@ class OnboardingRequest(BaseModel):
                 raise ValueError("Team year is required for this role")
         return self
 
+    @model_validator(mode="after")
+    def validate_first_team(self) -> "OnboardingRequest":
+        has_program = self.first_program is not None
+        has_number = self.first_team_number is not None
+        if not has_program and not has_number:
+            return self
+        if not asks_first_team(self.role):
+            raise ValueError("Only visitors are asked about a FIRST team")
+        if not (has_program and has_number):
+            raise ValueError("Enter both your FIRST program and team number")
+        if self.first_program not in FIRST_PROGRAMS:
+            raise ValueError(f"FIRST program must be one of {', '.join(FIRST_PROGRAMS)}")
+        if not 1 <= self.first_team_number <= MAX_FIRST_TEAM_NUMBER:
+            raise ValueError("Enter a valid team number")
+        return self
+
 
 @router.post("/onboarding")
 async def complete_onboarding(
@@ -276,8 +306,12 @@ async def complete_onboarding(
             detail=f"Student roles require a @{STUDENT_EMAIL_DOMAIN} email address. "
                    f"Sign in with your school account, or choose Mentor, Alumni, or Visitor.",
         )
-    updated = await db.update_user_onboarding(user["sub"], body.display_name, body.role, body.grade, body.team_year)
+    updated = await db.update_user_onboarding(
+        user["sub"], body.display_name, body.role, body.grade, body.team_year,
+        body.first_program, body.first_team_number,
+    )
     updated_dict = dict(updated)
+    account_state.apply(user["sub"], updated_dict)
     session_jwt = issue_jwt(updated_dict)
 
     response = JSONResponse({"ok": True})
@@ -331,9 +365,9 @@ async def update_picture_visibility(
 ):
     """Hide or show the signed-in user's photo to other members.
 
-    While hidden, everyone else gets ``null`` for this user's photo (tasks, task
-    notes, the Members roster) and shows the initial instead; the user still
-    sees their own. Not a JWT claim, so no new cookie is needed.
+    While hidden, everyone else gets ``null`` for this user's photo and shows the
+    initial instead; the user still sees their own. Not a JWT claim, so no new
+    cookie is needed.
 
     :param body: ``{"hide_picture": true}`` to hide, ``false`` to show.
     :param user: The authenticated user's JWT claims.

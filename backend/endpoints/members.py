@@ -191,6 +191,11 @@ async def update_members(
     """
     await _authorize_edits(user, updates)
     await db.update_users([u.model_dump() for u in updates])
+    # A role change also clears approved_by (see db.update_users); enforce both here at once.
+    for u in updates:
+        row = await db.get_user(u.id)
+        if row is not None:
+            account_state.apply(u.id, row)
     return {"ok": True, "updated": len(updates)}
 
 
@@ -211,6 +216,7 @@ async def approve_member(user_id: str, user: dict = Depends(require_roster_acces
     row = await db.approve_user(user_id, user["sub"])
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    account_state.apply(user_id, row)
     return {"id": row["id"], "approved_by": row["approved_by"]}
 
 
@@ -229,6 +235,7 @@ async def unapprove_member(user_id: str, user: dict = Depends(require_roster_acc
     row = await db.unapprove_user(user_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    account_state.apply(user_id, row)
     return {"id": row["id"], "approved_by": row["approved_by"]}
 
 
@@ -236,11 +243,12 @@ async def unapprove_member(user_id: str, user: dict = Depends(require_roster_acc
 async def ban_member(user_id: str, user: dict = Depends(require_roster_access)):
     """Soft-ban a member: their row and role stay intact, only ``banned_at`` is set.
 
-    Enforcement happens in ``/auth/me`` (the only endpoint that re-checks the DB
-    on every call), so an already-open session isn't cut off mid-request; the ban
-    takes effect the next time the client re-fetches the current user. A member
-    can't ban themselves, and the target must be within the actor's moderation
-    scope (same rule as approving).
+    Every signed-in request checks bans (``core.account_state``): this process
+    refuses the member from their next request, every other one within
+    ``account_state.MAX_AGE_SECONDS``. While banned, the member is hidden
+    everywhere except the Members page; unbanning brings everything back, as
+    nothing is deleted. A member can't ban themselves, and the target must be
+    within the actor's moderation scope (same rule as approving).
 
     :param user_id: The member being banned.
     :param user: The authenticated actor.
@@ -250,6 +258,7 @@ async def ban_member(user_id: str, user: dict = Depends(require_roster_access)):
     row = await db.ban_user(user_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    account_state.apply(user_id, row)
     return {"id": row["id"], "banned_at": row["banned_at"].isoformat() if row["banned_at"] else None}
 
 
@@ -267,6 +276,7 @@ async def unban_member(user_id: str, user: dict = Depends(require_roster_access)
     row = await db.unban_user(user_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    account_state.apply(user_id, row)
     return {"id": row["id"], "banned_at": None}
 
 
@@ -336,6 +346,9 @@ def _row_to_member(r, *, mask_email: bool = False) -> dict:
         "role": r["role"],
         "grade": r["grade"],
         "team_year": r["team_year"],
+        # A visitor's own FIRST team, when they gave one at onboarding.
+        "first_program": r.get("first_program"),
+        "first_team_number": r.get("first_team_number"),
         "approved_by": r["approved_by"],
         "banned_at": r["banned_at"].isoformat() if r["banned_at"] else None,
         **_kiosk_access_of(r),

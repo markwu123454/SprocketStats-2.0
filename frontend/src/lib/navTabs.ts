@@ -1,10 +1,11 @@
 // Single source of truth for primary navigation. The desktop sidebar lists every
 // tab; the mobile bottom bar (5 destinations at most, navigation.md) shows only
-// those marked `mobile` plus "Other", whose page lists the rest as cards.
+// those marked `mobile` plus More, which opens a sheet holding the rest
+// (components/MoreSheet.tsx).
 
 import {
-    CalendarCheck, ClipboardList, LayoutDashboard, LayoutGrid, ListChecks, Milestone,
-    Settings, SlidersHorizontal, Trophy, type LucideIcon,
+    CalendarCheck, ClipboardList, LayoutDashboard, ListChecks, Milestone,
+    Trophy, type LucideIcon,
 } from "lucide-react"
 import { can, type PermPolicy } from "./permissions"
 
@@ -12,7 +13,7 @@ export interface NavTab {
     to: string
     label: string
     icon: LucideIcon
-    /** Shown in the mobile bottom bar. Tabs without it live on the Other page there. */
+    /** Shown in the mobile bottom bar. Tabs without it live in the More sheet there. */
     mobile?: boolean
     /** Optional gate; a tab with no predicate is always shown. */
     visible?: (perms: PermPolicy | null | undefined) => boolean
@@ -23,26 +24,24 @@ export const CORE_TABS: NavTab[] = [
     { to: "/meetings",     label: "Meetings",     icon: CalendarCheck,   mobile: true },
     { to: "/events",       label: "Events",       icon: Milestone,       mobile: true },
     { to: "/tasks",        label: "Tasks",        icon: ListChecks,      mobile: true, visible: p => can(p, "tasks.view") },
-    { to: "/leaderboards", label: "Leaderboards", icon: Trophy },
-    { to: "/scouting",     label: "Scouting",     icon: ClipboardList },
+    { to: "/leaderboards", label: "Leaderboards", icon: Trophy,          visible: p => can(p, "leaderboards.view") },
+    { to: "/scouting",     label: "Scouting",     icon: ClipboardList,   visible: p => can(p, "scouting.view") },
 ]
 
-export const CONTROL_PANEL_TAB: NavTab = {
-    to: "/control",
-    label: "Control Panel",
-    icon: SlidersHorizontal,
+/** The tabs the More sheet lists under Pages: every tab this role can see that isn't in the bar. */
+export function moreTabs(perms: PermPolicy | null | undefined): NavTab[] {
+    return CORE_TABS.filter(t => !t.mobile && (!t.visible || t.visible(perms)))
 }
 
-export const OTHER_TAB: NavTab = { to: "/other", label: "Other", icon: LayoutGrid }
+/** Routes reached through the More sheet besides its tabs: the Control Panel pages and Settings. */
+const MORE_ROUTES = ["/control", "/settings"]
 
-const SETTINGS_PAGE: NavTab = { to: "/settings", label: "Settings", icon: Settings }
-
-/** Pages reachable from the Other page: every non-bar tab, Control Panel if allowed, Settings. */
-export function otherPages(perms: PermPolicy | null | undefined): NavTab[] {
-    const visible = (t: NavTab) => !t.visible || t.visible(perms)
-    return [
-        ...CORE_TABS.filter(t => !t.mobile && visible(t)),
-        ...(can(perms, "control_panel.view") ? [CONTROL_PANEL_TAB] : []),
-        SETTINGS_PAGE,
-    ]
+/**
+ * Whether `pathname` is a page reached through the More sheet, so the bar's More
+ * tab shows as current there. Ignores permissions: a page a role can't open
+ * redirects away before this matters.
+ */
+export function isMorePage(pathname: string): boolean {
+    const under = (to: string) => pathname === to || pathname.startsWith(to + "/")
+    return CORE_TABS.some(t => !t.mobile && under(t.to)) || MORE_ROUTES.some(under)
 }

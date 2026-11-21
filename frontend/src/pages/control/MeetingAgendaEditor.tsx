@@ -10,8 +10,8 @@ import { confirmAnyDiscard, useDiscardGuard } from "@/lib/useDiscardGuard"
 import { MEETINGS_API, type Meeting, meetingDate, meetingTime, useMeetings } from "@/lib/meetings"
 
 function AgendaForm({ meeting, onSaved, onSaving }: { meeting: Meeting, onSaved: (meeting: Meeting) => void, onSaving: (saving: boolean) => void }) {
-    const [agenda, setAgenda] = useState(meeting.agenda)
-    const [baseline, setBaseline] = useState(meeting.agenda)
+    const [agenda, setAgenda] = useState(meeting.agenda ?? "")
+    const [baseline, setBaseline] = useState(meeting.agenda ?? "")
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState(false)
     const [saved, setSaved] = useState(false)
@@ -31,8 +31,8 @@ function AgendaForm({ meeting, onSaved, onSaving }: { meeting: Meeting, onSaved:
             })
             if (!response.ok) throw new Error("save")
             const updated: Meeting = await response.json()
-            setAgenda(updated.agenda)
-            setBaseline(updated.agenda)
+            setAgenda(updated.agenda ?? "")
+            setBaseline(updated.agenda ?? "")
             onSaved(updated)
             setSaved(true)
         } catch {

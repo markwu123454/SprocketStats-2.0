@@ -1,7 +1,7 @@
 """Endpoint-level tests for who may edit whom through ``PUT /members``.
 
-No real database: ``db.list_all_users`` / ``db.update_users`` are monkeypatched
-to an in-memory user table, and ``account_state.assert_active`` (which
+No real database: ``db.list_all_users`` / ``db.update_users`` / ``db.get_user``
+are monkeypatched to an in-memory user table, and ``account_state.assert_active`` (which
 ``require_roster_access`` re-checks) is stubbed out. Auth is bypassed by
 overriding ``get_current_user`` so each test picks the caller directly.
 """
@@ -37,12 +37,20 @@ def client_as(monkeypatch):
     async def update_users(updates):
         written.append(updates)
 
+    async def get_user(uid):
+        # The row after the write: what PUT /members writes through to the cache.
+        latest = next((u for batch in reversed(written) for u in batch if u["id"] == uid), None)
+        return {"id": uid, "role": latest["role"] if latest else USERS[uid], "banned_at": None,
+                "approved_by": None, "onboarding_complete": True}
+
     async def assert_active(_user_id):
         return None
 
     monkeypatch.setattr(db, "list_all_users", list_all_users)
     monkeypatch.setattr(db, "update_users", update_users)
+    monkeypatch.setattr(db, "get_user", get_user)
     monkeypatch.setattr(account_state, "assert_active", assert_active)
+    monkeypatch.setattr(account_state, "_state", {})
 
     def make(user_id: str) -> tuple[TestClient, list]:
         app = FastAPI()
@@ -123,3 +131,12 @@ def test_member_cannot_edit(client_as):
         assert written == []
     finally:
         del USERS["plain-1"]
+
+
+def test_a_role_change_reaches_this_machines_cache_at_once(client_as):
+    client, _written = client_as("captain-1")
+
+    res = client.put("/members", json=[edit("cad-member-1", "cad_lead")])
+
+    assert res.status_code == 200
+    assert account_state.role_of("cad-member-1") == "cad_lead"

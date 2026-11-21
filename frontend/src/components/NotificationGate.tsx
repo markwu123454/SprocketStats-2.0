@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { ExternalLink } from "lucide-react"
 import { useAuth, useOnboardedUser } from "@/contexts/authContext"
 import Button from "@/components/ui/Button"
+import Dialog from "@/components/ui/Dialog"
 import Notice from "@/components/ui/Notice"
 import { buttonClass, focusRing, typeTitle } from "@/lib/uiClasses"
 
@@ -82,78 +83,76 @@ export default function NotificationGate() {
     const bodyId = "notification-gate-body"
 
     return (
-        // Required notice (modals.md): centred, z-100, deliberately not a Sheet so it can't be dismissed.
-        <div
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
+        // Required notice (modals.md): centred, z-100, deliberately not a Sheet and given no
+        // onDismiss, so neither the scrim nor Esc closes it. Keyed by notice, so the next one
+        // opens fresh and takes focus.
+        <Dialog
+            key={current.id}
+            layer="notice"
+            labelledBy={titleId}
+            describedBy={bodyId}
+            className="max-w-md p-6 flex flex-col gap-4"
         >
-            <div
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby={titleId}
-                aria-describedby={bodyId}
-                className="w-full max-w-md rounded-2xl border p-6 flex flex-col gap-4 theme-bg theme-border shadow-lg"
-            >
-                <h2 id={titleId} className={`${typeTitle} theme-h1-color`}>{current.title}</h2>
-                <p id={bodyId} className="text-sm theme-subtext-color leading-relaxed whitespace-pre-wrap">{current.body}</p>
+            <h2 id={titleId} className={`${typeTitle} theme-h1-color`}>{current.title}</h2>
+            <p id={bodyId} className="text-sm theme-subtext-color leading-relaxed whitespace-pre-wrap">{current.body}</p>
 
-                {current.link && (
-                    <a
-                        href={current.link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={() => setLinkOpened(true)}
-                        className={buttonClass({ variant: "outlined" })}
-                    >
-                        <ExternalLink size={16} />
-                        Open Link
-                    </a>
-                )}
+            {current.link && (
+                <a
+                    href={current.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setLinkOpened(true)}
+                    className={buttonClass({ variant: "outlined" })}
+                >
+                    <ExternalLink size={16} />
+                    Open Link
+                </a>
+            )}
 
-                {hasOptions && (
-                    <div className="flex flex-col gap-2" role={current.response_mode === "multi" ? "group" : "radiogroup"} aria-labelledby={titleId}>
-                        {current.response_options.map(option => {
-                            const active = selected.includes(option)
-                            return (
-                                <button
-                                    key={option}
-                                    type="button"
-                                    disabled={gated}
-                                    onClick={() => toggleOption(option)}
-                                    role={current.response_mode === "multi" ? undefined : "radio"}
-                                    aria-checked={current.response_mode === "multi" ? undefined : active}
-                                    aria-pressed={current.response_mode === "multi" ? active : undefined}
-                                    className={`rounded-lg border px-4 min-h-12 md:min-h-10 text-sm font-medium text-left transition-opacity disabled:opacity-40 disabled:cursor-not-allowed ${focusRing} ${active ? "theme-accent-fill theme-border" : "bg-transparent theme-text theme-outline"}`}
-                                >
-                                    {option}
-                                </button>
-                            )
-                        })}
-                    </div>
-                )}
-
-                {error && <Notice>{error}</Notice>}
-
-                <div className="flex items-center gap-2 pt-1">
-                    {!current.hard_block && (
-                        <Button
-                            variant="text"
-                            size="footer"
-                            onClick={() => current && setSkippedIds(prev => new Set(prev).add(current.id))}
-                            className="mr-auto"
-                        >
-                            Later
-                        </Button>
-                    )}
-                    <Button
-                        size="footer"
-                        onClick={() => void submit(hasOptions ? selected : [])}
-                        disabled={!canSubmit || submitting}
-                        className="ml-auto"
-                    >
-                        {submitting ? "Submitting…" : hasOptions ? "Submit" : "Got it"}
-                    </Button>
+            {hasOptions && (
+                <div className="flex flex-col gap-2" role={current.response_mode === "multi" ? "group" : "radiogroup"} aria-labelledby={titleId}>
+                    {current.response_options.map(option => {
+                        const active = selected.includes(option)
+                        return (
+                            <button
+                                key={option}
+                                type="button"
+                                disabled={gated}
+                                onClick={() => toggleOption(option)}
+                                role={current.response_mode === "multi" ? undefined : "radio"}
+                                aria-checked={current.response_mode === "multi" ? undefined : active}
+                                aria-pressed={current.response_mode === "multi" ? active : undefined}
+                                className={`rounded-lg border px-4 min-h-12 md:min-h-10 text-sm font-medium text-left transition-opacity disabled:opacity-40 disabled:cursor-not-allowed ${focusRing} ${active ? "theme-accent-fill theme-border" : "bg-transparent theme-text theme-outline"}`}
+                            >
+                                {option}
+                            </button>
+                        )
+                    })}
                 </div>
+            )}
+
+            {error && <Notice>{error}</Notice>}
+
+            <div className="flex items-center gap-2 pt-1">
+                {!current.hard_block && (
+                    <Button
+                        variant="text"
+                        size="footer"
+                        onClick={() => current && setSkippedIds(prev => new Set(prev).add(current.id))}
+                        className="mr-auto"
+                    >
+                        Later
+                    </Button>
+                )}
+                <Button
+                    size="footer"
+                    onClick={() => void submit(hasOptions ? selected : [])}
+                    disabled={!canSubmit || submitting}
+                    className="ml-auto"
+                >
+                    {submitting ? "Submitting…" : hasOptions ? "Submit" : "Got it"}
+                </Button>
             </div>
-        </div>
+        </Dialog>
     )
 }

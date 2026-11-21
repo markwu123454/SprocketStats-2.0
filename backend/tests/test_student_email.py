@@ -36,9 +36,11 @@ def test_non_student_roles_accept_any_email():
         assert email_allowed_for_role("someone@gmail.com", role)
 
 
-def test_visitor_role_requires_approval_and_no_school_info():
+def test_visitor_role_needs_no_approval_and_no_school_info():
+    # Anyone with a Google account can be a visitor; the visitor policy grants
+    # nothing worth an approval (see test_role_visibility.py).
     assert "visitor" in ROLE_DEFINITIONS
-    assert role_requires_approval("visitor") is True
+    assert role_requires_approval("visitor") is False
     entry = next(r for r in role_catalog() if r["value"] == "visitor")
     assert entry["school_info_required"] is False
     assert entry["student"] is False

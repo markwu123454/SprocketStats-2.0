@@ -8,6 +8,12 @@
       "port": 5173
     },
     {
+      "name": "frontend-phone",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:phone", "--prefix", "frontend"],
+      "port": 5173
+    },
+    {
       "name": "backend-dev",
       "runtimeExecutable": "uv",
       "runtimeArgs": ["run", "--project", "backend", "--env-file", "backend/.env", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000", "--app-dir", "backend"],

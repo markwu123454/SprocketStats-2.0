@@ -15,13 +15,17 @@ _TAG_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 require_tag_admin = require_access(permissions="control_panel.members")
 
 
+def _has_roster_access(user: dict) -> bool:
+    role = user.get("role")
+    return can(get_permissions_for_role(role), "control_panel.members") or has_moderation_authority(role)
+
+
 async def _require_tag_editor(user: dict = Depends(get_current_user)) -> dict:
     """Admit anyone with roster access: full managers (Captains/Mentors) or
     anyone with moderation authority (Leads). Mirrors require_roster_access in
     endpoints/members.py — keep them in sync if the policy changes."""
     await account_state.assert_active(user["sub"])
-    role = user.get("role")
-    if can(get_permissions_for_role(role), "control_panel.members") or has_moderation_authority(role):
+    if _has_roster_access(user):
         return user
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
@@ -34,30 +38,41 @@ def _validate_tag(tag: str) -> None:
         )
 
 
-# ── Read endpoints (login only) ───────────────────────────────────────────────
+# ── Read endpoints (roster access; your own tags too) ─────────────────────────
+#
+# Only the Members page reads tags, so the reads share its gate. A member may
+# still read their own tags.
+
+async def _require_own_or_roster(user_id: str, user: dict) -> None:
+    await account_state.assert_active(user["sub"])
+    if user_id != user["sub"] and not _has_roster_access(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+
 
 @router.get("/assignments")
-async def get_all_assignments(_: dict = Depends(get_current_user)):
-    """All tag assignments as {user_id: [tag, ...]}. Login required."""
+async def get_all_assignments(_: dict = Depends(_require_tag_editor)):
+    """All tag assignments as {user_id: [tag, ...]}. Roster access required."""
     return await db.get_all_tag_assignments()
 
 
 @router.get("/user/{user_id}")
-async def get_user_tags(user_id: str, _: dict = Depends(get_current_user)):
-    """All tags assigned to a user. Login required."""
+async def get_user_tags(user_id: str, user: dict = Depends(get_current_user)):
+    """All tags assigned to a user: yourself, or anyone with roster access."""
+    await _require_own_or_roster(user_id, user)
     return {"user_id": user_id, "tags": await db.get_user_tags(user_id)}
 
 
 @router.get("/user/{user_id}/has/{tag}")
-async def check_user_tag(user_id: str, tag: str, _: dict = Depends(get_current_user)):
-    """Whether a user holds a specific tag. Login required."""
+async def check_user_tag(user_id: str, tag: str, user: dict = Depends(get_current_user)):
+    """Whether a user holds a specific tag: yourself, or anyone with roster access."""
     _validate_tag(tag)
+    await _require_own_or_roster(user_id, user)
     return {"user_id": user_id, "tag": tag, "has_tag": await db.user_has_tag(user_id, tag)}
 
 
 @router.get("/{tag}/users")
-async def get_users_by_tag(tag: str, _: dict = Depends(get_current_user)):
-    """Users (id + display_name) holding a tag. Login required."""
+async def get_users_by_tag(tag: str, _: dict = Depends(_require_tag_editor)):
+    """Users (id + display_name) holding a tag. Roster access required."""
     _validate_tag(tag)
     return {"tag": tag, "users": await db.get_users_by_tag(tag)}
 

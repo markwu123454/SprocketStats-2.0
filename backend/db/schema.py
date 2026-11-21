@@ -84,6 +84,17 @@ _KIOSK_SCANS_DDL = """
 # existing database, before the column exists.
 _CODE_NUMBER_SEQ_DDL = "CREATE SEQUENCE IF NOT EXISTS users_code_number_seq MINVALUE 1"
 
+# A visitor's own FIRST team (asked at onboarding): program and number
+# together, or neither. Shared by init_db and migration 19.
+# Both halves are spelled out as IS [NOT] NULL: a CHECK passes when it
+# evaluates to NULL, so "number BETWEEN 1 AND 999999" alone would let a
+# program through with no number.
+_FIRST_TEAM_CHECK = (
+    "(first_program IS NULL AND first_team_number IS NULL) "
+    "OR (first_program IS NOT NULL AND first_team_number IS NOT NULL "
+    "AND first_program IN ('FRC', 'FTC', 'FLL') AND first_team_number BETWEEN 1 AND 999999)"
+)
+
 
 async def _create_offline_code_functions(conn) -> None:
     """Install the checksum helpers the old ``users.offline_code`` column used.
@@ -222,7 +233,7 @@ async def init_db():
                 # Same lock as run_migrations, so app processes starting at once
                 # don't race each other's CREATE TABLE IF NOT EXISTS.
                 await conn.execute("SELECT pg_advisory_xact_lock($1)", _SCHEMA_LOCK_KEY)
-                await conn.execute("""
+                await conn.execute(f"""
                     CREATE TABLE IF NOT EXISTS users (
                         id                  TEXT        PRIMARY KEY,
                         email               TEXT        NOT NULL UNIQUE,
@@ -241,6 +252,9 @@ async def init_db():
                         code_version        INTEGER     NOT NULL DEFAULT 1,
                         code_number         INTEGER     UNIQUE,
                         hide_picture        BOOLEAN     NOT NULL DEFAULT false,
+                        first_program       TEXT,
+                        first_team_number   INTEGER,
+                        CONSTRAINT users_first_team_valid CHECK ({_FIRST_TEAM_CHECK}),
                         CONSTRAINT onboarded_fields_present CHECK (
                             NOT onboarding_complete
                             OR (
@@ -1015,6 +1029,14 @@ async def _migration_0018_hide_picture(conn) -> None:
     )
 
 
+async def _migration_0019_first_team(conn) -> None:
+    """A visitor's own FIRST team, asked at onboarding (FRC, FTC or FLL plus
+    the team number). Empty for everyone to start."""
+    await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS first_program TEXT")
+    await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS first_team_number INTEGER")
+    await _add_users_constraint(conn, "users_first_team_valid", f"CHECK ({_FIRST_TEAM_CHECK})")
+
+
 # Append-only: never edit or renumber a migration that has shipped. Each must
 # be idempotent against init_db's current schema, because a fresh database
 # gets that schema first and then runs every migration.
@@ -1037,6 +1059,7 @@ _MIGRATIONS = [
     (16, _migration_0016_attendance_checkout_method),
     (17, _migration_0017_drop_offline_code),
     (18, _migration_0018_hide_picture),
+    (19, _migration_0019_first_team),
 ]
 
 

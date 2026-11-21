@@ -22,13 +22,19 @@ def test_every_role_has_a_tasks_policy_block():
     for role, defn in ROLE_DEFINITIONS.items():
         tasks_policy = defn.get("tasks")
         assert isinstance(tasks_policy, dict), f"{role} is missing a 'tasks' policy block"
-        assert tasks_policy.get("view") is True, f"{role}.tasks.view should be True"
-        assert isinstance(tasks_policy.get("assign"), bool), f"{role}.tasks.assign should be a bool"
+        for key in ("view", "participate", "assign"):
+            assert isinstance(tasks_policy.get(key), bool), f"{role}.tasks.{key} should be a bool"
 
 
-def test_every_role_can_view_tasks():
+def test_every_role_but_visitor_can_view_tasks():
     for role in ROLE_DEFINITIONS:
-        assert can(get_permissions_for_role(role), "tasks.view") is True
+        assert can(get_permissions_for_role(role), "tasks.view") is (role != "visitor")
+
+
+def test_everyone_but_alumni_and_visitors_takes_part_in_tasks():
+    for role in ROLE_DEFINITIONS:
+        expected = role not in ("alumni", "visitor")
+        assert can(get_permissions_for_role(role), "tasks.participate") is expected, role
 
 
 def test_authority_set_matches_leads_captain_mentor():

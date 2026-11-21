@@ -32,9 +32,10 @@ the backend, and plain PyCharm Community can't run the frontend).
    `frontend/package.json`.
 3. Point the `backend` module's interpreter at `backend/.venv` (create it first if it
    doesn't exist yet — see backend setup below).
-4. Run configs `backend: uvicorn` (from `/.run/`) and `dev` (from `frontend/.run/`) should
-   now show up in the run configuration dropdown and work as-is. The dropdown also lists
-   `uvicorn` from `backend/.run/`; that one is for Option B and won't find `.env` here.
+4. Run configs `backend: uvicorn`, `frontend: dev` and `frontend: dev:phone` (all from
+   `/.run/`) should now show up in the run configuration dropdown and work as-is. The
+   dropdown also lists `uvicorn`, `dev` and `dev:phone` from `backend/.run/` and
+   `frontend/.run/`; those are for Option B and won't find their files here.
 
 ### Option B — separate IDE windows per app
 
@@ -46,9 +47,8 @@ Open `backend/` and `frontend/` as two independent projects, each in whichever I
    `Python 3.11 (backend)`; point it at `backend/.venv`.
 2. Open `frontend/` directly as a project root in PyCharm or WebStorm. It picks up the
    committed `frontend/.idea/` and names the module `frontend`.
-3. Run config `uvicorn` (in `backend/.run/`) works as-is. The frontend's `dev` config is
-   written for Option A (see below), so in this window start the dev server with the run
-   icon next to the `dev` script in `package.json`, or `npm run dev` in a terminal.
+3. Run config `uvicorn` (in `backend/.run/`) works as-is, and so do `dev` and `dev:phone`
+   (in `frontend/.run/`).
 
 ### Why this matters
 
@@ -59,15 +59,18 @@ the project root (`$PROJECT_DIR$/.env`), and vice versa. The committed run confi
 
 | File | Config name | Written for |
 | --- | --- | --- |
-| `.run/backend_ uvicorn.run.xml` | `backend: uvicorn` | Option A (`$PROJECT_DIR$/backend/.env`) |
+| `.run/backend_ uvicorn.run.xml` | `backend: uvicorn` | Option A (`$PROJECT_DIR$/backend/.env`, runs in `$PROJECT_DIR$/backend`) |
+| `.run/frontend_ dev.run.xml` | `frontend: dev` | Option A (`$PROJECT_DIR$/frontend/package.json`) |
+| `.run/frontend_ dev_phone.run.xml` | `frontend: dev:phone` | Option A (`$PROJECT_DIR$/frontend/package.json`) |
 | `backend/.run/uvicorn.run.xml` | `uvicorn` | Option B (`$PROJECT_DIR$/.env`) |
-| `frontend/.run/dev.run.xml` | `dev` | Option A (`$PROJECT_DIR$/frontend/package.json`) |
+| `frontend/.run/dev.run.xml` | `dev` | Option B (`$PROJECT_DIR$/package.json`) |
+| `frontend/.run/dev_phone.run.xml` | `dev:phone` | Option B (`$PROJECT_DIR$/package.json`) |
 
-The frontend has only the one config, and both modes load it. Its `package-json` path has
-been committed in both forms (`$PROJECT_DIR$/package.json` for Option B,
-`$PROJECT_DIR$/frontend/package.json` for Option A) several times, as it was fixed up for
-whichever layout the committer had open. Keep it in the Option A form, and don't hand-edit
-any config to match the other mode's expectations.
+The rule: configs in the root `.run/` start their paths with `/backend` or `/frontend`, and
+configs in `backend/.run/` or `frontend/.run/` don't. Both modes list every config, so each
+window shows the other mode's configs too; they just won't work there. If one is wrong, fix
+it in the file for its own mode rather than editing it to suit the window you have open
+(`dev:phone` is for [testing on a phone](#testing-on-a-phone)).
 
 ## Environment setup
 
@@ -90,6 +93,39 @@ any config to match the other mode's expectations.
 - **Frontend**: Node.js 24+, dependencies in `frontend/package.json`. Install with `npm ci`
   from `frontend/` (uses the committed `package-lock.json`), and set `VITE_BACKEND_URL` in
   `frontend/.env` (gitignored), e.g. `VITE_BACKEND_URL=http://localhost:8000`.
+
+## Testing on a phone
+
+Use this for anything that only shows on a real phone, like the iOS keyboard pushing sheets
+around. The phone opens the dev server on your computer over the network.
+
+1. Start the backend as usual, with `ENV=development` in `backend/.env`.
+2. Start the frontend in phone mode: `npm run dev:phone` from `frontend/`, or the
+   `frontend: dev:phone` run config (`dev:phone` with `frontend/` open on its own). It's the normal dev server, except the app calls the API at `/api` on the dev
+   server itself, which forwards to the backend at `127.0.0.1:8000` (set `DEV_BACKEND_URL`
+   to change that). The phone can't reach `localhost:8000`, since that's the phone.
+3. On the phone, open one of the `Network:` addresses Vite prints. Use the one on the same
+   network as the phone: your Wi-Fi address, or the `100.x` address if both devices run
+   Tailscale.
+4. Tap **Dev sign-in** at the top of the login page and pick a user. Google sign-in doesn't
+   work here, because Google only sends you back to `localhost` or a registered domain.
+
+**Dev sign-in** lists every user in the dev database, including pending, banned and not-yet-
+onboarded ones, so those screens can be tested too. It lives in
+`backend/endpoints/dev_auth.py` and `frontend/src/components/DevSignIn.tsx`. The backend
+only adds its routes with `ENV=development`, and production builds of the frontend leave it
+out. It also works on your computer, if you don't want to use Google there.
+
+**If the phone can't load the page**, Windows Firewall is probably blocking it. That
+happens when Windows calls your Wi-Fi a **Public** network: either set the network to
+Private (on a network you trust) and allow Node.js through the firewall on private networks,
+or use Tailscale on both devices. School and guest Wi-Fi often stop devices from reaching
+each other at all; Tailscale gets around that.
+
+**What doesn't work over plain `http`:** the phone treats `http://192.168…` as insecure,
+so the browser turns off what needs HTTPS: My code (it signs codes with Web Crypto), the
+check-in scanner (camera), push notifications and the service worker. Everything else,
+including sheets, forms and the keyboard, behaves as in production.
 
 ## Before opening a PR
 

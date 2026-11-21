@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/authContext";
 import type { LoginNotice } from "@/contexts/authContext";
@@ -9,6 +9,10 @@ import LoginPageDesktop from "./LoginPageDesktop";
 import LoginPageMobile from "./LoginPageMobile";
 
 export type { SeasonInfo };
+
+// Sign in without Google during development, e.g. on a phone (components/DevSignIn.tsx).
+// `import.meta.env.DEV` is false in a production build, so this and its chunk drop out.
+const DevSignIn = import.meta.env.DEV ? lazy(() => import("@/components/DevSignIn")) : null;
 
 export interface TimeInfo {
     weekInfo?: string;
@@ -63,7 +67,12 @@ export default function LoginPageRouter() {
 
     const props: LoginPageProps = { season, timeInfo, loading, loginNotice, signingIn, signInWithGoogle };
 
-    return isMobile
-        ? <LoginPageMobile  {...props} />
-        : <LoginPageDesktop {...props} />;
+    return (
+        <>
+            {isMobile
+                ? <LoginPageMobile  {...props} />
+                : <LoginPageDesktop {...props} />}
+            {DevSignIn && !loading && <Suspense fallback={null}><DevSignIn /></Suspense>}
+        </>
+    );
 }

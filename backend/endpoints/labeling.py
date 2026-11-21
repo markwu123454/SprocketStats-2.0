@@ -5,7 +5,7 @@ import time
 from fastapi import APIRouter, Depends
 
 import db
-from core.security import get_current_user
+from core.security import require_access
 from .label_studio_client import (
     LABEL_STUDIO_PROJECT_ID,
     get_contributions,
@@ -16,9 +16,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Scouting data: closed to alumni and visitors.
+require_scouting = require_access(permissions="scouting.view")
+
 
 @router.get("")
-async def get_labeling(_: dict = Depends(get_current_user)):
+async def get_labeling(_: dict = Depends(require_scouting)):
     t_total = time.perf_counter()
     project_id = LABEL_STUDIO_PROJECT_ID
 
@@ -46,6 +49,8 @@ async def get_labeling(_: dict = Depends(get_current_user)):
         u["email"]: u["display_name"] or u["given_name"] or "Unknown User"
         for u in users
     }
+    # A banned member's row is hidden while they're banned; the project totals still count their work.
+    banned_emails = {u["email"] for u in users if u["banned_at"] is not None}
 
     logger.info("labeling handler total=%.2fs", time.perf_counter() - t_total)
 
@@ -69,5 +74,6 @@ async def get_labeling(_: dict = Depends(get_current_user)):
                 "avg_time_secs":    r["avg_time_secs"],
             }
             for r in rows
+            if r["email"] not in banned_emails
         ],
     }

@@ -25,7 +25,7 @@ const sections: LegalSection[] = [
         title: "Information we collect",
         content: (
             <>
-                <p><strong>2.1 Account information.</strong> When Team leadership creates your account, we store your name, a Team-issued or personal email address, your Google account profile picture, your grade level, your role (scout, lead, mentor, admin), and a third-party sign-in identifier.</p>
+                <p><strong>2.1 Account information.</strong> When Team leadership creates your account, we store your name, a Team-issued or personal email address, your Google account profile picture, your grade level, your role (scout, lead, mentor, admin), and a third-party sign-in identifier. If you join as a visitor, we also store the <i>FIRST</i> program and team number you give us, if any.</p>
                 <p><strong>2.2 Content you submit.</strong> Scouting entries, match observations, notes, pick-list rankings, and any images you upload — along with a timestamp and the account that submitted them.</p>
                 <p><strong>2.3 Technical and usage data.</strong> Log data such as IP address, browser and device type, operating system, pages viewed, and time of access. This is used for security, debugging, and load management.</p>
                 <p><strong>2.4 Data stored on your device.</strong> SprocketStats is a Progressive Web App. It uses browser storage (IndexedDB, localStorage, cache storage, and session cookies) to keep you signed in, cache the app for offline use, and hold scouting entries locally until they sync. This data lives on your device and is under your control — clearing site data removes it.</p>
@@ -46,7 +46,7 @@ const sections: LegalSection[] = [
                     <li>Generate statistics, rankings, and strategy analysis for the Team.</li>
                     <li>Assign roles and responsibilities within the Team, including competition rosters, based in part on your grade level.</li>
                     <li>Train and improve computer-vision models used to support scouting, using labeled competition imagery linked to the contributing account to help us identify low-quality data and underperforming labelers.</li>
-                    <li>Show your Google profile picture next to your name within the Service, to you and to other signed-in Team members and mentors (for example on tasks, task notes, and the member roster). You can hide it from others in Settings; they then see your initial instead.</li>
+                    <li>Show your Google profile picture next to your name within the Service, to you and to other signed-in Team members and mentors. You can hide it from others in Settings; they then see your initial instead.</li>
                     <li>Diagnose bugs, monitor performance, and investigate abuse or unauthorized access.</li>
                     <li>Communicate with you about the Service.</li>
                 </ul>
@@ -76,7 +76,7 @@ const sections: LegalSection[] = [
                             <tr><th scope="col">Recipient</th><th scope="col">Why</th></tr>
                         </thead>
                         <tbody>
-                            <tr><td>Team members and mentors</td><td>Scouting entries are visible to other authorized users, including who submitted them. Your name and Google profile picture are shown next to your tasks, task notes, and member roster entry, unless you hide the picture in Settings</td></tr>
+                            <tr><td>Team members and mentors</td><td>Scouting entries are visible to other authorized users, including who submitted them. Your name and Google profile picture are visible to other signed-in members, unless you hide the picture in Settings</td></tr>
                             <tr><td>Service providers</td><td>Hosting, database, and authentication vendors — currently NeonDB, Fly.io, and Vercel — who process data on our instructions</td></tr>
                             <tr><td>Cloudflare (R2)</td><td>Stores images and other large files — including uploaded scouting images, competition footage, and training/labeling images — in our own cloud storage</td></tr>
                             <tr><td>Google (Sign-In)</td><td>Authenticates you when you sign in with your school email; Google processes your basic profile information (name, email address) to verify your identity</td></tr>

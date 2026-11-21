@@ -7,12 +7,14 @@ export type EventStatus = "done" | "current" | "upcoming"
 export const HIDEABLE_TABS = ["itinerary", "packing", "roster", "comp", "tasks"] as const
 export type HubTab = (typeof HIDEABLE_TABS)[number]
 
+// Roles without `events.details` (visitors) get only id, name, start, end and
+// type: every optional field below is missing for them, so there's no hub link.
 export interface EventEntry {
     id?: number   // `events` row id -- what the schedule PATCH addresses
     name: string
     start: string // ISO datetime
     end?: string  // ISO datetime; defaults to `start` for single-day events
-    location: string
+    location?: string
     type: string
     url?: string    // omit for no link
     tbaKey?: string // TBA event key, e.g. "2026cass"
@@ -300,11 +302,11 @@ export function groupTimeline(events: ResolvedEvent[]): TimelineItem[] {
     for (const event of events) {
         const sw = seriesWeekOf(event.name)
         const prev = run?.events[run.events.length - 1]
-        if (sw && run && prev && run.base.toLowerCase() === sw.base.toLowerCase() && run.location === event.location
+        if (sw && run && prev && run.base.toLowerCase() === sw.base.toLowerCase() && run.location === (event.location ?? "")
             && event.startsAt - prev.startsAt <= SERIES_GAP_MS) {
             run.events.push(event)
         } else if (sw) {
-            run = { base: sw.base, location: event.location, events: [event] }
+            run = { base: sw.base, location: event.location ?? "", events: [event] }
             slots.push(run)
         } else {
             run = null
