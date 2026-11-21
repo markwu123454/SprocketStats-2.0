@@ -32,9 +32,10 @@ the backend, and plain PyCharm Community can't run the frontend).
    `frontend/package.json`.
 3. Point the `backend` module's interpreter at `backend/.venv` (create it first if it
    doesn't exist yet — see backend setup below).
-4. Run configs `backend: uvicorn` (from `/.run/`) and `dev` (from `frontend/.run/`) should
-   now show up in the run configuration dropdown and work as-is. The dropdown also lists
-   `uvicorn` from `backend/.run/`; that one is for Option B and won't find `.env` here.
+4. Run configs `backend: uvicorn`, `frontend: dev` and `frontend: dev:phone` (all from
+   `/.run/`) should now show up in the run configuration dropdown and work as-is. The
+   dropdown also lists `uvicorn`, `dev` and `dev:phone` from `backend/.run/` and
+   `frontend/.run/`; those are for Option B and won't find their files here.
 
 ### Option B — separate IDE windows per app
 
@@ -46,9 +47,8 @@ Open `backend/` and `frontend/` as two independent projects, each in whichever I
    `Python 3.11 (backend)`; point it at `backend/.venv`.
 2. Open `frontend/` directly as a project root in PyCharm or WebStorm. It picks up the
    committed `frontend/.idea/` and names the module `frontend`.
-3. Run config `uvicorn` (in `backend/.run/`) works as-is. The frontend's `dev` config is
-   written for Option A (see below), so in this window start the dev server with the run
-   icon next to the `dev` script in `package.json`, or `npm run dev` in a terminal.
+3. Run config `uvicorn` (in `backend/.run/`) works as-is, and so do `dev` and `dev:phone`
+   (in `frontend/.run/`).
 
 ### Why this matters
 
@@ -59,17 +59,18 @@ the project root (`$PROJECT_DIR$/.env`), and vice versa. The committed run confi
 
 | File | Config name | Written for |
 | --- | --- | --- |
-| `.run/backend_ uvicorn.run.xml` | `backend: uvicorn` | Option A (`$PROJECT_DIR$/backend/.env`) |
+| `.run/backend_ uvicorn.run.xml` | `backend: uvicorn` | Option A (`$PROJECT_DIR$/backend/.env`, runs in `$PROJECT_DIR$/backend`) |
+| `.run/frontend_ dev.run.xml` | `frontend: dev` | Option A (`$PROJECT_DIR$/frontend/package.json`) |
+| `.run/frontend_ dev_phone.run.xml` | `frontend: dev:phone` | Option A (`$PROJECT_DIR$/frontend/package.json`) |
 | `backend/.run/uvicorn.run.xml` | `uvicorn` | Option B (`$PROJECT_DIR$/.env`) |
-| `frontend/.run/dev.run.xml` | `dev` | Option A (`$PROJECT_DIR$/frontend/package.json`) |
-| `frontend/.run/dev-phone.run.xml` | `dev:phone` | Option A (`$PROJECT_DIR$/frontend/package.json`) |
+| `frontend/.run/dev.run.xml` | `dev` | Option B (`$PROJECT_DIR$/package.json`) |
+| `frontend/.run/dev_phone.run.xml` | `dev:phone` | Option B (`$PROJECT_DIR$/package.json`) |
 
-The frontend's configs (`dev`, and `dev:phone` for [testing on a phone](#testing-on-a-phone))
-are each loaded by both modes. The `dev` config's `package-json` path has been committed in
-both forms (`$PROJECT_DIR$/package.json` for Option B,
-`$PROJECT_DIR$/frontend/package.json` for Option A) several times, as it was fixed up for
-whichever layout the committer had open. Keep both in the Option A form, and don't hand-edit
-any config to match the other mode's expectations.
+The rule: configs in the root `.run/` start their paths with `/backend` or `/frontend`, and
+configs in `backend/.run/` or `frontend/.run/` don't. Both modes list every config, so each
+window shows the other mode's configs too; they just won't work there. If one is wrong, fix
+it in the file for its own mode rather than editing it to suit the window you have open
+(`dev:phone` is for [testing on a phone](#testing-on-a-phone)).
 
 ## Environment setup
 
