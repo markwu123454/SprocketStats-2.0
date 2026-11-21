@@ -49,7 +49,7 @@ function Protected({children}: {children: ReactNode}) {
 }
 
 export default function App() {
-    // --real-vh and --vv-top: the on-screen area, which a phone keyboard shrinks and slides (lib/viewport.ts).
+    // --app-vh, --real-vh and --vv-top: the page's height and the on-screen part of it (lib/viewport.ts).
     useLayoutEffect(() => watchViewport(), [])
 
     return (
@@ -58,7 +58,7 @@ export default function App() {
                 <AppReadyProvider>
                     <BootstrapProvider>
                     <BrowserRouter>
-                        <div className="flex flex-col min-h-0" style={{ height: "var(--real-vh, 100dvh)" }}>
+                        <div className="flex flex-col min-h-0" style={{ height: "var(--app-vh, 100dvh)" }}>
                             <PageErrorBoundary>
                             <Suspense fallback={null}>
                                 <Routes>

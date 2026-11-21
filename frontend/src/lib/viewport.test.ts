@@ -32,6 +32,12 @@ describe("syncViewportVars", () => {
         expect(vars.get("--vv-top")).toBe("300px")
     })
 
+    it("keeps the page height while the keyboard shrinks the on-screen area", () => {
+        const { win, vars } = fakeWindow({ height: 420, offsetTop: 300 }, 844)
+        syncViewportVars(win)
+        expect(vars.get("--app-vh")).toBe("844px")
+    })
+
     it("ignores the negative offset of a rubber-band bounce", () => {
         const { win, vars } = fakeWindow({ height: 844, offsetTop: -12 })
         syncViewportVars(win)
@@ -59,6 +65,7 @@ describe("watchViewport", () => {
         vvListeners.get("scroll")!()
         expect(vars.get("--real-vh")).toBe("420px")
         expect(vars.get("--vv-top")).toBe("260px")
+        expect(vars.get("--app-vh")).toBe("844px")
 
         stop()
         expect(vvListeners.size).toBe(0)

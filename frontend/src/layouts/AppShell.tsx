@@ -106,8 +106,10 @@ export default function AppShell() {
     const onMorePage = isMorePage(location.pathname)
     const moreActive = moreOpen || onMorePage
 
+    // The shell is the page's height, not the on-screen height: a phone keyboard
+    // slides the page rather than resizing it (lib/viewport.ts).
     return (
-        <div className="flex flex-col min-h-0 theme-bg-page bg-cover" style={{ height: "var(--real-vh, 100dvh)" }}>
+        <div className="flex flex-col min-h-0 theme-bg-page bg-cover" style={{ height: "var(--app-vh, 100dvh)" }}>
 
             {/* ── Top header ──────────────────────────────────────── */}
             <header className={`shrink-0 border-b z-30 theme-bg theme-border${isInsideEvent ? " hidden md:block" : ""}`}>
