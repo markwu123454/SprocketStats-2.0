@@ -1,17 +1,22 @@
-"""In-memory cache of per-user account state (ban / approval), timer-refreshed.
+"""In-memory cache of per-user account state (ban / approval / role).
 
-Ban and approval change rarely and tolerate seconds of staleness, and the user
-table is small (a few hundred rows), so having every request read its own
-account state from the DB would be pure overhead. Instead each process keeps the
-whole table in memory, primed at startup and reloaded periodically (wired in
-``main.lifespan``). The refresh interval is also what propagates a ban/approval
-change to the *other* server processes, so it doubles as cross-instance
-coherence -- bounded, not instant, which is fine given how seldom bans happen.
+Ban and approval change rarely, and the user table is small (a few hundred
+rows), so having every request read its own account state from the DB would be
+pure overhead. Instead each process keeps the whole table in memory.
 
-There is deliberately no write-through on the mutation endpoints: the periodic
-refresh makes every process eventually consistent by construction, so there is
-no per-mutation cache bookkeeping to keep in sync (and no bug class from
-forgetting it on a new mutation path).
+Keeping it current across server processes (Fly runs more than one machine):
+
+* **On demand, at most ``MAX_AGE_SECONDS`` old.** The first request to find the
+  copy older than that reloads it (one reload at a time, shared by every request
+  waiting on it), so a ban made on another machine reaches this one within
+  ``MAX_AGE_SECONDS`` of its next request. An idle process makes no queries at
+  all, so Neon can still scale to zero; a timer would either keep it awake or
+  back off for hours.
+* **Written through on this process.** The member endpoints call :func:`apply`
+  after a ban, unban, approval or role change, so the machine that made the
+  change enforces it on the very next request. Another process catches up on its
+  next reload; a new mutation path that forgets :func:`apply` is still bounded by
+  the same ``MAX_AGE_SECONDS``.
 
 Enforcement (``assert_active``) raises the same 403s ``/auth/me`` historically
 raised, so hardening every endpoint on top of this is a dict lookup, not a DB
@@ -19,7 +24,9 @@ hit. The one endpoint that must not read the cache is the login flow itself,
 which predates any user row.
 """
 
+import asyncio
 import logging
+import time
 
 from fastapi import HTTPException, status
 
@@ -28,10 +35,21 @@ from core.permissions import role_requires_approval
 
 logger = logging.getLogger(__name__)
 
+# How old the cache may be before a request reloads it: the longest a ban,
+# unban, approval or role change made on another process goes unnoticed here.
+MAX_AGE_SECONDS = 30
+# After a failed reload, how long to keep serving the previous copy before trying again.
+RETRY_AFTER_FAILURE_SECONDS = 5
+
+_FIELDS = ("banned_at", "role", "approved_by", "onboarding_complete")
+
 # user_id -> {"banned_at", "role", "approved_by", "onboarding_complete"}.
-# Replaced wholesale by refresh(); never mutated in place, so readers always see
-# a complete map.
+# Replaced wholesale, never mutated in place, so readers always see a complete map.
 _state: dict[str, dict] = {}
+# time.monotonic() of the last successful reload (or, after a failure, the time
+# that makes the next attempt wait RETRY_AFTER_FAILURE_SECONDS).
+_loaded_at: float = float("-inf")
+_reload: asyncio.Task | None = None
 
 
 async def refresh() -> None:
@@ -39,21 +57,44 @@ async def refresh() -> None:
 
     Builds the replacement dict fully before swapping the module global, so a
     concurrent reader never observes a half-populated map. Errors propagate: the
-    startup call fails fast, and the background loop (see ``main``) logs and
-    keeps the previous snapshot rather than crashing.
+    startup call fails fast; :func:`_ensure_fresh` logs them and keeps the
+    previous snapshot.
+    """
+    global _state, _loaded_at
+    rows = await db.load_all_account_state()
+    _state = {r["id"]: {f: r[f] for f in _FIELDS} for r in rows}
+    _loaded_at = time.monotonic()
+
+
+async def _reload_logged() -> None:
+    global _loaded_at
+    try:
+        await refresh()
+    except Exception as e:
+        logger.error("account_state refresh failed, keeping previous snapshot: %s", e)
+        _loaded_at = time.monotonic() - MAX_AGE_SECONDS + RETRY_AFTER_FAILURE_SECONDS
+
+
+async def _ensure_fresh() -> None:
+    """Reload the cache if it's older than MAX_AGE_SECONDS, sharing one reload between callers."""
+    global _reload
+    if time.monotonic() - _loaded_at < MAX_AGE_SECONDS:
+        return
+    if _reload is None or _reload.done():
+        _reload = asyncio.create_task(_reload_logged())
+    # shield: one caller's request being cancelled mustn't cancel the reload the others wait on.
+    await asyncio.shield(_reload)
+
+
+def apply(user_id: str, row) -> None:
+    """Write a member's new account state through to this process's cache.
+
+    Call after any change to ``banned_at``, ``role``, ``approved_by`` or
+    ``onboarding_complete``, with the updated users row (or a mapping holding
+    at least those fields), so this process enforces it at once.
     """
     global _state
-    rows = await db.load_all_account_state()
-    _state = {
-        r["id"]: {
-            "banned_at": r["banned_at"],
-            "role": r["role"],
-            "approved_by": r["approved_by"],
-            "onboarding_complete": r["onboarding_complete"],
-        }
-        for r in rows
-    }
-    #logger.info("account_state refreshed: %d users", len(_state))
+    _state = {**_state, user_id: {f: row[f] for f in _FIELDS}}
 
 
 def _assert_entry_active(entry: dict) -> None:
@@ -79,6 +120,7 @@ async def assert_active(sub: str) -> None:
     :param sub: The authenticated user id (JWT ``sub`` claim).
     :raises HTTPException: 403 if banned, pending approval, or the row is gone.
     """
+    await _ensure_fresh()
     entry = _state.get(sub)
     if entry is None:
         row = await db.get_user(sub)

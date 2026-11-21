@@ -311,6 +311,7 @@ async def complete_onboarding(
         body.first_program, body.first_team_number,
     )
     updated_dict = dict(updated)
+    account_state.apply(user["sub"], updated_dict)
     session_jwt = issue_jwt(updated_dict)
 
     response = JSONResponse({"ok": True})

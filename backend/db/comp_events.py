@@ -326,7 +326,8 @@ _ROSTER_JSON = """COALESCE((
     )
     FROM event_roster r
     LEFT JOIN users u ON u.id = r.user_id
-    WHERE r.event_key = e.hub_key
+    -- A banned member is off every roster while banned (guests have no user row).
+    WHERE r.event_key = e.hub_key AND u.banned_at IS NULL
 ), '[]'::jsonb)"""
 
 # Every `events` row is a hub. Its content is read in the shape the old

@@ -49,6 +49,8 @@ async def get_labeling(_: dict = Depends(require_scouting)):
         u["email"]: u["display_name"] or u["given_name"] or "Unknown User"
         for u in users
     }
+    # A banned member's row is hidden while they're banned; the project totals still count their work.
+    banned_emails = {u["email"] for u in users if u["banned_at"] is not None}
 
     logger.info("labeling handler total=%.2fs", time.perf_counter() - t_total)
 
@@ -72,5 +74,6 @@ async def get_labeling(_: dict = Depends(require_scouting)):
                 "avg_time_secs":    r["avg_time_secs"],
             }
             for r in rows
+            if r["email"] not in banned_emails
         ],
     }

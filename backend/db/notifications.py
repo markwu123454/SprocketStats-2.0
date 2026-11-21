@@ -52,8 +52,8 @@ async def list_notifications() -> list[asyncpg.Record]:
             return await conn.fetch(
                 """
                 SELECT n.*,
-                       COUNT(r.user_id) AS response_count,
-                       u.display_name   AS created_by_name,
+                       COUNT(r.user_id) FILTER (WHERE ru.banned_at IS NULL) AS response_count,
+                       CASE WHEN u.banned_at IS NULL THEN u.display_name END AS created_by_name,
                        (
                            SELECT COUNT(*) FROM users us
                            WHERE us.banned_at IS NULL
@@ -61,8 +61,9 @@ async def list_notifications() -> list[asyncpg.Record]:
                        )                AS eligible_count
                 FROM notifications n
                 LEFT JOIN notification_responses r ON r.notification_id = n.id
+                LEFT JOIN users ru ON ru.id = r.user_id
                 LEFT JOIN users u ON u.id = n.created_by
-                GROUP BY n.id, u.display_name
+                GROUP BY n.id, u.display_name, u.banned_at
                 ORDER BY n.created_at DESC
                 """
             )
@@ -205,7 +206,7 @@ async def get_notification_detail(notification_id: str) -> dict | None:
         try:
             notification = await conn.fetchrow(
                 """
-                SELECT n.*, u.display_name AS created_by_name
+                SELECT n.*, CASE WHEN u.banned_at IS NULL THEN u.display_name END AS created_by_name
                 FROM notifications n
                 LEFT JOIN users u ON u.id = n.created_by
                 WHERE n.id = $1
@@ -219,15 +220,20 @@ async def get_notification_detail(notification_id: str) -> dict | None:
 
             tally = await conn.fetch(
                 """
-                SELECT unnest(response) AS option, COUNT(*) AS count
-                FROM notification_responses
-                WHERE notification_id = $1
+                SELECT unnest(r.response) AS option, COUNT(*) AS count
+                FROM notification_responses r
+                JOIN users u ON u.id = r.user_id AND u.banned_at IS NULL
+                WHERE r.notification_id = $1
                 GROUP BY option
                 """,
                 notification_id,
             )
             ack_count = await conn.fetchval(
-                "SELECT COUNT(*) FROM notification_responses WHERE notification_id = $1 AND response = '{}'",
+                """
+                SELECT COUNT(*) FROM notification_responses r
+                JOIN users u ON u.id = r.user_id AND u.banned_at IS NULL
+                WHERE r.notification_id = $1 AND r.response = '{}'
+                """,
                 notification_id,
             )
             eligible_count = await conn.fetchval(
@@ -241,7 +247,7 @@ async def get_notification_detail(notification_id: str) -> dict | None:
                 """
                 SELECT u.id, u.display_name, u.email, u.role, r.response, r.responded_at
                 FROM notification_responses r
-                JOIN users u ON u.id = r.user_id
+                JOIN users u ON u.id = r.user_id AND u.banned_at IS NULL
                 WHERE r.notification_id = $1
                 ORDER BY r.responded_at DESC
                 """,

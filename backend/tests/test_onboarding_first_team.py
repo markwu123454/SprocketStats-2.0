@@ -20,7 +20,8 @@ def saved(monkeypatch):
                                      first_program=None, first_team_number=None):
         calls.append((role, first_program, first_team_number))
         return {"id": user_id, "email": "guest@example.com", "display_name": display_name, "role": role,
-                "grade": grade, "team_year": team_year, "onboarding_complete": True}
+                "grade": grade, "team_year": team_year, "onboarding_complete": True,
+                "banned_at": None, "approved_by": None}
 
     monkeypatch.setattr(db, "update_user_onboarding", update_user_onboarding)
     return calls
