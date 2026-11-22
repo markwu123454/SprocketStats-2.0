@@ -26,6 +26,7 @@ The base unit is Tailwind's 4px scale.
 ## Decisions
 
 - **Content never sits directly on the season background.** Only the `h1`, its subtitle and page tabs may; everything else is on a card (`rounded-xl border theme-border theme-bg`, `p-5`). Form pages are one centred `max-w-2xl` card with `gap-4`, an internal `border-t` between groups and the `FormFooter` as its flush last child.
+- **Pages fill the content column unless the content needs a cap.** Boards, card grids and two-pane layouts (Dashboard, Tasks, Members, Attendance, push history) have no `max-w-*`; grids add columns as the screen widens instead. Cap a page only when stretching would hurt it: a single-column form (`max-w-2xl`), running text, or a single-column list whose rows would spread too far apart (Meetings, Events, the event pages, Leaderboards).
 - **A page never scrolls sideways at any width.** Wide content (AG Grid, tables, tab strips) scrolls inside its own container; `html` and `body` use `overflow-x: clip` (not `hidden`, which would break sticky footers) and the app shell's content column is `min-w-0`. Below `md`, rows with several fixed controls wrap to a second line instead of squeezing the text.
 - **Add 16 and 24 as named steps.** The old scale jumped from 12 to 20, yet `gap-4` and
   `px-4` are common in the code and are what a form needs.

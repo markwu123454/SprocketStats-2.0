@@ -277,7 +277,7 @@ export default function TasksPageDesktop() {
     if (loading) {
         return (
             <div className="px-4 md:px-6 py-6">
-                <div role="status" aria-label="Loading tasks" className="mx-auto w-full max-w-[1180px] flex flex-col gap-3">
+                <div role="status" aria-label="Loading tasks" className="flex flex-col gap-3">
                     <Skeleton className="h-8 w-40" />
                     <Skeleton className="h-5 w-72 max-w-full" />
                     <div className="flex flex-col gap-3 pt-4">
@@ -294,7 +294,7 @@ export default function TasksPageDesktop() {
                 against the page's map background ("Task board visibility"
                 design, option 1a). */}
             <div
-                className="mx-auto w-full max-w-[1180px] flex flex-col gap-5 rounded-2xl border theme-border p-6"
+                className="flex flex-col gap-5 rounded-2xl border theme-border p-6"
                 style={{
                     background: "color-mix(in oklch, var(--theme-bg) 94%, transparent)",
                     backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",

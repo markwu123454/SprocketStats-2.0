@@ -439,7 +439,7 @@ export default function PushNotificationsPage() {
     }
 
     return (
-        <div className={`px-4 md:px-6 py-6 flex flex-col gap-5 h-full mx-auto w-full ${tab === "compose" ? "max-w-2xl" : "max-w-5xl"}`}>
+        <div className="px-4 md:px-6 py-6 flex flex-col gap-5 h-full w-full">
             <h1 className={`${typeH1} theme-h1-color`}>Push Notifications</h1>
 
             {/* Tabs */}
@@ -450,7 +450,7 @@ export default function PushNotificationsPage() {
 
             {/* ---------- COMPOSE ---------- */}
             {tab === "compose" && (
-                <div className="flex flex-col gap-4 rounded-xl border p-5 theme-border theme-bg">
+                <div className="w-full max-w-2xl flex flex-col gap-4 rounded-xl border p-5 theme-border theme-bg">
                     <label className={`flex flex-col gap-1 ${fieldLabelClass}`}>
                         Title
                         <input

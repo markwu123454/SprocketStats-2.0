@@ -198,7 +198,7 @@ export default function DashboardPage() {
         )
 
     return (
-        <div className="max-w-7xl mx-auto px-4 py-8 flex flex-col gap-8">
+        <div className="px-4 md:px-6 py-8 flex flex-col gap-8">
             {/* Header */}
             <div className="flex items-center gap-4">
                 <Avatar name={user.name} picture={user.picture} size={48} className="ring-2" />
@@ -237,7 +237,8 @@ export default function DashboardPage() {
                 <ActiveEventCard active={active} hasHub={hasHub} eventKey={key} seed={seeded} userId={user.id} />
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* As many 20rem-or-wider columns as fit, so wide screens get more cards per row. */}
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,20rem),1fr))] gap-4">
                 {/* This week's meeting */}
                 <Link to="/meetings" className={`rounded-xl border p-5 flex flex-col gap-3 backdrop-blur-sm transition-opacity hover:opacity-90 ${focusRing}`} style={cardStyle}>
                     <div className="flex items-center justify-between">
