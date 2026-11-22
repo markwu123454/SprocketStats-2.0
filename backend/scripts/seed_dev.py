@@ -37,7 +37,7 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from db.connection import DB_NAME, close_pool, db_connection  # noqa: E402
+from db.connection import DB_NAME, close_pool, db_connection, ensure_dev_database  # noqa: E402
 
 PREFIX = "seed-"
 TZ = ZoneInfo("America/Los_Angeles")
@@ -372,6 +372,10 @@ async def main() -> None:
         sys.exit("Refusing to run: ENV is not 'development'. This script is for the dev database only.")
 
     try:
+        try:
+            await ensure_dev_database()
+        except RuntimeError as e:
+            sys.exit(str(e))
         async with db_connection(DB_NAME) as conn:
             async with conn.transaction():
                 await remove(conn)

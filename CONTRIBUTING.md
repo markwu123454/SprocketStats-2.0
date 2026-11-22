@@ -81,7 +81,9 @@ it in the file for its own mode rather than editing it to suit the window you ha
   [SELF_HOSTING.md § Environment variable reference](SELF_HOSTING.md#environment-variable-reference).
   For local dev you generally need:
   - `DATABASE_URL`, `SESSION_SECRET`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`/`SECRET`, and
-    `ENV=development`.
+    `ENV=development`. With `ENV=development` the backend (and `seed_dev.py`) refuses to
+    start unless the database's comment is `dev`, so dev sign-in can never reach a real
+    database. Mark your dev database once with `COMMENT ON DATABASE <name> IS 'dev';`.
   - `LABEL_STUDIO_URL` and `LABEL_STUDIO_TOKEN`. The backend won't start without them,
     because they're read at import time; any URL and a dummy token will do if you aren't
     working on labeling.

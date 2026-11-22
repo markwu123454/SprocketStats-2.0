@@ -120,6 +120,9 @@ async def _push_reminder_loop():
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # First, before migrations write anything: in development, stop unless the
+    # database is marked as a dev database.
+    await db.ensure_dev_database()
     await db.init_db()
     await db.run_migrations()
     # Prime the cache before serving so the first request is a hit, not a miss.

@@ -85,9 +85,39 @@ async def close_pool():
     _pools.clear()
 
 
+# A dev database is marked by its Postgres comment: COMMENT ON DATABASE <name> IS 'dev'.
+DEV_DATABASE_COMMENT = "dev"
+
+
+async def ensure_dev_database() -> None:
+    """With ``ENV=development``, refuse to run against a database not marked as dev.
+
+    Development mode turns on dev sign-in (sign in as anyone, no Google) and opens
+    CORS to every origin, so a ``backend/.env`` that pairs ``ENV=development`` with
+    the production ``DATABASE_URL`` would expose real accounts. The database's own
+    comment is the check, because it lives with the data rather than in the env
+    file that might be wrong. Raises ``RuntimeError``, which stops startup.
+    Does nothing outside development.
+    """
+    if os.environ.get("ENV") != "development":
+        return
+    async with db_connection(DB_NAME) as conn:
+        comment = await conn.fetchval(
+            "SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database()"
+        )
+    if (comment or "").strip() != DEV_DATABASE_COMMENT:
+        raise RuntimeError(
+            f"ENV=development, but the database in DATABASE_URL isn't marked as a dev database "
+            f"(its comment is {comment!r}, expected {DEV_DATABASE_COMMENT!r}). Refusing to run. "
+            f"If it really is a dev database, mark it with: "
+            f"COMMENT ON DATABASE <name> IS '{DEV_DATABASE_COMMENT}';"
+        )
+
+
 __all__ = [
     "db_connection",
     "close_pool",
+    "ensure_dev_database",
     "DB_NAME",
     "DB_NAME_LABEL_STUDIO",
 ]
