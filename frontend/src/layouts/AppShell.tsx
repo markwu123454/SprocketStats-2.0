@@ -2,24 +2,26 @@ import { useState, useRef, useEffect } from "react"
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom"
 import { useAuth, useOnboardedUser } from "@/contexts/authContext"
 import {
-    Settings, LogOut, ChevronDown, PanelLeftClose, PanelLeftOpen, SlidersHorizontal,
+    Settings, LogOut, ChevronDown, LayoutGrid, PanelLeftClose, PanelLeftOpen, SlidersHorizontal,
 } from "lucide-react"
+import AccountSummary from "@/components/AccountSummary"
 import Avatar from "@/components/Avatar.tsx"
+import MoreSheet from "@/components/MoreSheet"
 import { OfflineLabel } from "@/components/Offline"
-import Sheet from "@/components/ui/Sheet"
-import { focusRing, menuRowClass } from "@/lib/uiClasses"
+import { focusRing, menuRowClass, navActiveTint } from "@/lib/uiClasses"
 import NotificationGate from "@/components/NotificationGate.tsx"
 import PageErrorBoundary from "@/components/ErrorBoundary"
-import { can, getPerm } from "@/lib/permissions"
-import { CORE_TABS, OTHER_TAB, otherPages } from "@/lib/navTabs"
+import { can } from "@/lib/permissions"
+import { CORE_TABS, isMorePage } from "@/lib/navTabs"
 import { visibleSections, type ControlSection } from "@/lib/controlSections"
-import { AllCommunityModule, ModuleRegistry } from "ag-grid-community"
 import { useAppReady } from "@/contexts/appReadyContext"
 import { onNotificationNavigate, syncPushSubscription } from "@/lib/push"
 
-ModuleRegistry.registerModules([AllCommunityModule])
-
 const NAV_TEXT_KEY = "nav-show-text"
+
+// One cell of the mobile bottom bar, shared by the tab links and the More button.
+const barItemClass = `flex-1 min-w-0 min-h-12 flex flex-col items-center justify-center gap-0.5 transition-opacity focus-visible:ring-inset ${focusRing}`
+const barLabelClass = "font-medium text-[11px] text-center leading-tight"
 
 function getNavTextPref(): boolean {
     const stored = localStorage.getItem(NAV_TEXT_KEY)
@@ -34,8 +36,9 @@ export default function AppShell() {
     const navigate = useNavigate()
     const markReady = useAppReady()
 
-    const [menuOpen,       setMenuOpen]       = useState(false)
-    const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+    const [menuOpen, setMenuOpen] = useState(false)
+    // The mobile More sheet: opened by the bar's More tab and by the avatar.
+    const [moreOpen, setMoreOpen] = useState(false)
     const menuRef       = useRef<HTMLDivElement>(null)
 
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
@@ -70,7 +73,7 @@ export default function AppShell() {
         return () => document.removeEventListener("mousedown", onClickOutside)
     }, [])
 
-    useEffect(() => { setMobileMenuOpen(false) }, [location.pathname])
+    useEffect(() => { setMoreOpen(false) }, [location.pathname])
 
     function toggleSidebar() {
         setSidebarCollapsed(prev => {
@@ -92,22 +95,21 @@ export default function AppShell() {
     const coreTabs = CORE_TABS.filter(t => !t.visible || t.visible(user.permissions))
 
     // Control Panel fans out into role-gated sub-pages; both this sidebar and the
-    // mobile hub filter the same list through the same predicate so they never drift.
+    // mobile More sheet filter the same list through the same predicate so they never drift.
     const controlSections = visibleSections(user.permissions)
 
-    // Mobile bottom bar: the `mobile` core tabs plus Other, which holds everything
-    // else (leaderboards, scouting, control panel, settings) so the bar stays at 5.
-    const navTabs = [...coreTabs.filter(t => t.mobile), OTHER_TAB]
-    // Other is the active tab on any page it hosts.
-    const otherActive = (to: string) =>
-        to === OTHER_TAB.to && otherPages(user.permissions).some(p => isActive(p.to))
+    // Mobile bottom bar: the `mobile` core tabs plus More, whose sheet holds everything
+    // else (leaderboards, scouting, the Control Panel pages, settings) so the bar stays at 5.
+    const barTabs = coreTabs.filter(t => t.mobile)
+    // More shows as current on any page its sheet opens, and while the sheet is open
+    // (when no bar tab does, so only one tab is ever highlighted).
+    const onMorePage = isMorePage(location.pathname)
+    const moreActive = moreOpen || onMorePage
 
-    // Human-readable role label comes from the backend policy; fall back to the
-    // raw role slug if the role isn't in the policy map.
-    const roleLabel = (getPerm(user.permissions, "label") as string | undefined) ?? user.role
-
+    // The shell is the page's height, not the on-screen height: a phone keyboard
+    // slides the page rather than resizing it (lib/viewport.ts).
     return (
-        <div className="flex flex-col min-h-0 theme-bg-page bg-cover" style={{ height: "var(--real-vh, 100dvh)" }}>
+        <div className="flex flex-col min-h-0 theme-bg-page bg-cover" style={{ height: "var(--app-vh, 100dvh)" }}>
 
             {/* ── Top header ──────────────────────────────────────── */}
             <header className={`shrink-0 border-b z-30 theme-bg theme-border${isInsideEvent ? " hidden md:block" : ""}`}>
@@ -154,11 +156,7 @@ export default function AppShell() {
 
                         {menuOpen && (
                             <div role="menu" className="absolute right-0 mt-1 w-52 rounded-xl border shadow-lg z-40 p-1 theme-bg theme-border">
-                                <div className="px-3 py-2.5 border-b theme-border mb-1">
-                                    <p className="text-sm font-semibold theme-text truncate">{user.display_name}</p>
-                                    <p className="text-xs theme-subtext-color truncate">{user.email}</p>
-                                    <p className="text-xs theme-text-contrast truncate mt-0.5">{roleLabel}</p>
-                                </div>
+                                <AccountSummary className="px-3 py-2.5 border-b theme-border mb-1" />
                                 <Link
                                     to="/settings"
                                     role="menuitem"
@@ -181,46 +179,17 @@ export default function AppShell() {
                         )}
                     </div>
 
-                    {/* Mobile account menu: drag sheet */}
+                    {/* Mobile: the avatar opens the same More sheet as the bar's More tab. */}
                     <div className="md:hidden shrink-0">
                         <button
-                            onClick={() => setMobileMenuOpen(v => !v)}
-                            aria-label="Open profile menu"
+                            onClick={() => setMoreOpen(true)}
+                            aria-label="Open account and more"
                             aria-haspopup="dialog"
-                            aria-expanded={mobileMenuOpen}
+                            aria-expanded={moreOpen}
                             className={`flex items-center justify-center w-11 h-11 rounded-full hover:opacity-80 transition-opacity ${focusRing}`}
                         >
                             <Avatar name={user.name} picture={user.picture} size={32} />
                         </button>
-
-                        {mobileMenuOpen && (
-                            <Sheet title="Account" kind="menu" onClose={() => setMobileMenuOpen(false)} className="px-2 pt-2 pb-2">
-                                <div className="px-3 py-2.5 border-b theme-border mb-1 flex items-center gap-3">
-                                    <Avatar name={user.name} picture={user.picture} size={36} />
-                                    <div className="min-w-0">
-                                        <p className="text-sm font-semibold theme-text truncate">{user.display_name}</p>
-                                        <p className="text-xs theme-subtext-color truncate">{user.email}</p>
-                                        <p className="text-xs theme-text-contrast truncate mt-0.5">{roleLabel}</p>
-                                    </div>
-                                </div>
-                                <Link
-                                    to="/settings"
-                                    onClick={() => setMobileMenuOpen(false)}
-                                    className={`${menuRowClass} justify-start theme-text`}
-                                >
-                                    <Settings size={18} />
-                                    Settings
-                                </Link>
-                                <div className="my-1 border-t theme-border" role="separator" />
-                                <button
-                                    onClick={() => { setMobileMenuOpen(false); void logout() }}
-                                    className={`${menuRowClass} justify-start theme-danger`}
-                                >
-                                    <LogOut size={18} />
-                                    Sign out
-                                </button>
-                            </Sheet>
-                        )}
                     </div>
                 </div>
             </header>
@@ -252,7 +221,7 @@ export default function AppShell() {
                                         focusRing,
                                         active ? "theme-text-contrast" : "theme-text opacity-70 hover:opacity-100",
                                     ].join(" ")}
-                                    style={active ? { background: "color-mix(in oklch, var(--theme-button-bg) 18%, transparent)" } : {}}
+                                    style={active ? navActiveTint : undefined}
                                 >
                                     <Icon size={18} className="shrink-0" />
                                     <span
@@ -293,27 +262,38 @@ export default function AppShell() {
                 style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
             >
                 <div className="flex h-16">
-                    {navTabs.map(({ to, label, icon: Icon }) => {
-                        const active = isActive(to) || otherActive(to)
+                    {barTabs.map(({ to, label, icon: Icon }) => {
+                        const current = isActive(to)
+                        const active = current && !moreOpen
                         return (
                             <Link
                                 key={to}
                                 to={to}
-                                aria-current={active ? "page" : undefined}
+                                aria-current={current ? "page" : undefined}
                                 aria-label={showNavText ? undefined : label}
-                                className={`flex-1 min-w-0 min-h-12 flex flex-col items-center justify-center gap-0.5 transition-opacity focus-visible:ring-inset ${focusRing} ${active ? "theme-text-contrast" : "theme-text opacity-70"}`}
+                                className={`${barItemClass} ${active ? "theme-text-contrast" : "theme-text opacity-70"}`}
                             >
                                 <Icon size={21} strokeWidth={active ? 2.4 : 1.8} />
-                                {showNavText && (
-                                    <span className="font-medium text-[11px] text-center leading-tight">
-                                        {label}
-                                    </span>
-                                )}
+                                {showNavText && <span className={barLabelClass}>{label}</span>}
                             </Link>
                         )
                     })}
+                    <button
+                        type="button"
+                        onClick={() => setMoreOpen(true)}
+                        aria-haspopup="dialog"
+                        aria-expanded={moreOpen}
+                        aria-current={onMorePage ? "page" : undefined}
+                        aria-label={showNavText ? undefined : "More"}
+                        className={`${barItemClass} ${moreActive ? "theme-text-contrast" : "theme-text opacity-70"}`}
+                    >
+                        <LayoutGrid size={21} strokeWidth={moreActive ? 2.4 : 1.8} />
+                        {showNavText && <span className={barLabelClass}>More</span>}
+                    </button>
                 </div>
             </nav>
+
+            {moreOpen && <MoreSheet onClose={() => setMoreOpen(false)} />}
 
             <NotificationGate />
 
@@ -332,7 +312,7 @@ export default function AppShell() {
  * the sub-items navigate. Collapsed sidebar → the parent becomes an icon with a
  * hover flyout listing the same sub-items (there's no room for inline text).
  * Both drive the pre-filtered `sections`, so a user only ever sees what their
- * role grants. The mobile bottom bar keeps Control Panel as a single tab.
+ * role grants. On mobile the More sheet lists the same sections.
  */
 function ControlPanelNav({
     sections,
@@ -347,15 +327,14 @@ function ControlPanelNav({
     const [open, setOpen] = useState(parentActive)
 
     // Keep the accordion open whenever we're on a control route (deep-link, or
-    // navigating in from the mobile hub then resizing the window up).
+    // navigating in from the mobile More sheet then resizing the window up).
     useEffect(() => { if (parentActive) setOpen(true) }, [parentActive])
 
     const rowClass = (active: boolean) => [
         "flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm font-medium transition-all w-full " + focusRing,
         active ? "theme-text-contrast" : "theme-text opacity-70 hover:opacity-100",
     ].join(" ")
-    const activeStyle = (active: boolean) =>
-        active ? { background: "color-mix(in oklch, var(--theme-button-bg) 18%, transparent)" } : {}
+    const activeStyle = (active: boolean) => (active ? navActiveTint : undefined)
 
     // Collapsed: icon + hover flyout.
     if (collapsed) {

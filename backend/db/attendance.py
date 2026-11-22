@@ -159,14 +159,14 @@ async def list_attendance_for_user(user_id: str) -> list[asyncpg.Record]:
 
 
 async def list_all_attendance() -> list[asyncpg.Record]:
-    """Attendance entries for every user, joined to display names."""
+    """Attendance entries for every unbanned user, joined to display names."""
     async with db_connection(DB_NAME) as conn:
         try:
             return await conn.fetch(
                 """
                 SELECT a.user_id, a.checkin_time, a.checkout_time, u.display_name, u.given_name
                 FROM attendance a
-                JOIN users u ON u.id = a.user_id
+                JOIN users u ON u.id = a.user_id AND u.banned_at IS NULL
                 WHERE a.checkout_method IS DISTINCT FROM 'expired'
                   AND (a.checkout_time IS NOT NULL OR a.checkin_time > now() - INTERVAL '12 hours')
                 ORDER BY a.user_id, a.checkin_time
@@ -227,7 +227,8 @@ async def list_meeting_checkins() -> list[asyncpg.Record]:
                                 THEN 'expired' ELSE a.checkout_method END AS method
                 ) e
                 JOIN windows w ON a.checkin_time < w.win_end AND e.end_at > w.win_start
-                JOIN users u ON u.id = a.user_id
+                -- A banned member's time is hidden while they're banned.
+                JOIN users u ON u.id = a.user_id AND u.banned_at IS NULL
                 ORDER BY w.id, a.user_id, seg_start
                 """,
                 KIOSK_SESSION_MAX_AGE,

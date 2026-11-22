@@ -5,6 +5,7 @@ import { isPushSupported } from "@/lib/push"
 import type { OnboardingPageProps, SeasonInfo } from "@/pages/OnboardingPageRouter"
 import { SeasonWordmark, BrandLockup } from "./LoginShared"
 import Button from "@/components/ui/Button"
+import Checkbox from "@/components/ui/Checkbox"
 import FormFooter from "@/components/ui/FormFooter"
 import Notice from "@/components/ui/Notice"
 import { fieldErrorClass, fieldLabelClass, focusRing, helperClass, inputClass } from "@/lib/uiClasses"
@@ -170,6 +171,13 @@ export function OnboardingHero({
 }
 
 /* ── Shared form body (used by both Desktop and Mobile) ──────── */
+/** The FIRST programs a visitor's own team can be in (matches the backend's FIRST_PROGRAMS). */
+const FIRST_PROGRAM_OPTIONS: SimpleOption[] = [
+    { value: "FRC", label: "FIRST Robotics Competition (FRC)" },
+    { value: "FTC", label: "FIRST Tech Challenge (FTC)" },
+    { value: "FLL", label: "FIRST LEGO League (FLL)" },
+]
+
 /**
  * Onboarding form shared by the desktop and mobile layouts. Drives the role
  * dropdown and the conditional school-info fields from the backend-supplied
@@ -183,12 +191,18 @@ export function OnboardingForm({
                                    selectedTeamYear, setSelectedTeamYear,
                                    submitting, error, setError,
                                    needsSchoolInfo,
+                                   asksFirstTeam,
+                                   onFirstTeam, setOnFirstTeam,
+                                   firstProgram, setFirstProgram,
+                                   firstTeamNumber, setFirstTeamNumber,
+                                   firstTeamComplete,
                                    studentEmailMismatch,
                                    roleCatalog,
                                    handleSubmit, handleSignOut,
                                }: Omit<OnboardingPageProps, "season">) {
     const roleOptions = roleCatalog.map(r => ({ value: r.value, label: r.label }))
     const nameId = useId()
+    const teamNumberId = useId()
     return (
         <>
             <div className="mb-6">
@@ -232,6 +246,12 @@ export function OnboardingForm({
                                 setSelectedGrade(null)
                                 setSelectedTeamYear(null)
                             }
+                            // Only visitors are asked about a FIRST team.
+                            if (roleCatalog.find(r => r.value === v)?.level !== "visitor") {
+                                setOnFirstTeam(false)
+                                setFirstProgram(null)
+                                setFirstTeamNumber("")
+                            }
                             setError(null)
                         }}
                     />
@@ -247,6 +267,56 @@ export function OnboardingForm({
                         </p>
                     )}
                 </div>
+
+                {asksFirstTeam && (
+                    <label className="inline-flex items-center gap-2 min-h-11 text-sm theme-text cursor-pointer self-start">
+                        <Checkbox
+                            checked={onFirstTeam}
+                            onChange={() => {
+                                if (onFirstTeam) {
+                                    setFirstProgram(null)
+                                    setFirstTeamNumber("")
+                                }
+                                setOnFirstTeam(!onFirstTeam)
+                                setError(null)
+                            }}
+                        />
+                        <span>I'm on a <i>FIRST</i> team</span>
+                    </label>
+                )}
+
+                {asksFirstTeam && onFirstTeam && (
+                    <div className="flex flex-col gap-2">
+                        <label className={fieldLabelClass}>
+                            Which program?
+                        </label>
+                        <SimpleDropdown
+                            value={firstProgram}
+                            onChange={v => { setFirstProgram(v); setError(null) }}
+                            placeholder="Select your program…"
+                            options={FIRST_PROGRAM_OPTIONS}
+                        />
+                    </div>
+                )}
+
+                {asksFirstTeam && onFirstTeam && (
+                    <div className="flex flex-col gap-2">
+                        <label htmlFor={teamNumberId} className={fieldLabelClass}>
+                            What's your team number?
+                        </label>
+                        <input
+                            id={teamNumberId}
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            value={firstTeamNumber}
+                            onChange={e => { setFirstTeamNumber(e.target.value.replace(/\D/g, "").slice(0, 6)); setError(null) }}
+                            placeholder="e.g. 3473"
+                            maxLength={6}
+                            className={`w-full ${inputClass}`}
+                        />
+                    </div>
+                )}
 
                 {needsSchoolInfo && (
                     <div className="flex flex-col gap-2">
@@ -294,7 +364,8 @@ export function OnboardingForm({
                             !selectedRole ||
                             studentEmailMismatch ||
                             !displayName.trim() ||
-                            (needsSchoolInfo && (!selectedGrade || !selectedTeamYear))
+                            (needsSchoolInfo && (!selectedGrade || !selectedTeamYear)) ||
+                            !firstTeamComplete
                         }
                         className="w-full"
                     >

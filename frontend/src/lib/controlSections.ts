@@ -10,7 +10,7 @@
 // each gated separately.
 //
 // Every surface — desktop sidebar accordion, collapsed-sidebar flyout, mobile
-// hub, and the route guard — filters this list through the same `visible`
+// More sheet, and the route guard — filters this list through the same `visible`
 // predicate, so they never drift. Gating here is cosmetic; the backend still
 // enforces each action on the real endpoints.
 

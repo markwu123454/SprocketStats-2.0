@@ -29,6 +29,8 @@ export default function EventTasksPage() {
     const { eventKey, info } = useEventContext()
     const user = useOnboardedUser()
     const canAssign = can(user.permissions, "tasks.assign")
+    // Alumni see an event's tasks but can't add, link or unlink them.
+    const readOnly = !can(user.permissions, "tasks.participate")
     const rawSubteam = getPerm(user.permissions, "subteam")
     const defaultBucket = typeof rawSubteam === "string" && isTaskBucket(rawSubteam) ? rawSubteam : "general"
 
@@ -65,7 +67,7 @@ export default function EventTasksPage() {
     }, [mode, allTasks])
 
     // Mirrors the backend's edit rule for anything beyond a status change.
-    const canEditTask = (task: Task) => canAssign || task.created_by === user.id
+    const canEditTask = (task: Task) => !readOnly && (canAssign || task.created_by === user.id)
 
     const linkable = (allTasks ?? []).filter(t => t.event_key !== eventKey && t.status !== "done" && canEditTask(t))
 
@@ -156,7 +158,7 @@ export default function EventTasksPage() {
                 </div>
             )}
 
-            {mode === "idle" && (
+            {mode === "idle" && !readOnly && (
                 <div className="flex flex-wrap gap-2">
                     <Button variant="outlined" onClick={() => { setMode("create"); setError(null) }}>
                         <Plus size={15} />

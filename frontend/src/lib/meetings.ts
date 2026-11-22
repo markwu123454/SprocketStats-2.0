@@ -10,7 +10,8 @@ export interface Meeting {
     start_time: string
     end_time: string
     meeting_purpose: string | null
-    agenda: string
+    /** Left out for roles without `meetings.details` (visitors), who get times only. */
+    agenda?: string
     /** How much time at the meeting is worth: 1 (the default) up to 2. */
     hours_multiplier?: number
 }
@@ -135,10 +136,12 @@ export function meetingAbsencesFor(absences: MeetingAbsence[], meetingId: string
     }
 }
 
-export function useMeetingAbsences(revision = 0) {
+/** Absences this user may see. Pass `enabled: false` for a role without
+ *  `meetings.details`, which the server refuses: nothing is fetched. */
+export function useMeetingAbsences(revision = 0, enabled = true) {
     // Seeded from /bootstrap, same rules as useMeetings.
     const [data, setAbsences] = useBootstrapped<MeetingAbsence[] | null>("meeting_absences", null)
-    const [fetching, setFetching] = useState(true)
+    const [fetching, setFetching] = useState(enabled)
     const [failed, setFailed] = useState(false)
     const [attempt, setAttempt] = useState(0)
     const absences = data ?? EMPTY_ABSENCES
@@ -147,6 +150,7 @@ export function useMeetingAbsences(revision = 0) {
     const retry = useCallback(() => setAttempt(value => value + 1), [])
 
     useEffect(() => {
+        if (!enabled) return
         const controller = new AbortController()
         fetch(`${MEETINGS_API}/absences`, { credentials: "include", signal: controller.signal })
             .then(response => {
@@ -157,7 +161,7 @@ export function useMeetingAbsences(revision = 0) {
             .catch(() => { if (!controller.signal.aborted) setFailed(true) })
             .finally(() => { if (!controller.signal.aborted) setFetching(false) })
         return () => controller.abort()
-    }, [revision, attempt, setAbsences])
+    }, [enabled, revision, attempt, setAbsences])
 
     return { absences, loading, error, retry }
 }

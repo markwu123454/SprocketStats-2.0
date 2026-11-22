@@ -1,7 +1,6 @@
-import {useCallback, useEffect, useId, useRef, useState, type KeyboardEvent} from "react"
-import {createPortal} from "react-dom"
+import {useCallback, useEffect, useId, useRef, useState} from "react"
 import {CameraOff, LogIn, LogOut, SwitchCamera, X} from "lucide-react"
-import {isTopOverlay, lockScroll, pushOverlay, trapTab} from "@/lib/modalStack"
+import Dialog from "@/components/ui/Dialog"
 import {centerOf, codeNumberOf, createCodeReader, memberCodeOf, type Point} from "@/lib/codeReader"
 import {focusRing} from "@/lib/uiClasses"
 
@@ -96,11 +95,8 @@ async function detailOf(res: Response): Promise<string> {
  */
 export default function ScannerDialog({onClose}: {onClose: () => void}) {
     const titleId = useId()
-    const panelRef = useRef<HTMLDivElement>(null)
     const closeRef = useRef<HTMLButtonElement>(null)
     const videoRef = useRef<HTMLVideoElement>(null)
-    const [token] = useState(() => Symbol("scanner"))
-    const [opener] = useState<Element | null>(() => document.activeElement)
     const [facing, setFacing] = useState<Facing>(loadFacing)
     const [cameraCount, setCameraCount] = useState(0)
     const [cameraError, setCameraError] = useState<string | null>(null)
@@ -110,17 +106,6 @@ export default function ScannerDialog({onClose}: {onClose: () => void}) {
     const [now, setNow] = useState(() => Date.now())
     const [overlay, setOverlay] = useState<Overlay | null>(null)
     const appearancesRef = useRef(new Map<string, Appearance>())
-
-    useEffect(() => {
-        const unregister = pushOverlay(token)
-        const unlock = lockScroll()
-        closeRef.current?.focus({preventScroll: true})
-        return () => {
-            unregister()
-            unlock()
-            if (opener instanceof HTMLElement && document.contains(opener)) opener.focus({preventScroll: true})
-        }
-    }, [token, opener])
 
     // Keep the screen on while scanning.
     useEffect(() => {
@@ -336,29 +321,6 @@ export default function ScannerDialog({onClose}: {onClose: () => void}) {
         return () => window.clearInterval(id)
     }, [recent.length])
 
-    useEffect(() => {
-        const onDocKey = (e: globalThis.KeyboardEvent) => {
-            const panel = panelRef.current
-            if (!panel || !isTopOverlay(token) || panel.contains(e.target as Node)) return
-            if (e.key === "Escape") {
-                e.preventDefault()
-                onClose()
-            } else trapTab(e, panel)
-        }
-        document.addEventListener("keydown", onDocKey)
-        return () => document.removeEventListener("keydown", onDocKey)
-    }, [token, onClose])
-
-    const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-        e.stopPropagation()
-        const panel = panelRef.current
-        if (!panel || !isTopOverlay(token)) return
-        if (e.key === "Escape") {
-            e.preventDefault()
-            onClose()
-        } else trapTab(e, panel)
-    }
-
     const flip = () => {
         const next: Facing = facing === "user" ? "environment" : "user"
         saveFacing(next)
@@ -369,121 +331,116 @@ export default function ScannerDialog({onClose}: {onClose: () => void}) {
     const banner = latest && now - latest.at < BANNER_MS ? latest : null
     const problem = setup.kind === "error" ? setup.message : cameraError
 
-    return createPortal(
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onKeyDown={onKeyDown}>
-            <div className="absolute inset-0 bg-black/70 sds-scrim-enter" aria-hidden="true" onClick={onClose}/>
-            <div
-                ref={panelRef}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby={titleId}
-                tabIndex={-1}
-                className="sds-dialog-enter relative w-full max-w-[420px] max-h-full overflow-y-auto rounded-2xl border theme-border theme-bg shadow-2xl outline-none"
-            >
-                <div className="h-14 pl-4 pr-1.5 flex items-center justify-between gap-2">
-                    <h2 id={titleId} className="text-base font-bold theme-h1-color">Check-in scanner</h2>
-                    <div className="flex items-center">
-                        {cameraCount > 1 && (
-                            <button
-                                type="button"
-                                onClick={flip}
-                                aria-label={facing === "user" ? "Use back camera" : "Use front camera"}
-                                className={`h-11 px-3 flex items-center gap-1.5 rounded-lg text-sm font-semibold theme-subtext-color hover:opacity-80 ${focusRing}`}
-                            >
-                                <SwitchCamera size={20} aria-hidden="true"/>
-                                {facing === "user" ? "Front" : "Back"}
-                            </button>
-                        )}
+    return (
+        <Dialog
+            labelledBy={titleId}
+            onDismiss={onClose}
+            initialFocus={closeRef}
+            scrim="dark"
+            className="max-w-[420px] max-h-full overflow-y-auto"
+        >
+            <div className="h-14 pl-4 pr-1.5 flex items-center justify-between gap-2">
+                <h2 id={titleId} className="text-base font-bold theme-h1-color">Check-in scanner</h2>
+                <div className="flex items-center">
+                    {cameraCount > 1 && (
                         <button
-                            ref={closeRef}
                             type="button"
-                            onClick={onClose}
-                            aria-label="Close"
-                            className={`size-11 flex items-center justify-center rounded-lg theme-subtext-color hover:opacity-80 ${focusRing}`}
+                            onClick={flip}
+                            aria-label={facing === "user" ? "Use back camera" : "Use front camera"}
+                            className={`h-11 px-3 flex items-center gap-1.5 rounded-lg text-sm font-semibold theme-subtext-color hover:opacity-80 ${focusRing}`}
                         >
-                            <X size={22}/>
+                            <SwitchCamera size={20} aria-hidden="true"/>
+                            {facing === "user" ? "Front" : "Back"}
                         </button>
-                    </div>
-                </div>
-
-                <div className="relative aspect-square w-full bg-black overflow-hidden">
-                    <video
-                        ref={videoRef}
-                        muted
-                        playsInline
-                        aria-hidden="true"
-                        className="size-full object-cover"
-                        // The front camera reads like a mirror; the decoder still gets the raw frame.
-                        style={facing === "user" ? {transform: "scaleX(-1)"} : undefined}
-                    />
-                    {problem ? (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-10 text-center bg-black/80">
-                            <CameraOff size={48} className="text-white/70" aria-hidden="true"/>
-                            <p className="max-w-64 text-base font-semibold text-white">{problem}</p>
-                        </div>
-                    ) : (
-                        <div aria-hidden="true" className="absolute inset-[18%] rounded-2xl border-2 border-white/40"/>
                     )}
-                    {/* Outlines found codes: white while reading, yellow sending, green done, red failed.
-                        "slice" matches the video's object-cover crop; mirrored with the front camera like the video. */}
-                    {overlay && !problem && (
-                        <svg
-                            aria-hidden="true"
-                            className="absolute inset-0 size-full pointer-events-none"
-                            viewBox={`0 0 ${overlay.width} ${overlay.height}`}
-                            preserveAspectRatio="xMidYMid slice"
-                            style={facing === "user" ? {transform: "scaleX(-1)"} : undefined}
-                        >
-                            {overlay.boxes.map((b, i) => (
-                                <polygon
-                                    key={i}
-                                    points={b.quad.map(p => `${p.x},${p.y}`).join(" ")}
-                                    fill={b.state === "done" ? "rgba(34,197,94,.18)" : "none"}
-                                    stroke={BOX_COLOR[b.state]}
-                                    strokeWidth={Math.max(overlay.width, overlay.height) / 160}
-                                    strokeLinejoin="round"
-                                />
-                            ))}
-                        </svg>
-                    )}
-                    {banner && (
-                        <div
-                            className="absolute inset-x-3 bottom-3 rounded-xl px-4 py-3 flex items-center gap-3 text-white shadow-lg"
-                            style={{background: banner.status === "checked_in" ? "#15803d" : "#374151"}}
-                        >
-                            {banner.status === "checked_in" ? <LogIn size={26} aria-hidden="true"/> : <LogOut size={26} aria-hidden="true"/>}
-                            <div className="min-w-0">
-                                <p className="text-lg font-bold truncate">{banner.first_name}</p>
-                                <p className="text-sm opacity-90">
-                                    {banner.repeat ? "Already " : ""}{banner.status === "checked_in" ? "checked in" : "checked out"}
-                                </p>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                <div className="p-4 flex flex-col gap-3">
-                    <p aria-live="polite" className="text-sm theme-subtext-color">
-                        {scanError
-                            ? <span style={{color: "var(--theme-danger)"}}>{scanError}</span>
-                            : setup.kind === "starting" ? "Starting scanner…" : "Hold a member code up to the camera."}
-                    </p>
-                    {recent.length > 0 && (
-                        <ul className="flex flex-col gap-1.5" aria-label="Recent scans">
-                            {recent.map(r => (
-                                <li key={r.id} className="flex items-center justify-between gap-3 text-sm">
-                                    <span className="theme-text truncate">{r.name}</span>
-                                    <span className="shrink-0 theme-subtext-color">
-                                        {r.status === "checked_in" ? "In" : "Out"} · {new Date(r.at).toLocaleTimeString("en-US", {hour: "numeric", minute: "2-digit"})}
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
+                    <button
+                        ref={closeRef}
+                        type="button"
+                        onClick={onClose}
+                        aria-label="Close"
+                        className={`size-11 flex items-center justify-center rounded-lg theme-subtext-color hover:opacity-80 ${focusRing}`}
+                    >
+                        <X size={22}/>
+                    </button>
                 </div>
             </div>
-        </div>,
-        document.body,
+
+            <div className="relative aspect-square w-full bg-black overflow-hidden">
+                <video
+                    ref={videoRef}
+                    muted
+                    playsInline
+                    aria-hidden="true"
+                    className="size-full object-cover"
+                    // The front camera reads like a mirror; the decoder still gets the raw frame.
+                    style={facing === "user" ? {transform: "scaleX(-1)"} : undefined}
+                />
+                {problem ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-10 text-center bg-black/80">
+                        <CameraOff size={48} className="text-white/70" aria-hidden="true"/>
+                        <p className="max-w-64 text-base font-semibold text-white">{problem}</p>
+                    </div>
+                ) : (
+                    <div aria-hidden="true" className="absolute inset-[18%] rounded-2xl border-2 border-white/40"/>
+                )}
+                {/* Outlines found codes: white while reading, yellow sending, green done, red failed.
+                    "slice" matches the video's object-cover crop; mirrored with the front camera like the video. */}
+                {overlay && !problem && (
+                    <svg
+                        aria-hidden="true"
+                        className="absolute inset-0 size-full pointer-events-none"
+                        viewBox={`0 0 ${overlay.width} ${overlay.height}`}
+                        preserveAspectRatio="xMidYMid slice"
+                        style={facing === "user" ? {transform: "scaleX(-1)"} : undefined}
+                    >
+                        {overlay.boxes.map((b, i) => (
+                            <polygon
+                                key={i}
+                                points={b.quad.map(p => `${p.x},${p.y}`).join(" ")}
+                                fill={b.state === "done" ? "rgba(34,197,94,.18)" : "none"}
+                                stroke={BOX_COLOR[b.state]}
+                                strokeWidth={Math.max(overlay.width, overlay.height) / 160}
+                                strokeLinejoin="round"
+                            />
+                        ))}
+                    </svg>
+                )}
+                {banner && (
+                    <div
+                        className="absolute inset-x-3 bottom-3 rounded-xl px-4 py-3 flex items-center gap-3 text-white shadow-lg"
+                        style={{background: banner.status === "checked_in" ? "#15803d" : "#374151"}}
+                    >
+                        {banner.status === "checked_in" ? <LogIn size={26} aria-hidden="true"/> : <LogOut size={26} aria-hidden="true"/>}
+                        <div className="min-w-0">
+                            <p className="text-lg font-bold truncate">{banner.first_name}</p>
+                            <p className="text-sm opacity-90">
+                                {banner.repeat ? "Already " : ""}{banner.status === "checked_in" ? "checked in" : "checked out"}
+                            </p>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            <div className="p-4 flex flex-col gap-3">
+                <p aria-live="polite" className="text-sm theme-subtext-color">
+                    {scanError
+                        ? <span style={{color: "var(--theme-danger)"}}>{scanError}</span>
+                        : setup.kind === "starting" ? "Starting scanner…" : "Hold a member code up to the camera."}
+                </p>
+                {recent.length > 0 && (
+                    <ul className="flex flex-col gap-1.5" aria-label="Recent scans">
+                        {recent.map(r => (
+                            <li key={r.id} className="flex items-center justify-between gap-3 text-sm">
+                                <span className="theme-text truncate">{r.name}</span>
+                                <span className="shrink-0 theme-subtext-color">
+                                    {r.status === "checked_in" ? "In" : "Out"} · {new Date(r.at).toLocaleTimeString("en-US", {hour: "numeric", minute: "2-digit"})}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+        </Dialog>
     )
 }
 

@@ -4,7 +4,8 @@
 |---|---|---|
 | Primary | Collapsible sidebar, 56 or 196px | Bottom tab bar |
 | Header | Fixed top bar | Top bar, replaced by the event header inside an event |
-| Account menu | Anchored menu | **Drag sheet** |
+| Account menu | Anchored menu | **More sheet** (the avatar and the More tab open the same one) |
+| Pages outside the tab bar | Sidebar rows, Control Panel accordion | **More sheet** |
 | Overflow and row menus | Anchored menu | **Drag sheet** |
 | Select options | Anchored menu | **Drag sheet** |
 | Sections in a screen | Tabs | Tabs, scrollable sideways |
@@ -54,6 +55,21 @@ These are not menus, so they don't become sheets:
 - Active: accent color, heavier icon stroke and `aria-current="page"`. Inactive: `opacity-70`.
 - The tab bar is `h-16` plus the safe area, in place of today's `h-20`/`h-24`.
 - Sidebar rows add a tinted pill when active.
+- The fifth slot is **More**, a button rather than a link. It opens the More sheet
+  (`MoreSheet.tsx`) and shows as current on every page the sheet lists, and while it is open.
+
+## The More sheet
+
+One drag sheet holds everything the tab bar has no room for, in this order:
+
+1. The account: avatar, name, email, role, and a Settings button.
+2. **Pages**: the tabs not in the bar that this role can see (`moreTabs` in `navTabs.ts`).
+3. **Manage**: the Control Panel sections this role can open (`visibleSections`), as 48px rows.
+4. Sign out, after a divider.
+
+Every destination is one tap from anywhere; there are no list-only pages in between, and
+Control Panel pages have no back link. It takes the form height (up to 92dvh), not the menu
+cap, so a captain's full list shows without scrolling.
 
 ## Decisions
 
@@ -64,6 +80,9 @@ These are not menus, so they don't become sheets:
 - **Web keeps anchored menus.** A pointer has no reach problem, and a bottom sheet on a wide
   screen feels disconnected from its trigger.
 - **`md` stays the only chrome breakpoint.**
+- **More is a sheet, not a page.** The old Other page led to a Control Panel page of cards,
+  so reaching Members took three taps through two list pages, and its back arrow went to
+  Control Panel rather than Other. Settings was also listed twice (Other and the account sheet).
 
 ## Remaining debt
 

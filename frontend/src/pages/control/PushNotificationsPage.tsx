@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Link } from "react-router-dom"
 import {
     ChevronLeft, ChevronRight, ChevronDown, Send, Search,
     CheckCircle2, AlertCircle, XCircle, Clock,
@@ -441,16 +440,7 @@ export default function PushNotificationsPage() {
 
     return (
         <div className={`px-4 md:px-6 py-6 flex flex-col gap-5 h-full mx-auto w-full ${tab === "compose" ? "max-w-2xl" : "max-w-5xl"}`}>
-            <div className="flex items-center gap-2">
-                <Link
-                    to="/control"
-                    aria-label="Back to Control Panel"
-                    className={`md:hidden flex items-center justify-center w-11 h-11 -ml-3 -mr-3 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity ${focusRing}`}
-                >
-                    <ChevronLeft size={21} />
-                </Link>
-                <h1 className={`${typeH1} theme-h1-color`}>Push Notifications</h1>
-            </div>
+            <h1 className={`${typeH1} theme-h1-color`}>Push Notifications</h1>
 
             {/* Tabs */}
             <div className="flex gap-6 border-b theme-border">

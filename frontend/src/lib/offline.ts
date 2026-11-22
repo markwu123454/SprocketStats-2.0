@@ -87,6 +87,24 @@ export function saveOfflineSnapshot(userId: string, data: Record<string, unknown
     write(SNAPSHOT_KEY, JSON.stringify(snapshot))
 }
 
+/**
+ * Put a newer value for one key into `userId`'s saved snapshot: what a page
+ * fetched or changed after /bootstrap. Keys outside OFFLINE_KEYS are ignored, so
+ * control-panel data still never lands on the phone. The snapshot keeps its
+ * saved time, since its other keys may still date from then (a phone with no
+ * snapshot yet starts one, saved now).
+ */
+export function updateOfflineSnapshot(userId: string, key: string, value: unknown, now = Date.now()) {
+    if (!(OFFLINE_KEYS as readonly string[]).includes(key)) return
+    const current = loadOfflineSnapshot(userId)
+    const snapshot: OfflineSnapshot = {
+        userId,
+        savedAt: current?.savedAt ?? now,
+        data: {...current?.data, [key]: value},
+    }
+    write(SNAPSHOT_KEY, JSON.stringify(snapshot))
+}
+
 /** The saved snapshot, only if it belongs to `userId`. */
 export function loadOfflineSnapshot(userId: string): OfflineSnapshot | null {
     try {

@@ -8,11 +8,13 @@ from pydantic import BaseModel, Field
 import db
 from core import member_codes, qr_events
 from core.attendance_rules import credited_seconds_by_member
-from core.security import get_current_user, require_active
+from core.security import require_access, require_active
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+require_leaderboards = require_access(permissions="leaderboards.view")
 
 
 def _week_bounds(now: datetime) -> tuple[datetime, datetime]:
@@ -21,7 +23,7 @@ def _week_bounds(now: datetime) -> tuple[datetime, datetime]:
 
 
 @router.get("/meetings")
-async def get_meetings(_: dict = Depends(get_current_user)):
+async def get_meetings(_: dict = Depends(require_active)):
     start, end = _week_bounds(datetime.now(timezone.utc))
     rows = await db.list_meeting_hours(start, end)
     return [
@@ -36,7 +38,7 @@ async def get_meetings(_: dict = Depends(get_current_user)):
 
 
 @router.get("/leaderboard")
-async def get_leaderboard(user: dict = Depends(get_current_user)):
+async def get_leaderboard(user: dict = Depends(require_leaderboards)):
     """Credited hours per member: meeting time only, weighted by how each
     session ended and by each meeting's multiplier (see core.attendance_rules).
     Members with sessions but no credited time are listed with zero."""
@@ -70,7 +72,7 @@ async def get_leaderboard(user: dict = Depends(get_current_user)):
 
 
 @router.get("/me")
-async def get_my_attendance(user: dict = Depends(get_current_user)):
+async def get_my_attendance(user: dict = Depends(require_active)):
     rows = await db.list_attendance_for_user(user["sub"])
     return [
         {"id": r["id"], "checkin_time": r["checkin_time"], "checkout_time": r["checkout_time"]}

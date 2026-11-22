@@ -41,13 +41,6 @@ from endpoints import label_studio_client
 
 logger = logging.getLogger(__name__)
 
-# How often each process reloads the ban/approval cache while the app is
-# seeing meaningful traffic. Also the upper bound, during active use, on how
-# long a ban/approval change takes to propagate across server processes.
-ACCOUNT_STATE_REFRESH_SECONDS = 30
-# Ceiling the refresh interval backs off to when request volume is low.
-ACCOUNT_STATE_REFRESH_MAX_SECONDS = 7200  # 2 hours
-
 # How often each process sweeps push_delivery_logs for rows stuck in 'sent'
 # past their 10-minute timeout (see db.expire_stale_deliveries), while the
 # app is seeing meaningful traffic.
@@ -57,7 +50,7 @@ PUSH_DELIVERY_SWEEP_MAX_SECONDS = 21600  # 6 hours
 
 # How often each process checks for due meeting/event reminders (see
 # core.push_notify.send_due_reminders) and drains the push outbox. Deliberately
-# a fixed interval with no idle backoff, unlike the loops above: reminders are
+# a fixed interval with no idle backoff, unlike the sweep above: reminders are
 # time-driven, and a quiet night is exactly when the next morning's reminder
 # has to go out on time. The drain here is the backstop for pushes another
 # process queued but didn't finish (crash, redeploy); retries within a running
@@ -68,40 +61,15 @@ PUSH_REMINDER_SWEEP_SECONDS = 300
 # and doubles its interval next time instead of resetting to the base rate.
 IDLE_REQUEST_THRESHOLD = 5
 
-# Running count of inbound HTTP requests, used by both loops below to judge
-# how busy their last sleep window was. Updated by the _track_activity
-# middleware; each loop keeps its own snapshot to diff against.
+# Running count of inbound HTTP requests, used by the delivery sweep below to judge
+# how busy its last sleep window was. Updated by the _track_activity
+# middleware; the loop keeps its own snapshot to diff against.
 _request_count = 0
 
 
 def _record_request():
     global _request_count
     _request_count += 1
-
-
-async def _account_state_refresh_loop():
-    """Reload the account-state cache, backing off when request volume is low.
-
-    Runs for the life of the app. A failed refresh is logged and the previous
-    snapshot is kept -- a transient DB blip must not wipe the cache or kill the
-    loop. Interval resets to ACCOUNT_STATE_REFRESH_SECONDS whenever the app saw
-    at least IDLE_REQUEST_THRESHOLD requests since the last tick, and otherwise
-    doubles (up to ACCOUNT_STATE_REFRESH_MAX_SECONDS) each low-traffic tick.
-    """
-    interval = ACCOUNT_STATE_REFRESH_SECONDS
-    last_count = _request_count
-    while True:
-        await asyncio.sleep(interval)
-        try:
-            await account_state.refresh()
-        except Exception as e:
-            logger.error("account_state refresh failed, keeping previous snapshot: %s", e)
-        seen = _request_count - last_count
-        last_count = _request_count
-        if seen < IDLE_REQUEST_THRESHOLD:
-            interval = min(interval * 2, ACCOUNT_STATE_REFRESH_MAX_SECONDS)
-        else:
-            interval = ACCOUNT_STATE_REFRESH_SECONDS
 
 
 async def _push_delivery_sweep_loop():
@@ -155,15 +123,14 @@ async def lifespan(_: FastAPI):
     await db.init_db()
     await db.run_migrations()
     # Prime the cache before serving so the first request is a hit, not a miss.
+    # After this it reloads on demand (see core.account_state).
     await account_state.refresh()
-    refresh_task = asyncio.create_task(_account_state_refresh_loop())
     push_sweep_task = asyncio.create_task(_push_delivery_sweep_loop())
     push_reminder_task = asyncio.create_task(_push_reminder_loop())
     # Send whatever a previous process queued but didn't get to (e.g. a push
     # queued just before a redeploy).
     push_notify.kick_outbox()
     yield
-    refresh_task.cancel()
     push_sweep_task.cancel()
     push_reminder_task.cancel()
     await label_studio_client.aclose()
@@ -199,7 +166,7 @@ app.add_middleware(
 
 @app.middleware("http")
 async def _track_activity(request, call_next):
-    """Record that a request came in, so the idle-backoff loops above can
+    """Record that a request came in, so the idle-backoff sweep above can
     judge how busy the app has been."""
     _record_request()
     return await call_next(request)

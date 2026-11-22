@@ -8,9 +8,11 @@ import {BootstrapProvider} from "@/contexts/BootstrapProvider"
 
 import AuthWrapper from "@/components/wrappers/AuthWrapper.tsx"
 import ControlGuard from "@/components/wrappers/ControlGuard.tsx"
+import PermGuard from "@/components/wrappers/PermGuard.tsx"
 import UpdatePrompt from "@/components/UpdatePrompt.tsx"
 import ConfirmHost from "@/components/ui/ConfirmDialog"
 import PageErrorBoundary from "@/components/ErrorBoundary"
+import {watchViewport} from "@/lib/viewport"
 
 const LoginPageRouter      = lazy(() => import("@/pages/LoginPageRouter"))
 const OnboardingPageRouter = lazy(() => import("@/pages/OnboardingPageRouter.tsx"))
@@ -27,11 +29,9 @@ const CompPage           = lazy(() => import("@/pages/events/CompPage"))
 const EventTasksPage     = lazy(() => import("@/pages/events/EventTasksPage"))
 const LeaderboardsPage = lazy(() => import("@/pages/LeaderboardsPage"))
 const CheckinPage      = lazy(() => import("@/pages/CheckinPage"))
-const OtherPage       = lazy(() => import("@/pages/OtherPage"))
 const ScoutingPage    = lazy(() => import("@/pages/ScoutingPage"))
 const ScoutingFormPage = lazy(() => import("@/pages/ScoutingFormPage"))
 const TasksPage       = lazy(() => import("@/pages/TasksPageRouter"))
-const ControlPanelHub  = lazy(() => import("@/pages/control/ControlPanelHub"))
 const MeetingPage       = lazy(() => import("@/pages/control/MeetingPage"))
 const UpcomingEventPage = lazy(() => import("@/pages/control/UpcomingEventPage"))
 const MembersPage       = lazy(() => import("@/pages/control/MembersPage"))
@@ -49,19 +49,8 @@ function Protected({children}: {children: ReactNode}) {
 }
 
 export default function App() {
-    useLayoutEffect(() => {
-        const setVh = () => {
-            const h = window.visualViewport?.height ?? window.innerHeight
-            document.documentElement.style.setProperty("--real-vh", `${h}px`)
-        }
-        setVh()
-        window.visualViewport?.addEventListener("resize", setVh)
-        window.addEventListener("resize", setVh)
-        return () => {
-            window.visualViewport?.removeEventListener("resize", setVh)
-            window.removeEventListener("resize", setVh)
-        }
-    }, [])
+    // --app-vh, --real-vh and --vv-top: the page's height and the on-screen part of it (lib/viewport.ts).
+    useLayoutEffect(() => watchViewport(), [])
 
     return (
         <ThemeProvider>
@@ -69,7 +58,7 @@ export default function App() {
                 <AppReadyProvider>
                     <BootstrapProvider>
                     <BrowserRouter>
-                        <div className="flex flex-col min-h-0" style={{ height: "var(--real-vh, 100dvh)" }}>
+                        <div className="flex flex-col min-h-0" style={{ height: "var(--app-vh, 100dvh)" }}>
                             <PageErrorBoundary>
                             <Suspense fallback={null}>
                                 <Routes>
@@ -86,7 +75,9 @@ export default function App() {
                                         <Route path="/meetings" element={<MeetingsPage/>}/>
                                         <Route path="/attendance" element={<Navigate to="/meetings" replace/>}/>
                                         <Route path="/events" element={<EventsPage/>}/>
-                                        <Route path="/events/:eventKey" element={<EventShell/>}>
+                                        {/* Pages a role can't see bounce to the dashboard; the
+                                            server refuses their data either way. */}
+                                        <Route path="/events/:eventKey" element={<PermGuard perm="events.details"><EventShell/></PermGuard>}>
                                             <Route index element={<EventHubPage/>}/>
                                             <Route path="itinerary" element={<ItineraryPage/>}/>
                                             <Route path="packing"   element={<PackingPage/>}/>
@@ -94,13 +85,15 @@ export default function App() {
                                             <Route path="tasks"     element={<EventTasksPage/>}/>
                                             <Route path="comp"      element={<CompPage/>}/>
                                         </Route>
-                                        <Route path="/leaderboards" element={<LeaderboardsPage/>}/>
+                                        <Route path="/leaderboards" element={<PermGuard perm="leaderboards.view"><LeaderboardsPage/></PermGuard>}/>
                                         <Route path="/checkin"     element={<CheckinPage/>}/>
-                                        <Route path="/other"       element={<OtherPage/>}/>
-                                        <Route path="/scouting"    element={<ScoutingPage/>}/>
-                                        <Route path="/scouting/scout" element={<ScoutingFormPage/>}/>
-                                        <Route path="/tasks"       element={<TasksPage/>}/>
-                                        <Route path="/control"     element={<ControlPanelHub/>}/>
+                                        {/* The old mobile Other page; its links now live in the More sheet. */}
+                                        <Route path="/other"       element={<Navigate to="/dashboard" replace/>}/>
+                                        <Route path="/scouting"    element={<PermGuard perm="scouting.view"><ScoutingPage/></PermGuard>}/>
+                                        <Route path="/scouting/scout" element={<PermGuard perm="scouting.view"><ScoutingFormPage/></PermGuard>}/>
+                                        <Route path="/tasks"       element={<PermGuard perm="tasks.view"><TasksPage/></PermGuard>}/>
+                                        {/* No page of its own: opens the first section this role can see. */}
+                                        <Route path="/control"     element={<ControlGuard/>}/>
                                         <Route path="/control/meeting"        element={<ControlGuard section="meeting"><MeetingPage/></ControlGuard>}/>
                                         <Route path="/control/upcoming-event" element={<ControlGuard section="upcoming-event"><UpcomingEventPage/></ControlGuard>}/>
                                         <Route path="/control/members"        element={<ControlGuard section="members"><MembersPage/></ControlGuard>}/>

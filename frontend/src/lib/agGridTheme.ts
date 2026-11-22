@@ -56,7 +56,7 @@ const seasonalGridTheme = themeQuartz.withParams({
 
 /**
  * Apply the theme to every AgGridReact instance in the app.
- * Imported once from main.tsx so it runs before any grid mounts.
+ * Imported by lib/agGrid.ts, which every page with a grid imports before it renders one.
  */
 provideGlobalGridOptions({
     theme: seasonalGridTheme,

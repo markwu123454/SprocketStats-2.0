@@ -29,6 +29,18 @@ export interface OnboardingPageProps {
     error: string | null
     setError: (v: string | null) => void
     needsSchoolInfo: boolean
+    /** The chosen role is a visitor, so the form asks whether they're on a FIRST team. */
+    asksFirstTeam: boolean
+    /** The "I'm on a FIRST team" checkbox. */
+    onFirstTeam: boolean
+    setOnFirstTeam: (v: boolean) => void
+    firstProgram: string | null
+    setFirstProgram: (v: string | null) => void
+    /** Digits as typed; parsed on submit. */
+    firstTeamNumber: string
+    setFirstTeamNumber: (v: string) => void
+    /** Nothing left to answer about a FIRST team (always true for non-visitors). */
+    firstTeamComplete: boolean
     /** A student role is selected but the signed-in account isn't a school account. */
     studentEmailMismatch: boolean
     roleCatalog: RoleCatalogEntry[]
@@ -48,6 +60,9 @@ export default function OnboardingPageRouter() {
     const [selectedRole,     setSelectedRole]     = useState<string | null>(null)
     const [selectedGrade,    setSelectedGrade]    = useState<string | null>(null)
     const [selectedTeamYear, setSelectedTeamYear] = useState<string | null>(null)
+    const [onFirstTeam,      setOnFirstTeam]      = useState(false)
+    const [firstProgram,     setFirstProgram]     = useState<string | null>(null)
+    const [firstTeamNumber,  setFirstTeamNumber]  = useState("")
     const [submitting,       setSubmitting]       = useState(false)
     const [error,            setError]            = useState<string | null>(null)
     const [roleCatalog,      setRoleCatalog]      = useBootstrapped<RoleCatalogEntry[]>("roles", [])
@@ -68,6 +83,14 @@ export default function OnboardingPageRouter() {
     const needsSchoolInfo =
         selectedRole !== null &&
         (roleCatalog.find(r => r.value === selectedRole)?.school_info_required ?? true)
+
+    // Visitors are asked for their own FIRST team; the backend checks the same rule.
+    const asksFirstTeam =
+        selectedRole !== null &&
+        roleCatalog.find(r => r.value === selectedRole)?.level === "visitor"
+    const teamNumber = Number(firstTeamNumber)
+    const teamNumberValid = /^\d{1,6}$/.test(firstTeamNumber) && teamNumber >= 1
+    const firstTeamComplete = !asksFirstTeam || !onFirstTeam || (firstProgram !== null && teamNumberValid)
 
     // Student roles require a school account; the backend enforces this too.
     const studentEmailMismatch =
@@ -97,6 +120,9 @@ export default function OnboardingPageRouter() {
         if (studentEmailMismatch)                 { setError(`Student roles require a @${STUDENT_EMAIL_DOMAIN} email.`); return }
         if (needsSchoolInfo && !selectedGrade)    { setError("Please select your grade.");                 return }
         if (needsSchoolInfo && !selectedTeamYear) { setError("Please select your year on Team Sprocket."); return }
+        const onTeam = asksFirstTeam && onFirstTeam
+        if (onTeam && !firstProgram)              { setError("Please select your FIRST program.");          return }
+        if (onTeam && !teamNumberValid)           { setError("Please enter your team number.");             return }
 
         setSubmitting(true)
         setError(null)
@@ -124,6 +150,8 @@ export default function OnboardingPageRouter() {
                     role:      selectedRole,
                     grade:     needsSchoolInfo ? selectedGrade     : null,
                     team_year: needsSchoolInfo ? selectedTeamYear  : null,
+                    first_program:     onTeam ? firstProgram : null,
+                    first_team_number: onTeam ? teamNumber   : null,
                 }),
             })
             if (!res.ok) {
@@ -155,6 +183,11 @@ export default function OnboardingPageRouter() {
         submitting,
         error,            setError,
         needsSchoolInfo,
+        asksFirstTeam,
+        onFirstTeam,      setOnFirstTeam,
+        firstProgram,     setFirstProgram,
+        firstTeamNumber,  setFirstTeamNumber,
+        firstTeamComplete,
         studentEmailMismatch,
         roleCatalog,
         handleSubmit,

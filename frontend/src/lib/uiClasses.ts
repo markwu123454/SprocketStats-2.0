@@ -66,3 +66,6 @@ export const cardClass = "rounded-xl border theme-border p-5 flex flex-col gap-3
 /** Menu option row: 40px on web, 48px on mobile (navigation.md). */
 export const menuRowClass =
     "flex items-center justify-between gap-3 w-full px-3 min-h-12 md:min-h-10 text-sm text-left rounded-lg " + focusRing
+
+/** Inline style for the current row in navigation (sidebar, More sheet): the button colour at 18%. */
+export const navActiveTint = {background: "color-mix(in oklch, var(--theme-button-bg) 18%, transparent)"} as const

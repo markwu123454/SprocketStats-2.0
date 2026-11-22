@@ -1,7 +1,7 @@
 import { confirmAnyDiscard, useDiscardGuard, useIsDirty } from "@/lib/useDiscardGuard"
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react"
 import { useLocation } from "react-router-dom"
-import { ChevronDown, ChevronRight, X } from "lucide-react"
+import { ChevronDown, ChevronRight } from "lucide-react"
 import { useOnboardedUser, type OnboardedUser } from "@/contexts/authContext"
 import Dropdown from "@/components/ui/Dropdown"
 import Button from "@/components/ui/Button"
@@ -243,6 +243,7 @@ export default function TasksPageDesktop() {
                 canEdit={canEditTask(task)}
                 canChangeStatus={canChangeStatus(task)}
                 canAssign={canAssign}
+                readOnly={board.readOnly}
                 people={people}
                 currentUser={user}
                 todayMs={todayMs}
@@ -320,7 +321,7 @@ export default function TasksPageDesktop() {
                         <div className="w-40">
                             <Dropdown value={sort} onChange={v => setSort(v as TaskSort)} options={TASK_SORT_OPTIONS} triggerClassName={dropdownTriggerClassName} menuAlign="right" label="Sort tasks" />
                         </div>
-                        {!board.offline && (
+                        {!board.offline && !board.readOnly && (
                             <Button variant={composing ? "outlined" : "filled"} className="shrink-0" onClick={() => void confirmAnyDiscard().then(ok => { if (ok) setComposing(v => !v) })}>
                                 {composing ? "Close" : "New task"}
                             </Button>
@@ -328,8 +329,8 @@ export default function TasksPageDesktop() {
                     </div>
                 </div>
 
-                {loadError && <ErrorBanner message={loadError} />}
-                {actionError && <ErrorBanner message={actionError} onDismiss={() => setActionError(null)} />}
+                {loadError && <Notice>{loadError}</Notice>}
+                {actionError && <Notice onDismiss={() => setActionError(null)}>{actionError}</Notice>}
 
                 {composing && (
                     <ComposeForm
@@ -427,21 +428,6 @@ export default function TasksPageDesktop() {
                 />
             )}
         </div>
-    )
-}
-
-function ErrorBanner({ message, onDismiss }: { message: string; onDismiss?: () => void }) {
-    return (
-        <Notice>
-            <div className="flex items-center justify-between gap-2">
-                <span>{message}</span>
-                {onDismiss && (
-                    <Button variant="icon" aria-label="Dismiss" className="shrink-0 -my-3 -mr-3" onClick={onDismiss}>
-                        <X size={14} />
-                    </Button>
-                )}
-            </div>
-        </Notice>
     )
 }
 
@@ -629,6 +615,8 @@ interface TaskRowProps {
     canEdit: boolean
     canChangeStatus: boolean
     canAssign: boolean
+    /** See-only role (alumni): no claim, join, review, or note controls. */
+    readOnly: boolean
     people: Person[]
     currentUser: OnboardedUser
     todayMs: number
@@ -658,7 +646,7 @@ interface TaskRowProps {
 }
 
 function TaskRow({
-    task, isFirst, highlighted, canEdit, canChangeStatus, canAssign, people, currentUser, todayMs, unread, expanded, menuOpen, statusMenuOpen, draft,
+    task, isFirst, highlighted, canEdit, canChangeStatus, canAssign, readOnly, people, currentUser, todayMs, unread, expanded, menuOpen, statusMenuOpen, draft,
     dropdownTriggerClassName, onDraftChange, onToggleRow, onOpenForNote, onToggleMenu, onToggleStatusMenu, onSetStatus,
     onClaim, onOwnerChange, onAddSelf, onAddOther, onRemoveContributor, onLeave, onMarkReviewed, onUnreview, onEdit, onDelete,
     onNoteCountChange,
@@ -669,7 +657,9 @@ function TaskRow({
     const priorityColor = done ? tint("--theme-border", 70) : PRIORITY_COLOR[task.priority]
     const critical = task.priority === "critical" && !done
     const isFinisher = task.finished_by === currentUser.id
-    const disabledTitle = "Only the creator, a lead, or someone on this task can update its status"
+    const disabledTitle = readOnly
+        ? "You can view tasks but not change them"
+        : "Only the creator, a lead, or someone on this task can update its status"
 
     const avatarPeople = task.assignee_id
         ? [
@@ -681,12 +671,13 @@ function TaskRow({
     const chipUnread = unread > 0
     const noteColor = chipUnread ? "var(--theme-text-contrast)" : (task.note_count > 0 ? "var(--theme-text)" : "var(--theme-subtext-color)")
 
-    // Anyone may send a review task back to doing; other moves need status rights.
-    const canToggleCheck = canChangeStatus || review
+    // Anyone who takes part may send a review task back to doing; other moves
+    // need status rights.
+    const canToggleCheck = canChangeStatus || (review && !readOnly)
 
     const menuItems: MenuAction[] = []
     if (canEdit) menuItems.push({ label: "Edit task", onClick: onEdit })
-    menuItems.push({ label: "Add a note", onClick: onOpenForNote })
+    if (!readOnly) menuItems.push({ label: "Add a note", onClick: onOpenForNote })
     if (canChangeStatus && (task.status === "todo" || task.status === "doing")) menuItems.push({ label: "Mark ready for review", onClick: () => onSetStatus("review") })
     if (canChangeStatus && (task.status === "doing" || task.status === "review")) menuItems.push({ label: "Send back to To do", onClick: () => onSetStatus("todo") })
     if (canAssign && done) menuItems.push({ label: "Send back for review", onClick: onUnreview })
@@ -783,7 +774,7 @@ function TaskRow({
                                 style={{ marginLeft: i === 0 ? 0 : -6, border: "1.5px solid var(--theme-bg)" }}
                             />
                         ))}
-                        {!task.assignee_id && (
+                        {!task.assignee_id && !readOnly && (
                             <button
                                 type="button"
                                 onClick={e => { e.stopPropagation(); onClaim() }}
@@ -843,7 +834,16 @@ function TaskRow({
                         </span>
                     )}
 
-                    {review && (
+                    {review && readOnly && (
+                        <span className="text-xs font-semibold rounded-lg" style={{
+                            flex: 1, height: 28, boxSizing: "border-box", padding: "0 8px",
+                            display: "flex", alignItems: "center", border: "1px solid var(--theme-border)", color: "var(--theme-text)",
+                        }}>
+                            {STATUS_LABEL.review}
+                        </span>
+                    )}
+
+                    {review && !readOnly && (
                         <span style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
                             <button
                                 type="button"
@@ -898,8 +898,8 @@ function TaskRow({
                     )}
                     </span>
 
-                    <span style={{ position: "relative", display: "flex", alignItems: "center" }} data-task-popover>
-                        <button
+                    <span style={{ position: "relative", display: "flex", alignItems: "center", width: 28 }} data-task-popover>
+                        {menuItems.length > 0 && <button
                             type="button"
                             onClick={e => { e.stopPropagation(); onToggleMenu() }}
                             aria-label="More actions"
@@ -910,8 +910,8 @@ function TaskRow({
                             }}
                         >
                             ⋯
-                        </button>
-                        {menuOpen && (
+                        </button>}
+                        {menuOpen && menuItems.length > 0 && (
                             <span className="absolute top-8 right-0 z-40 flex flex-col min-w-44 rounded-xl border theme-border theme-bg p-1 shadow-lg">
                                 {menuItems.map((item, i) => (
                                     <button
@@ -952,14 +952,16 @@ function TaskRow({
                                             <span className="text-sm theme-text">{task.assignee_name}</span>
                                         </span>
                                     )}
-                                    {!task.assignee_id && (
+                                    {!task.assignee_id && (readOnly ? (
+                                        <span className="text-sm theme-subtext-color">Unassigned</span>
+                                    ) : (
                                         <Button onClick={e => { e.stopPropagation(); onClaim() }}>
                                             Claim task
                                         </Button>
-                                    )}
+                                    ))}
                                     {/* Releasing goes through the leave route, which hands the task to
                                         the earliest contributor or leaves it unassigned. */}
-                                    {task.assignee_id === currentUser.id && task.status !== "done" && (
+                                    {!readOnly && task.assignee_id === currentUser.id && task.status !== "done" && (
                                         <button
                                             type="button"
                                             onClick={e => { e.stopPropagation(); onLeave() }}
@@ -969,7 +971,7 @@ function TaskRow({
                                             Release
                                         </button>
                                     )}
-                                    {task.assignee_id && task.assignee_id !== currentUser.id && (
+                                    {!readOnly && task.assignee_id && task.assignee_id !== currentUser.id && (
                                         <span className="text-xs theme-subtext-color opacity-80">Only leads can reassign</span>
                                     )}
                                 </div>
@@ -979,6 +981,7 @@ function TaskRow({
                         <ContributorsSection
                             task={task}
                             canAssign={canAssign}
+                            readOnly={readOnly}
                             currentUserId={currentUser.id}
                             people={people}
                             dropdownTriggerClassName={dropdownTriggerClassName}
@@ -995,6 +998,7 @@ function TaskRow({
                         currentUserGivenName={currentUser.display_name}
                         currentUserPicture={currentUser.picture}
                         canAssign={canAssign}
+                        readOnly={readOnly}
                         unreadCount={unread}
                         draft={draft}
                         onDraftChange={onDraftChange}
@@ -1009,6 +1013,7 @@ function TaskRow({
 interface ContributorsSectionProps {
     task: Task
     canAssign: boolean
+    readOnly: boolean
     currentUserId: string
     people: Person[]
     dropdownTriggerClassName: string
@@ -1021,7 +1026,7 @@ interface ContributorsSectionProps {
 /** Its own component (rather than inline in TaskRow) so `addingContributor`
  *  resets every time the row's detail panel mounts, instead of surviving a
  *  collapse/re-expand as a stale "picker open" flag. */
-function ContributorsSection({ task, canAssign, currentUserId, people, dropdownTriggerClassName, onAddSelf, onAddOther, onRemoveContributor, onLeave }: ContributorsSectionProps) {
+function ContributorsSection({ task, canAssign, readOnly, currentUserId, people, dropdownTriggerClassName, onAddSelf, onAddOther, onRemoveContributor, onLeave }: ContributorsSectionProps) {
     const [addingContributor, setAddingContributor] = useState(false)
 
     const isAssignee = task.assignee_id === currentUserId
@@ -1032,7 +1037,7 @@ function ContributorsSection({ task, canAssign, currentUserId, people, dropdownT
     // Adding a contributor 400s when the task is unassigned or done (see
     // SPEC "Permissions") -- hide the affordance rather than ship a button
     // that's guaranteed to fail.
-    const contributorsAllowed = !!task.assignee_id && task.status !== "done"
+    const contributorsAllowed = !readOnly && !!task.assignee_id && task.status !== "done"
     const showAddContributor = contributorsAllowed && (canAssign ? addOtherOptions.length > 0 : (!isAssignee && !isContributor))
 
     return (
@@ -1040,7 +1045,7 @@ function ContributorsSection({ task, canAssign, currentUserId, people, dropdownT
             <span className={detailLabelClass}>Contributors</span>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
                 {task.contributors.map(c => {
-                    const removable = canAssign || c.id === currentUserId
+                    const removable = !readOnly && (canAssign || c.id === currentUserId)
                     return (
                         <span
                             key={c.id}
@@ -1113,6 +1118,8 @@ interface NotesThreadProps {
     currentUserGivenName: string
     currentUserPicture?: string
     canAssign: boolean
+    /** Notes can be read but not posted or deleted. */
+    readOnly: boolean
     unreadCount: number
     draft: string
     onDraftChange: (value: string) => void
@@ -1121,7 +1128,7 @@ interface NotesThreadProps {
 
 /** The expanded row's right column -- fetches lazily on mount (i.e. every
  *  time a row expands, since only one row is ever expanded at a time). */
-function NotesThread({ taskId, currentUserId, currentUserGivenName, currentUserPicture, canAssign, unreadCount, draft, onDraftChange, onNoteCountChange }: NotesThreadProps) {
+function NotesThread({ taskId, currentUserId, currentUserGivenName, currentUserPicture, canAssign, readOnly, unreadCount, draft, onDraftChange, onNoteCountChange }: NotesThreadProps) {
     const [notes, setNotes] = useState<TaskNote[] | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [posting, setPosting] = useState(false)
@@ -1182,7 +1189,7 @@ function NotesThread({ taskId, currentUserId, currentUserGivenName, currentUserP
                 </span>
             </div>
 
-            {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+            {error && <Notice onDismiss={() => setError(null)}>{error}</Notice>}
 
             {notes === null ? (
                 <div role="status" aria-label="Loading notes" className="flex flex-col gap-2">
@@ -1190,13 +1197,13 @@ function NotesThread({ taskId, currentUserId, currentUserGivenName, currentUserP
                     <Skeleton className="h-10 w-full" />
                 </div>
             ) : notes.length === 0 ? (
-                <EmptyState>No notes yet — leave context for whoever picks this up.</EmptyState>
+                <EmptyState>{readOnly ? "No notes yet." : "No notes yet — leave context for whoever picks this up."}</EmptyState>
             ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                     {notes.map((note, i) => {
                         const isUnread = i >= firstUnreadIndex
                         const mine = note.author_id === currentUserId
-                        const canDelete = mine || canAssign
+                        const canDelete = !readOnly && (mine || canAssign)
                         return (
                             <div key={note.id} style={{ display: "flex", gap: 10, padding: "9px 8px 9px 0", borderTop: i === 0 ? "none" : "1px solid var(--ag-grid-row-border)" }}>
                                 <TaskAvatar name={note.author_name} picture={note.author_picture} />
@@ -1228,7 +1235,7 @@ function NotesThread({ taskId, currentUserId, currentUserGivenName, currentUserP
                 </div>
             )}
 
-            <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+            {!readOnly && <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                 <Avatar
                     name={currentUserGivenName}
                     picture={currentUserPicture}
@@ -1254,7 +1261,7 @@ function NotesThread({ taskId, currentUserId, currentUserGivenName, currentUserP
                         </Button>
                     </div>
                 </div>
-            </div>
+            </div>}
         </div>
     )
 }

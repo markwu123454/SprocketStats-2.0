@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
-import { ChevronLeft, Download, Plus, Search } from "lucide-react"
+import { useNavigate } from "react-router-dom"
+import { Download, Plus, Search } from "lucide-react"
 import Checkbox from "@/components/ui/Checkbox"
 import Button from "@/components/ui/Button"
 import Notice from "@/components/ui/Notice"
@@ -144,13 +144,6 @@ export default function NotificationsPage() {
     return (
         <div className="px-4 md:px-6 py-6 flex flex-col gap-4 h-full">
             <div className="flex items-center gap-1.5 md:gap-2">
-                <Link
-                    to="/control"
-                    aria-label="Back to Control Panel"
-                    className={`md:hidden flex items-center justify-center w-11 h-11 -ml-3 -mr-3 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity ${focusRing}`}
-                >
-                    <ChevronLeft size={21} />
-                </Link>
                 <h1 className={`${typeH1} theme-h1-color min-w-0 truncate`}>Notifications</h1>
                 <span className="text-xs md:text-sm theme-subtext-color whitespace-nowrap shrink-0">{rows.length} shown</span>
 

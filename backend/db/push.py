@@ -496,7 +496,7 @@ async def list_push_deliveries(push_message_id) -> list[asyncpg.Record]:
                        u.display_name AS user_name
                 FROM push_delivery_logs d
                 LEFT JOIN users u ON u.id = d.user_id
-                WHERE d.push_message_id = $1
+                WHERE d.push_message_id = $1 AND u.banned_at IS NULL
                 ORDER BY u.display_name NULLS LAST, d.created_at
                 """,
                 push_message_id,
@@ -549,16 +549,18 @@ async def list_push_messages() -> list[asyncpg.Record]:
         try:
             return await conn.fetch(
                 """
-                SELECT m.*, u.display_name AS created_by_name,
-                       COUNT(*) FILTER (WHERE d.status = 'delivered') AS delivered_count,
+                SELECT m.*, CASE WHEN u.banned_at IS NULL THEN u.display_name END AS created_by_name,
+                       COUNT(*) FILTER (WHERE d.status = 'delivered' AND du.banned_at IS NULL) AS delivered_count,
                        COUNT(*) FILTER (
-                           WHERE d.status = 'failed'
-                              OR (d.status = 'sent' AND d.created_at < now() - interval '10 minutes')
+                           WHERE (d.status = 'failed'
+                                  OR (d.status = 'sent' AND d.created_at < now() - interval '10 minutes'))
+                             AND du.banned_at IS NULL
                        ) AS failed_count
                 FROM push_messages m
                 LEFT JOIN users u ON u.id = m.created_by
                 LEFT JOIN push_delivery_logs d ON d.push_message_id = m.id
-                GROUP BY m.id, u.display_name
+                LEFT JOIN users du ON du.id = d.user_id
+                GROUP BY m.id, u.display_name, u.banned_at
                 ORDER BY m.created_at DESC
                 """
             )
