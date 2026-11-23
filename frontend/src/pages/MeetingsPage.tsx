@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
+import { Pencil, Plus } from "lucide-react"
 import Button from "@/components/ui/Button"
 import Notice from "@/components/ui/Notice"
 import Skeleton from "@/components/ui/Skeleton"
@@ -7,7 +8,8 @@ import EmptyState from "@/components/ui/EmptyState"
 import { useOnboardedUser } from "@/contexts/authContext"
 import { MeetingAbsenceRow } from "@/components/meetings/MeetingAbsence"
 import { can } from "@/lib/permissions"
-import { focusRing } from "@/lib/uiClasses"
+import { buttonClass } from "@/lib/uiClasses"
+import { usePageHeader } from "@/contexts/pageHeaderContext"
 import { absencesByMeeting, canViewOthersAbsences, hoursMultiplier, meetingDate, meetingTime, multiplierLabel, relativeDayLabel, upcomingMeetings, useMeetingAbsences, useMeetings, useRoleLabels } from "@/lib/meetings"
 
 const CARD_BG = "bg-[color-mix(in_oklch,var(--theme-bg)_92%,transparent)]"
@@ -15,6 +17,7 @@ const eyebrow = "text-[11px] font-bold tracking-[0.1em] uppercase"
 
 export default function MeetingsPage() {
     const user = useOnboardedUser()
+    usePageHeader("Meetings")
     const { meetings, loading, error, retry } = useMeetings()
     const [absenceRevision, setAbsenceRevision] = useState(0)
     // Without it (visitors) the server sends meeting times only: no agendas or absences.
@@ -30,18 +33,18 @@ export default function MeetingsPage() {
     }, [])
     const upcoming = upcomingMeetings(meetings, now)
     const days = groupByDay(upcoming)
-    const canManage = can(user.permissions, "control_panel.meeting_time") || can(user.permissions, "control_panel.meeting_agenda")
+    // Scheduling a meeting needs meeting_time; editing one opens the Control Panel page,
+    // which shows whichever of the time and agenda editors this role can use.
+    const canSchedule = can(user.permissions, "control_panel.meeting_time")
+    const canEdit = canSchedule || can(user.permissions, "control_panel.meeting_agenda")
 
     return (
-        <div className="max-w-6xl mx-auto px-4 md:px-6 py-8 flex flex-col gap-4">
-            <div className="max-w-3xl w-full mx-auto flex items-end justify-between gap-3">
-                <div className="min-w-0">
-                    <h1 className="text-2xl font-bold theme-h1-color">Meetings</h1>
-                    <p className="text-sm theme-subtext-color mt-1">Upcoming dates and plans for the team.</p>
-                </div>
-                {canManage && <Link to="/control/meeting" aria-label="Manage meetings"
-                    className={`shrink-0 inline-flex items-center justify-center min-h-11 md:min-h-10 rounded-full border theme-outline theme-text-contrast px-3.5 py-2 text-[13px] font-semibold bg-[color-mix(in_oklch,var(--theme-bg)_80%,transparent)] transition-opacity hover:opacity-90 active:opacity-70 ${focusRing}`}>Manage</Link>}
-            </div>
+        <div className={`max-w-6xl mx-auto px-4 md:px-6 py-8 flex flex-col gap-4 ${canSchedule ? "pb-28" : ""}`}>
+            {canSchedule && (
+                <Link to="/control/meeting" aria-label="Schedule a meeting" className={buttonClass({ variant: "fab" })}>
+                    <Plus size={21} />
+                </Link>
+            )}
             <div className="max-w-3xl w-full mx-auto flex flex-col gap-3.5">
                 {loading ? <div className="flex flex-col gap-3.5" role="status" aria-label="Loading meetings">
                         {[0, 1, 2].map(i => <div key={i} className="flex gap-3.5"><Skeleton className="w-14 h-16 shrink-0 rounded-[14px]" /><Skeleton className="h-32 flex-1 rounded-2xl" /></div>)}
@@ -66,7 +69,16 @@ export default function MeetingsPage() {
                         const mine = grouped.get(meeting.id)?.find(absence => absence.user_id === user.id)
                         const others = (grouped.get(meeting.id) ?? []).filter(absence => absence.user_id !== user.id)
                         const hasAgenda = (meeting.agenda ?? "").trim() !== ""
-                        return <section key={meeting.id} className={`rounded-2xl border theme-border p-3.5 ${CARD_BG}`}>
+                        return <section key={meeting.id} className={`relative rounded-2xl border theme-border p-3.5 ${CARD_BG} ${canEdit ? "pr-12" : ""}`}>
+                                {canEdit && (
+                                    <Link
+                                        to={`/control/meeting?meeting=${encodeURIComponent(meeting.id)}`}
+                                        aria-label={`Edit ${meeting.meeting_purpose || "meeting"} on ${meetingDate(meeting.start_time)}`}
+                                        className={buttonClass({ variant: "icon", className: "absolute top-1.5 right-1.5" })}
+                                    >
+                                        <Pencil size={16} />
+                                    </Link>
+                                )}
                                 <span className="sr-only">{meetingDate(meeting.start_time)}</span>
                                 {isNext && <p className={`${eyebrow} theme-text-contrast`}>{live ? "Live now" : `Next · ${relativeDayLabel(meeting.start_time, now)}`}</p>}
                                 <h2 className="text-[19px] font-bold theme-h1-color break-words my-1">{meeting.meeting_purpose || "Team meeting"}</h2>

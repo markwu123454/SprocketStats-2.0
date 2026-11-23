@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react"
+import { useSearchParams } from "react-router-dom"
 import { useOnboardedUser } from "@/contexts/authContext"
 import { can } from "@/lib/permissions"
 import ControlSectionLayout from "./ControlSectionLayout"
@@ -16,19 +17,22 @@ import MeetingAgendaEditor from "./MeetingAgendaEditor"
  */
 export default function MeetingPage() {
     const user = useOnboardedUser()
+    // ?meeting=<id>, from a meeting card's pen on the Meetings page: open that meeting for editing.
+    const [params] = useSearchParams()
+    const meetingId = params.get("meeting") ?? undefined
     const [revision, setRevision] = useState(0)
     const onMeetingsChanged = useCallback(() => setRevision(value => value + 1), [])
     const canTime   = can(user.permissions, "control_panel.meeting_time")
     const canAgenda = can(user.permissions, "control_panel.meeting_agenda")
 
     return (
-        <ControlSectionLayout title="Meeting">
+        <ControlSectionLayout title="Manage meetings">
             {canTime && (
-                <MeetingHoursEditor onChanged={onMeetingsChanged} />
+                <MeetingHoursEditor onChanged={onMeetingsChanged} editId={meetingId} />
             )}
 
             {canAgenda && (
-                <MeetingAgendaEditor revision={revision} />
+                <MeetingAgendaEditor revision={revision} initialMeetingId={meetingId} />
             )}
         </ControlSectionLayout>
     )

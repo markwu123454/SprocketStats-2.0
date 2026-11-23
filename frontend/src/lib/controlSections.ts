@@ -5,7 +5,7 @@
 // permission: a page can be reachable under a boolean combination of
 // capabilities (today just "any of", but the predicate shape leaves room for
 // AND/XOR/etc. later), and a page then reads the individual capabilities itself
-// to gate specific actions/fields. So "Meeting" is one page visible to anyone
+// to gate specific actions/fields. So "Manage meetings" is one page visible to anyone
 // who can edit the time OR the agenda; inside, the time and agenda editors are
 // each gated separately.
 //
@@ -32,7 +32,8 @@ export interface ControlSection {
 export const CONTROL_SECTIONS: ControlSection[] = [
     {
         to: "meeting",
-        label: "Meeting",
+        // Not "Meeting": too close to the main Meetings page. The route stays /control/meeting.
+        label: "Manage meetings",
         icon: CalendarClock,
         // One page for time + agenda; reachable if you can edit either.
         visible: p => can(p, CP + "meeting_time") || can(p, CP + "meeting_agenda"),

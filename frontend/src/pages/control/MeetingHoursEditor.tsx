@@ -17,7 +17,7 @@ import Skeleton from "@/components/ui/Skeleton"
 import EmptyState from "@/components/ui/EmptyState"
 import { isDirtyVs, useDiscardGuard } from "@/lib/useDiscardGuard"
 import { focusRing, inputClass, typeBadge, typeH2, typeTitle } from "@/lib/uiClasses"
-import { hoursMultiplier, MAX_HOURS_MULTIPLIER, MIN_HOURS_MULTIPLIER, multiplierLabel } from "@/lib/meetings"
+import { hoursMultiplier, MIN_HOURS_MULTIPLIER, multiplierLabel } from "@/lib/meetings"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -104,12 +104,17 @@ function expandOccurrences(first: Date, untilKey: string, stepDays: number): Dat
     return out
 }
 
-/** ×1.0 to ×2.0 in tenths: how much an hour at the meeting counts for. */
-const MULTIPLIER_OPTIONS = Array.from({ length: Math.round((MAX_HOURS_MULTIPLIER - MIN_HOURS_MULTIPLIER) * 10) + 1 }, (_, i) => {
-    const value = MIN_HOURS_MULTIPLIER + i / 10
-    const worth = value.toFixed(1).replace(/\.0$/, "")
-    return { value: value.toFixed(1), label: `${multiplierLabel(value)} · 1 hour counts as ${worth} ${value === 1 ? "hour" : "hours"}` }
-})
+/** How much an hour at the meeting counts for. */
+const MULTIPLIER_CHOICES = [1, 1.2, 1.5, 2]
+
+/** The four choices as "1x hours", "1.2x hours"…, plus a meeting's current value if it was
+ *  saved with another one (e.g. 1.3), so editing it doesn't quietly change its hours. */
+function multiplierOptions(current: number) {
+    const values = MULTIPLIER_CHOICES.includes(current)
+        ? MULTIPLIER_CHOICES
+        : [...MULTIPLIER_CHOICES, current].sort((a, b) => a - b)
+    return values.map(value => ({ value: value.toFixed(1), label: `${Number(value.toFixed(2))}x hours` }))
+}
 
 /** A stored multiplier snapped to the nearest option the form offers. */
 function multiplierOf(row: { hours_multiplier?: number }): number {
@@ -128,7 +133,7 @@ const DEFAULT_END = "18:30"
  *
  * Both dates use the shared Sprocket DatePicker; start/end use TimeWheel.
  */
-export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => void }) {
+export default function MeetingHoursEditor({ onChanged, editId }: { onChanged?: () => void; editId?: string }) {
     const [meetings, setMeetings] = useState<MeetingRow[]>([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
@@ -319,6 +324,19 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
         scrollToForm()
     }
 
+    // Opened from a meeting card's pen (?meeting=<id>): load that meeting into the form
+    // once the list has arrived, and only once per id, so later edits aren't overwritten.
+    const openedEditId = useRef<string | null>(null)
+    useEffect(() => {
+        if (!editId || loading || openedEditId.current === editId) return
+        const row = meetings.find(m => m.id === editId)
+        if (!row) return
+        openedEditId.current = editId
+        handleEdit(row)
+        // handleEdit is redefined each render; this should run only when the list or id changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editId, loading, meetings])
+
     function toggleSelected(id: string) {
         setSelected(prev => {
             const next = new Set(prev)
@@ -395,7 +413,7 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
                     type="text"
                     value={description}
                     onChange={(e) => updateDescription(e.target.value)}
-                    placeholder="Short description — e.g. Board sync, Sprint planning"
+                    placeholder="Short description"
                     maxLength={128}
                     aria-label="Meeting description"
                     className={`w-full ${inputClass}`}
@@ -434,7 +452,7 @@ export default function MeetingHoursEditor({ onChanged }: { onChanged?: () => vo
                 <Dropdown
                     value={multiplier.toFixed(1)}
                     onChange={(v) => { setMultiplier(Number(v)); setJustAdded(false) }}
-                    options={MULTIPLIER_OPTIONS}
+                    options={multiplierOptions(multiplier)}
                     label="Hours multiplier"
                     className="min-w-0"
                     triggerClassName={`${DROPDOWN_TRIGGER} w-full h-11`}

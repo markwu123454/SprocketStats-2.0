@@ -59,9 +59,9 @@ function AgendaForm({ meeting, onSaved, onSaving }: { meeting: Meeting, onSaved:
     </form>
 }
 
-export default function MeetingAgendaEditor({ revision }: { revision: number }) {
+export default function MeetingAgendaEditor({ revision, initialMeetingId }: { revision: number; initialMeetingId?: string }) {
     const { meetings, setMeetings, loading, error, retry } = useMeetings(revision)
-    const [selectedId, setSelectedId] = useState("")
+    const [selectedId, setSelectedId] = useState(initialMeetingId ?? "")
     const [saving, setSaving] = useState(false)
     const selected = meetings.find(meeting => meeting.id === selectedId)
         ?? meetings.find(meeting => Date.parse(meeting.end_time) > Date.now()) ?? meetings[0]
