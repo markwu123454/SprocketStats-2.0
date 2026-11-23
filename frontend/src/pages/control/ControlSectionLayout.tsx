@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { typeH1 } from "@/lib/uiClasses"
+import { usePageHeader } from "@/contexts/pageHeaderContext"
 
 /**
  * Shared frame for a Control Panel sub-page.
@@ -17,9 +17,10 @@ export default function ControlSectionLayout({
     wide?: boolean
     children?: ReactNode
 }) {
+    // The title shows in the app's top bar, not in the page.
+    usePageHeader(title)
     return (
         <div className={`${wide ? "md:px-6" : "max-w-4xl mx-auto"} px-4 py-6 flex flex-col gap-6`}>
-            <h1 className={`${typeH1} theme-h1-color`}>{title}</h1>
             {children}
         </div>
     )

@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, type ReactNode } from "react"
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom"
 import { useAuth, useOnboardedUser } from "@/contexts/authContext"
 import {
-    Settings, LogOut, ChevronDown, LayoutGrid, PanelLeftClose, PanelLeftOpen, SlidersHorizontal,
+    Settings, LogOut, ChevronDown, ChevronLeft, LayoutGrid, PanelLeftClose, PanelLeftOpen, SlidersHorizontal,
 } from "lucide-react"
 import AccountSummary from "@/components/AccountSummary"
 import Avatar from "@/components/Avatar.tsx"
@@ -15,6 +15,7 @@ import { can } from "@/lib/permissions"
 import { CORE_TABS, isMorePage } from "@/lib/navTabs"
 import { visibleSections, type ControlSection } from "@/lib/controlSections"
 import { useAppReady } from "@/contexts/appReadyContext"
+import { PageHeaderContext, type PageHeader } from "@/contexts/pageHeaderContext"
 import { onNotificationNavigate, syncPushSubscription } from "@/lib/push"
 
 const NAV_TEXT_KEY = "nav-show-text"
@@ -37,6 +38,8 @@ export default function AppShell() {
     const markReady = useAppReady()
 
     const [menuOpen, setMenuOpen] = useState(false)
+    // The current page's title, set by the page through usePageHeader.
+    const [pageHeader, setPageHeader] = useState<PageHeader | null>(null)
     // The mobile More sheet: opened by the bar's More tab and by the avatar.
     const [moreOpen, setMoreOpen] = useState(false)
     const menuRef       = useRef<HTMLDivElement>(null)
@@ -112,10 +115,11 @@ export default function AppShell() {
         <div className="flex flex-col min-h-0 theme-bg-page bg-cover" style={{ height: "var(--app-vh, 100dvh)" }}>
 
             {/* ── Top header ──────────────────────────────────────── */}
-            <header className={`shrink-0 border-b z-30 theme-bg theme-border${isInsideEvent ? " hidden md:block" : ""}`}>
+            {/* Holds the page title: a breadcrumb after the logo on web, centred on phones. */}
+            <header className="shrink-0 border-b z-30 theme-bg theme-border">
                 <div className="relative px-3 h-14 flex items-center justify-between gap-3">
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 min-w-0">
                         <button
                             onClick={toggleSidebar}
                             aria-label="Toggle sidebar"
@@ -124,7 +128,18 @@ export default function AppShell() {
                             {sidebarCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
                         </button>
 
-                        <Link to="/dashboard" className={`flex items-center gap-2 select-none pl-1 md:pl-0 rounded-lg ${focusRing}`}>
+                        {/* Phones, nested page: a back arrow in place of the logo. */}
+                        {pageHeader?.back && (
+                            <Link
+                                to={pageHeader.back.to}
+                                aria-label={`Back to ${pageHeader.back.label}`}
+                                className={`md:hidden flex items-center justify-center w-11 h-11 -ml-1 rounded-lg theme-text ${focusRing}`}
+                            >
+                                <ChevronLeft size={22} />
+                            </Link>
+                        )}
+
+                        <Link to="/dashboard" className={`${pageHeader?.back ? "hidden md:flex" : "flex"} items-center gap-2 shrink-0 select-none pl-1 md:pl-0 rounded-lg ${focusRing}`}>
                             <div className="relative w-8 h-8 shrink-0">
                                 <div
                                     className="size-8 shrink-0 scale-125"
@@ -135,11 +150,37 @@ export default function AppShell() {
                                     }}
                                 />
                             </div>
-                            <span className="font-bold text-base theme-text hidden sm:block">SprocketStats</span>
+                            <span className="font-bold text-base theme-text hidden md:block">SprocketStats</span>
                         </Link>
+
+                        {/* Web: SprocketStats / Parent / Title */}
+                        {pageHeader && (
+                            <div className="hidden md:flex items-center gap-2 min-w-0 ml-2">
+                                <Crumb>/</Crumb>
+                                {pageHeader.back && (
+                                    <>
+                                        <Link to={pageHeader.back.to} className={`shrink-0 text-base theme-subtext-color hover:opacity-80 transition-opacity rounded ${focusRing}`}>
+                                            {pageHeader.back.label}
+                                        </Link>
+                                        <Crumb>/</Crumb>
+                                    </>
+                                )}
+                                <h1 className="min-w-0 truncate text-base font-bold theme-h1-color">{pageHeader.title}</h1>
+                                {pageHeader.badge && <HeaderBadge badge={pageHeader.badge} />}
+                            </div>
+                        )}
                     </div>
 
-                    {offline && <OfflineLabel className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />}
+                    {/* Phones: the title centred in the bar. */}
+                    {pageHeader && (
+                        <div className="md:hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 max-w-[60%] flex items-center gap-1.5 pointer-events-none">
+                            <h1 className="min-w-0 truncate text-xl font-bold theme-h1-color">{pageHeader.title}</h1>
+                            {pageHeader.badge && <HeaderBadge badge={pageHeader.badge} />}
+                        </div>
+                    )}
+
+                    <div className="flex items-center gap-3 shrink-0">
+                    {offline && <OfflineLabel className={pageHeader ? "hidden md:flex" : ""} />}
 
                     {/* Desktop user menu */}
                     <div className="relative hidden md:block" ref={menuRef}>
@@ -190,6 +231,7 @@ export default function AppShell() {
                         >
                             <Avatar name={user.name} picture={user.picture} size={32} />
                         </button>
+                    </div>
                     </div>
                 </div>
             </header>
@@ -250,7 +292,9 @@ export default function AppShell() {
 
                 <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden theme-scrollbar">
                     <PageErrorBoundary>
-                        <Outlet />
+                        <PageHeaderContext.Provider value={setPageHeader}>
+                            <Outlet />
+                        </PageHeaderContext.Provider>
                     </PageErrorBoundary>
                 </main>
             </div>
@@ -305,6 +349,24 @@ export default function AppShell() {
     )
 }
 
+function Crumb({ children }: { children: ReactNode }) {
+    return <span aria-hidden="true" className="shrink-0 text-base theme-subtext-color opacity-60">{children}</span>
+}
+
+function HeaderBadge({ badge }: { badge: NonNullable<PageHeader["badge"]> }) {
+    const accent = badge.tone === "accent"
+    return (
+        <span
+            className="shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-bold tracking-wide uppercase"
+            style={accent
+                ? { color: "var(--theme-text-contrast)", borderColor: "color-mix(in oklch, var(--theme-text-contrast) 50%, transparent)" }
+                : { color: "var(--theme-subtext-color)", borderColor: "var(--theme-border)" }}
+        >
+            {badge.label}
+        </span>
+    )
+}
+
 /**
  * Desktop sidebar navigation for the Control Panel and its role-gated sub-pages.
  *
@@ -346,7 +408,7 @@ function ControlPanelNav({
                 <div className="absolute left-full top-0 ml-2 z-40 hidden group-hover:block group-focus-within:block min-w-44 rounded-xl border shadow-lg py-1 theme-bg theme-border">
                     <div className="px-3 py-1.5 text-xs font-semibold theme-subtext-color">Control Panel</div>
                     {sections.map(({ to, label, icon: Icon }) => {
-                        const active = pathname === `/control/${to}`
+                        const active = pathname === `/control/${to}` || pathname.startsWith(`/control/${to}/`)
                         return (
                             <Link
                                 key={to}
@@ -378,7 +440,7 @@ function ControlPanelNav({
             {open && (
                 <div className="flex flex-col gap-0.5 mt-0.5 pl-3 ml-2 border-l theme-border">
                     {sections.map(({ to, label, icon: Icon }) => {
-                        const active = pathname === `/control/${to}`
+                        const active = pathname === `/control/${to}` || pathname.startsWith(`/control/${to}/`)
                         return (
                             <Link key={to} to={`/control/${to}`} className={rowClass(active)} style={activeStyle(active)}>
                                 <Icon size={16} className="shrink-0" />

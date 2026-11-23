@@ -1,4 +1,5 @@
 import { useAuth, useOnboardedUser } from "@/contexts/authContext"
+import { usePageHeader } from "@/contexts/pageHeaderContext"
 import { getPerm } from "@/lib/permissions"
 import { LogOut, Mail, ShieldCheck, Palette, Navigation, Bell, ListChecks, CalendarClock, Milestone, Megaphone, UserX, Pencil, ImagePlus, ImageOff } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
@@ -11,7 +12,7 @@ import {
     resetCustomBackground, setBackgroundDim, setCustomBackground,
 } from "@/lib/customBackground"
 import { useDiscardGuard } from "@/lib/useDiscardGuard"
-import { fieldErrorClass, focusRing, helperClass, inputClass, typeH1, typeH2 } from "@/lib/uiClasses"
+import { fieldErrorClass, focusRing, helperClass, inputClass, typeH2 } from "@/lib/uiClasses"
 import {
     getPushPreferences, getPushState, setPushPreferences, subscribeToPush, syncPushSubscription,
     unsubscribeFromPush, type PushCategory, type PushPreferences, type PushState,
@@ -35,6 +36,7 @@ function getNavTextPref(): boolean {
 }
 
 export default function SettingPage() {
+    usePageHeader("Settings")
     const { logout, refreshUser, offline } = useAuth()
     const user = useOnboardedUser()
     const [editingName, setEditingName] = useState(false)
@@ -185,8 +187,6 @@ export default function SettingPage() {
 
     return (
         <div className="max-w-lg mx-auto px-4 py-8 flex flex-col gap-8">
-            <h1 className={`${typeH1} theme-h1-color`}>Settings</h1>
-
             {/* Account Section */}
             <section className="rounded-xl border theme-border theme-bg overflow-hidden divide-y divide-[var(--theme-border)]">
                 <h2 className={`${typeH2} theme-subtext-color px-4 py-3`}>Account</h2>

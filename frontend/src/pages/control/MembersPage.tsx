@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from "react"
 import Notice from "@/components/ui/Notice"
+import { usePageHeader } from "@/contexts/pageHeaderContext"
 import { MembersSkeleton } from "@/components/members/MemberBits"
 import MembersList from "@/components/members/MembersList"
 import { EditMemberSheet, KioskAccessSheet, TagsSheet } from "@/components/members/MemberSheets"
@@ -21,6 +22,7 @@ const MembersGrid = lazy(() => import("@/components/members/MembersGrid"))
  * every action (MembersList). Every change saves as soon as it's made.
  */
 export default function MembersPage() {
+    usePageHeader("Members")
     const isMobile = useIsMobile()
     const roster = useMembersRoster()
     const { rows, catalog, loading, error, setError } = roster
@@ -60,13 +62,9 @@ export default function MembersPage() {
 
     return (
         // Desktop pins the card to the viewport and scrolls the grid inside it; on
-        // mobile the whole page scrolls (overflow-clip, not hidden, so the group
-        // headers can still stick) to give the list the full screen.
+        // mobile the whole page scrolls to give the list the full screen.
         <div className="px-4 py-3 md:px-6 md:py-6 flex flex-col gap-4 md:h-full">
             <div className="rounded-xl border overflow-clip md:overflow-hidden theme-border theme-bg flex flex-col md:flex-1 md:min-h-0">
-                <div className="shrink-0 px-4 md:px-6 py-4 border-b theme-border">
-                    <h1 className="text-2xl font-bold leading-tight theme-h1-color">Members</h1>
-                </div>
 
                 {error && <Notice className="mx-4 md:mx-6 mt-3 shrink-0" onDismiss={() => setError(null)}>{error}</Notice>}
 

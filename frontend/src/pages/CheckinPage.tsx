@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom"
 import { CheckCircle2, QrCode, XCircle } from "lucide-react"
 import Skeleton from "@/components/ui/Skeleton"
 import { useAppReady } from "@/contexts/appReadyContext"
+import { usePageHeader } from "@/contexts/pageHeaderContext"
 import { buttonClass, cardClass, typeTitle } from "@/lib/uiClasses"
 
 type State =
@@ -16,6 +17,7 @@ type State =
  * A logged-out visitor goes through login first and rescans: codes live ~30s.
  */
 export default function CheckinPage() {
+    usePageHeader("Kiosk check-in")
     const markReady = useAppReady()
     const [params] = useSearchParams()
     const token = params.get("t")
@@ -48,7 +50,6 @@ export default function CheckinPage() {
 
     return (
         <div className="max-w-md mx-auto px-4 py-8 flex flex-col gap-4">
-            <h1 className="text-2xl font-bold theme-h1-color">Kiosk check-in</h1>
             <section className={`${cardClass} theme-bg backdrop-blur-sm items-center text-center`} aria-live="polite">
                 {state.kind === "working" && <div role="status" aria-label="Checking in" className="w-full flex flex-col gap-3"><Skeleton className="h-6 w-full" /><Skeleton className="h-6 w-2/3" /></div>}
                 {state.kind === "done" && <>

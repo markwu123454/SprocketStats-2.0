@@ -2,6 +2,7 @@ import {useEffect, useState, type ReactNode} from "react"
 import { Link } from "react-router-dom"
 import { useIsOffline, useOnboardedUser } from "@/contexts/authContext"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
+import { usePageHeader } from "@/contexts/pageHeaderContext"
 import { Calendar, ChevronRight, ListChecks, LogIn, QrCode, ScanLine, UserX } from "lucide-react"
 import Avatar from "@/components/Avatar.tsx"
 import MyCodeDialog from "@/components/MyCodeDialog"
@@ -72,6 +73,7 @@ const cardStyle = { background: "var(--theme-bg)", borderColor: "var(--theme-bor
 
 export default function DashboardPage() {
     const user = useOnboardedUser()
+    usePageHeader("Dashboard")
     const [meetings, setMeetings]   = useBootstrapped<MeetingHours[] | null>("meetings", null)
     const [rawEvents, setRawEvents] = useBootstrapped<EventEntry[]>("events", [])
     const [currentEvent]            = useBootstrapped<EventInfo | null>("current_event", null)
@@ -202,12 +204,10 @@ export default function DashboardPage() {
             {/* Header */}
             <div className="flex items-center gap-4">
                 <Avatar name={user.name} picture={user.picture} size={48} className="ring-2" />
-                <div className="flex-1 min-w-0">
-                    <h1 className="text-2xl font-bold theme-text">
-                        Welcome back, {user.display_name}
-                    </h1>
-                    <p className="text-sm theme-subtext-color">Here's your overview</p>
-                </div>
+                {/* The greeting, not the page title: that's "Dashboard" in the top bar. */}
+                <p className="flex-1 min-w-0 text-2xl font-bold theme-text">
+                    Welcome back, {user.display_name}
+                </p>
                 {canScan && (
                     <button
                         type="button"

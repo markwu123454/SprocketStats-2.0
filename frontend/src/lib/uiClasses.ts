@@ -23,8 +23,8 @@ const buttonVariant: Record<ButtonVariant, string> = {
     danger: "bg-transparent theme-danger",
     dangerOutlined: "bg-transparent border theme-border-danger theme-danger",
     icon: "bg-transparent theme-subtext-color",
-    // Mobile only, bottom-right, above the 64px tab bar plus the safe area.
-    fab: "fixed right-4 z-30 md:hidden shadow-lg theme-accent-fill bottom-[calc(5rem+env(safe-area-inset-bottom))]",
+    // Bottom-right on every screen: above the 64px tab bar plus the safe area on phones, in the corner on web.
+    fab: "fixed right-4 z-30 shadow-lg theme-accent-fill bottom-[calc(5rem+env(safe-area-inset-bottom))] md:right-8 md:bottom-8",
 }
 
 const buttonSize: Record<ButtonSize, string> = {

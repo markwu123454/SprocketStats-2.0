@@ -1,12 +1,12 @@
 import { useState, useEffect, useContext, useCallback } from "react"
 import { useParams, Outlet, NavLink, Link, Navigate, useLocation } from "react-router-dom"
-import { Home, Calendar, Users, Package, Trophy, ArrowLeft, CalendarClock, ListTodo } from "lucide-react"
+import { Home, Calendar, Users, Package, Trophy, CalendarClock, ListTodo } from "lucide-react"
 import { useBootstrapped, BootstrapContext } from "@/contexts/bootstrapContext"
 import { useIsOffline } from "@/contexts/authContext"
-import { OfflineLabel, OfflineUnavailable } from "@/components/Offline"
+import { OfflineUnavailable } from "@/components/Offline"
 import { EventContext } from "@/contexts/eventContext"
+import { usePageHeader } from "@/contexts/pageHeaderContext"
 import { fetchEventInfo, fetchEventUpdate, fetchEvents, type EventInfo } from "@/lib/eventApi"
-import Skeleton from "@/components/ui/Skeleton"
 import EmptyState from "@/components/ui/EmptyState"
 import { buttonClass } from "@/lib/uiClasses"
 import { findByHubKey, hasEventPage, hiddenTabsOf, isTabHidden, resolveEvents, type EventEntry, type HubTab } from "@/lib/events"
@@ -99,6 +99,11 @@ export default function EventShell() {
         }
     }, [info, bootstrapEvent, setBootstrapEvent])
 
+    // The event's name goes in the app's top bar, with the way back to the list.
+    usePageHeader(notFound ? "Event not found" : (info?.event_name ?? scheduleEntry?.name ?? eventKey ?? "Event"), {
+        back: { to: "/events", label: "Events" },
+    })
+
     const updateInfo = useCallback((patch: Partial<EventInfo>) => {
         setInfo(prev => prev ? { ...prev, ...patch } : prev)
     }, [])
@@ -110,26 +115,6 @@ export default function EventShell() {
                     className="sticky top-0 z-10 border-b theme-border"
                     style={{ background: "var(--theme-bg)" }}
                 >
-                    {/* Title row: back link left, event name centered */}
-                    <div className="relative flex items-center px-2 h-11">
-                        <Link
-                            to="/events"
-                            className="inline-flex items-center gap-1 text-xs font-medium shrink-0 transition-opacity hover:opacity-70"
-                            style={{ color: "var(--theme-subtext-color)" }}
-                        >
-                            <ArrowLeft size={14} />
-                            Events
-                        </Link>
-                        <h1
-                            className="absolute left-1/2 -translate-x-1/2 text-base font-bold truncate max-w-[55%]"
-                            style={{ color: "var(--theme-h1-color)" }}
-                        >
-                            {isLoading && !offline ? <Skeleton className="h-5 w-36" /> : notFound ? "Event not found" : (info?.event_name ?? scheduleEntry?.name ?? eventKey)}
-                        </h1>
-                        {/* The app's top bar is hidden on phones inside an event. */}
-                        {offline && <OfflineLabel className="ml-auto pr-1 md:hidden" />}
-                    </div>
-
                     {/* Tab row: icon above text — stays mounted (and navigable) even on a 404,
                         so the header height never shifts; the body below decides what to show. */}
                     <div className="flex -mx-0 overflow-x-auto scrollbar-none">

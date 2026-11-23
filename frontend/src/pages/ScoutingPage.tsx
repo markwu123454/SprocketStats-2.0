@@ -9,6 +9,7 @@ import Sheet from "@/components/ui/Sheet"
 import Skeleton from "@/components/ui/Skeleton"
 import { OfflineUnavailable } from "@/components/Offline"
 import { useIsOffline } from "@/contexts/authContext"
+import { usePageHeader } from "@/contexts/pageHeaderContext"
 import { buttonClass, focusRing, typeH2 } from "@/lib/uiClasses"
 
 const LS_KEY = "label_studio_email_ack"
@@ -61,6 +62,7 @@ function formatPct(value: number): string {
  * competitive. The email-acknowledgement modal on the CTA is unchanged.
  */
 export default function ScoutingPage() {
+    usePageHeader("Scouting")
     const offline = useIsOffline()
     const [summary, setSummary] = useState<SummaryRow | null>(null)
     const [contributions, setContributions] = useState<ContributionRow[]>([])
@@ -150,8 +152,6 @@ export default function ScoutingPage() {
 
     return (
         <div className="mx-auto px-4 py-8 flex flex-col gap-6 h-full">
-            <h1 className="text-2xl font-bold theme-h1-color">Labeling Progress</h1>
-
             {/* Hero: completion ring + CTA */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div

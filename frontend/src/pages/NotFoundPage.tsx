@@ -2,6 +2,7 @@ import { Link } from "react-router-dom"
 import { Compass } from "lucide-react"
 import { buttonClass } from "@/lib/uiClasses"
 import {useAppReady} from "@/contexts/appReadyContext";
+import {usePageHeader} from "@/contexts/pageHeaderContext";
 import {useEffect} from "react";
 
 // Nested catch-all inside the Protected/AppShell route in App.tsx, so it only
@@ -9,6 +10,7 @@ import {useEffect} from "react";
 // splat gets redirected to login by AuthWrapper before this mounts).
 export default function NotFoundPage() {
     const markReady = useAppReady()
+    usePageHeader("Page not found")
 
     useEffect(() => { markReady() }, [markReady])
 
@@ -20,8 +22,7 @@ export default function NotFoundPage() {
                 <Compass size={28} className="theme-text-contrast opacity-70" />
             </div>
 
-            <h1 className="text-5xl font-bold theme-h1-color">404</h1>
-            <p className="text-base font-medium theme-text">Page not found</p>
+            <p className="text-5xl font-bold theme-h1-color">404</p>
             <p className="text-sm theme-subtext-color max-w-xs">
                 The page you're looking for doesn't exist or may have been moved.
             </p>
