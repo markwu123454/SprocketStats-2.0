@@ -8,7 +8,7 @@ Run from the repository root:
 What it adds, all around fake members whose ids start with ``seed-`` (emails at
 example.com, so they can never sign in with Google; use the dev sign-in):
 
-* about 30 members: a captain, mentors, a lead and members per subteam, alumni
+* about 40 members: a captain, mentors, a lead and members per subteam (Manufacturing has 15), alumni
   and visitors, including two pending approval, two banned, one who hasn't
   finished onboarding, two with kiosk access, and a few tags
 * six weeks of past meetings plus two upcoming weeks, with check-ins (so the
@@ -97,7 +97,7 @@ def member(uid, first, last, role, *, grade=None, year=None, approved=True, bann
 
 
 def build_members() -> list[dict]:
-    names = iter(rng.sample([(f, l) for f in FIRST for l in LAST], 40))
+    names = iter(rng.sample([(f, l) for f in FIRST for l in LAST], 60))
     people = [
         member("captain", "Priya", "Raman", "captain", grade="senior", year="year_4"),
         member("mentor-1", "David", "Okonkwo", "mentor"),
@@ -108,7 +108,11 @@ def build_members() -> list[dict]:
         # Two leads are still waiting for approval.
         people.append(member(f"{team}-lead", f, l, f"{team}_lead", grade=rng.choice(GRADES[2:]),
                              year=rng.choice(["year_2", "year_3"]), approved=team not in ("publicity", "outreach")))
-        for i in range(rng.choice([2, 3])):
+        # Manufacturing is the big one (a lead and 14 members) so the pages get tried with a full group.
+        count = rng.choice([2, 3])
+        if team == "manufacturing":
+            count = 14
+        for i in range(count):
             f, l = next(names)
             people.append(member(f"{team}-{i + 1}", f, l, f"{team}_member", grade=rng.choice(GRADES),
                                  year=rng.choice(["year_1", "year_1", "year_2", "year_3"])))
