@@ -206,12 +206,9 @@ export function OnboardingForm({
     return (
         <>
             <div className="mb-6">
-                <h1 className="m-0 mb-1.5 font-semibold font-sans theme-h1-color text-[32px] tracking-[-0.01em]">
+                <h1 className="m-0 font-semibold font-sans theme-h1-color text-[32px] tracking-[-0.01em]">
                     Welcome aboard
                 </h1>
-                <p className="m-0 text-[14px] theme-subtext-color">
-                    Let's set up your profile before we get started.
-                </p>
             </div>
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-5">

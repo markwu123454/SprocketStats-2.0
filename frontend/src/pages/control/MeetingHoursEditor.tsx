@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
     Check,
-    ChevronsUpDown,
     Pencil,
     Plus,
     Trash2,
@@ -471,11 +470,6 @@ export default function MeetingHoursEditor({ onChanged, editId }: { onChanged?: 
                     <TimeWheel label="End" value={endTime} onChange={updateEnd} />
                 </div>
 
-                <div className="flex items-center justify-center gap-1.5 -mt-1">
-                    <ChevronsUpDown size={14} className="theme-subtext-color opacity-60" />
-                    <span className="text-xs theme-subtext-color opacity-80">Drag to set · snaps to 5 min</span>
-                </div>
-
                 <FormFooter className="-mx-6 -mb-6 rounded-b-xl">
                     {timeRangeInvalid ? (
                         <p className="text-sm theme-danger">End must be after start</p>
@@ -525,7 +519,7 @@ export default function MeetingHoursEditor({ onChanged, editId }: { onChanged?: 
                             onChange={toggleAll}
                         />
                         {selected.size === 0 ? (
-                            <span>Select meetings to edit together</span>
+                            <span>Select all</span>
                         ) : (
                             <>
                                 <span className="font-semibold theme-text">{selected.size} selected</span>

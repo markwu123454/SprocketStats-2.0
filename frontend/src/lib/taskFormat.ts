@@ -202,13 +202,3 @@ export function areaSuggestions(tasks: Task[], bucket: string): string[] {
     }
     return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b))
 }
-
-/** One-line explanations behind the "?" next to each task form label. */
-export const TASK_FIELD_HELP = {
-    title: "A short description of the work. This is what everyone sees on the board.",
-    area: "The project this belongs to inside the subteam, like Drivetrain. Tasks with the same area are grouped together. Pick an existing one or type a new name; blank means General.",
-    bucket: "Which subteam's board this task shows up on.",
-    assignee: "Who owns this task. Leave it Unassigned so anyone can claim it.",
-    priority: "How urgent it is. The board lists Perish if not done first (leads only), then High, Medium, and Low.",
-    due: "When it should be done by. After this date the task shows as overdue.",
-} as const

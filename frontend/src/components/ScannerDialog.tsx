@@ -425,7 +425,7 @@ export default function ScannerDialog({onClose}: {onClose: () => void}) {
                 <p aria-live="polite" className="text-sm theme-subtext-color">
                     {scanError
                         ? <span style={{color: "var(--theme-danger)"}}>{scanError}</span>
-                        : setup.kind === "starting" ? "Starting scanner…" : "Hold a member code up to the camera."}
+                        : setup.kind === "starting" ? "Starting scanner…" : null}
                 </p>
                 {recent.length > 0 && (
                     <ul className="flex flex-col gap-1.5" aria-label="Recent scans">

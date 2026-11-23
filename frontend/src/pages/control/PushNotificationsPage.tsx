@@ -145,9 +145,7 @@ export default function PushNotificationsPage() {
                 </div>
             ) : rows.length === 0 && !error ? (
                 <div className="rounded-xl border border-dashed theme-border theme-bg">
-                    <EmptyState variant="screen" title={messages?.length ? "No pushes match" : "No pushes sent yet"}>
-                        {messages?.length ? "Try a different search." : "Send the team a push with the plus button."}
-                    </EmptyState>
+                    <EmptyState variant="screen" title={messages?.length ? "No pushes match" : "No pushes sent yet"}/>
                 </div>
             ) : (
                 <div className="grid gap-3 items-start grid-cols-[repeat(auto-fill,minmax(min(100%,320px),1fr))]">
@@ -302,7 +300,7 @@ export function PushDetailPage() {
         return (
             <div className="px-4 md:px-6 py-6">
                 <div className="rounded-xl border border-dashed theme-border theme-bg max-w-3xl">
-                    <EmptyState variant="screen" title="Push not found">It may have been removed. Go back to the list to see the others.</EmptyState>
+                    <EmptyState variant="screen" title="Push not found">It may have been removed.</EmptyState>
                 </div>
             </div>
         )

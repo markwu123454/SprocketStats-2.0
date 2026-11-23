@@ -23,8 +23,8 @@ const NAV_TEXT_KEY = "nav-show-text"
 const API = import.meta.env.VITE_BACKEND_URL
 const ABSENCE_PUSH_LEVELS = ["lead", "captain"]
 
-const PUSH_CATEGORY_ROWS: { key: PushCategory; label: string; description: string; icon: typeof Bell }[] = [
-    { key: "task_assigned",    label: "Task assignments",   description: "When someone assigns you a task or adds you to one", icon: ListChecks },
+const PUSH_CATEGORY_ROWS: { key: PushCategory; label: string; description?: string; icon: typeof Bell }[] = [
+    { key: "task_assigned",    label: "Task assignments",   icon: ListChecks },
     { key: "meeting_reminder", label: "Meeting reminders",  description: "A day before each team meeting",                    icon: CalendarClock },
     { key: "event_reminder",   label: "Competition events", description: "The evening before and morning of each event",      icon: Milestone },
     { key: "meeting_absence",  label: "Absence reports",    description: "When someone you oversee reports they'll miss a meeting", icon: UserX },
@@ -267,9 +267,7 @@ export default function SettingPage() {
                         <ImageOff size={16} className="theme-subtext-color shrink-0" />
                         <div>
                             <p className="text-sm font-medium theme-text">Let other members see my profile picture</p>
-                            <p className="text-xs theme-subtext-color">
-                                {offline ? "Changing this needs a connection" : "When off, they see your initial instead"}
-                            </p>
+                            {offline && <p className="text-xs theme-subtext-color">Changing this needs a connection</p>}
                         </div>
                     </div>
                     <Toggle
@@ -304,7 +302,6 @@ export default function SettingPage() {
                             <Palette size={16} className="theme-subtext-color shrink-0" />
                             <div>
                                 <p className="text-sm font-medium theme-text">Theme</p>
-                                <p className="text-xs theme-subtext-color">Choose your visual style</p>
                             </div>
                         </div>
                         <div
@@ -391,15 +388,15 @@ export default function SettingPage() {
                             <Bell size={16} className="theme-subtext-color shrink-0" />
                             <div>
                                 <p className="text-sm font-medium theme-text">Push notifications</p>
-                                <p className="text-xs theme-subtext-color">
-                                    {pushState === "unsupported"
-                                        ? "Not supported in this browser"
-                                        : pushState === "denied"
-                                            ? "Blocked - enable in your browser's site settings"
-                                            : offline
-                                                ? "Changing notifications needs a connection"
-                                                : "Get notified on this device"}
-                                </p>
+                                {(pushState === "unsupported" || pushState === "denied" || offline) && (
+                                    <p className="text-xs theme-subtext-color">
+                                        {pushState === "unsupported"
+                                            ? "Not supported in this browser"
+                                            : pushState === "denied"
+                                                ? "Blocked - enable in your browser's site settings"
+                                                : "Changing notifications needs a connection"}
+                                    </p>
+                                )}
                             </div>
                         </div>
                         <Toggle
@@ -429,7 +426,7 @@ export default function SettingPage() {
                                         <Icon size={16} className="theme-subtext-color shrink-0" />
                                         <div>
                                             <p className="text-sm font-medium theme-text">{label}</p>
-                                            <p className="text-xs theme-subtext-color">{description}</p>
+                                            {description && <p className="text-xs theme-subtext-color">{description}</p>}
                                         </div>
                                     </div>
                                     <Toggle

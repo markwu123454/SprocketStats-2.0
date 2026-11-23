@@ -56,7 +56,7 @@ export default function AttendanceLeaderboard() {
         </div>
         {loading && seededRows === null ? <div role="status" aria-label="Loading attendance leaderboard" className="flex flex-col gap-3"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
             : error && seededRows === null ? <Notice>Couldn't load the leaderboard. <Button variant="text" onClick={() => setAttempt(value => value + 1)}>Try again</Button></Notice>
-            : rows.length === 0 ? <EmptyState>No hours logged yet. Time clocked at meetings will appear here.</EmptyState>
+            : rows.length === 0 ? <EmptyState>No hours logged yet.</EmptyState>
             : <ol className="flex flex-col gap-1">
                 {rows.map((row, i) => <li key={row.user_id} className="rounded-lg p-3 flex flex-col gap-2"
                     style={row.is_current_user ? { background: "var(--theme-button-bg)" } : undefined}>

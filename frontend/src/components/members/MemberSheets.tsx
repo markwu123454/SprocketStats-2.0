@@ -358,10 +358,9 @@ export function KioskAccessSheet({ member, onClose, onSubmit }: KioskAccessSheet
 
                 {customInvalid ? <p className={fieldErrorClass}>Enter a length of at least 1 minute.</p>
                     : customTooLong ? <p className={fieldErrorClass}>Up to 365 days — pick No end for longer.</p>
-                    : (
+                    : endsAt && (
                         <p className={helperClass}>
-                            {endsAt ? `Ends ${formatEnd(endsAt)}.` : "Stays on until you revoke it."}
-                            {" "}Kiosks {firstName} sets up stop working when access ends.
+                            Ends {formatEnd(endsAt)}. Kiosks {firstName} sets up stop working when access ends.
                         </p>
                     )}
 

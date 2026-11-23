@@ -68,7 +68,6 @@ export default function MeetingAgendaEditor({ revision, initialMeetingId }: { re
 
     return <section className={`${cardClass} theme-bg`}>
         <h2 className={`${typeH2} theme-subtext-color`}>Meeting agenda</h2>
-        <p className="text-sm theme-subtext-color">Choose a meeting and share the plan with the team.</p>
         {loading && meetings.length === 0 ? <Skeleton className="h-48 w-full" />
             : error ? <Notice>Couldn't load meetings. <Button variant="text" onClick={retry}>Try again</Button></Notice>
             : !selected ? <EmptyState>No meetings scheduled yet. Add a meeting above or ask a captain or mentor to schedule one.</EmptyState>

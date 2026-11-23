@@ -31,5 +31,5 @@ text renders immediately on slow networks.
 
 ## Remaining debt
 
-- Inline `fontSize` / `fontWeight` that the named scale cannot express: `HelpTip.tsx` (10px glyph), `taskFormat.ts` `CRITICAL_BADGE_STYLE` (11px, weight 800), `Avatar.tsx` (size-relative initials), `agGridTheme.ts` (13px grid text). Calendar day cells in `AttendancePage.tsx` and `MeetingHoursEditor.tsx`, and the status menu in `TasksPageDesktop.tsx`, set weight inline (the menu also sets `font: inherit`, which would override a class).
+- Inline `fontSize` / `fontWeight` that the named scale cannot express: `taskFormat.ts` `CRITICAL_BADGE_STYLE` (11px, weight 800), `Avatar.tsx` (size-relative initials), `agGridTheme.ts` (13px grid text). Calendar day cells in `AttendancePage.tsx` and `MeetingHoursEditor.tsx`, and the status menu in `TasksPageDesktop.tsx`, set weight inline (the menu also sets `font: inherit`, which would override a class).
 - `LegalPageLayout.tsx` uses a marketing scale (`text-4xl`/`6xl`) on purpose, like the auth hero.

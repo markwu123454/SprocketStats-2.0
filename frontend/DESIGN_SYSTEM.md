@@ -277,6 +277,21 @@ See [design-system/accessibility.md](design-system/accessibility.md).
 - No exclamation points except the one hero tagline ("Let's go Team Sprocket!") —
   keep functional UI copy calm.
 
+### 6.1 Supporting text
+
+Helper lines, subtitles, descriptions, hints and dialog bodies are supporting text. Each
+one has to earn its place:
+
+1. **Fix the label first.** If something seems to need an explanation, try renaming it
+   so it no longer does.
+2. **Add supporting text only when it's needed.** That means a reasonable user would get
+   stuck or make a mistake without it.
+3. **Try deleting it.** Remove the line and ask what the user lost. If they lost nothing
+   they need, leave it out.
+4. **Repeating or stating the obvious doesn't count as need.** Rewording the label,
+   describing what any user would expect, or confirming what's already on screen all
+   fail the test.
+
 ---
 
 ## 7. Contribution rules

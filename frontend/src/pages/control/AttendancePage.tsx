@@ -222,7 +222,7 @@ export default function AttendancePage() {
                             )}
                             <h2 className={LABEL}>Members · {visible.length}</h2>
                             {visible.length === 0
-                                ? <p role="status" className="text-sm theme-subtext-color">No members match. Try a different name or role.</p>
+                                ? <p role="status" className="text-sm theme-subtext-color">No members match.</p>
                                 : memberCards(visible)}
                         </div>
                     ) : (

@@ -160,9 +160,7 @@ export default function NotificationsPage() {
                 </div>
             ) : rows.length === 0 ? (
                 <div className="rounded-xl border border-dashed theme-border theme-bg">
-                    <EmptyState variant="screen" title={notifications.length === 0 ? "No notices yet" : "No notices match"}>
-                        {notifications.length === 0 ? "Send the team a notice with the plus button." : "Try another status, clear the search, or clear the filters."}
-                    </EmptyState>
+                    <EmptyState variant="screen" title={notifications.length === 0 ? "No notices yet" : "No notices match"}/>
                 </div>
             ) : (
                 <div className="grid gap-3 items-start grid-cols-[repeat(auto-fill,minmax(min(100%,320px),1fr))]">

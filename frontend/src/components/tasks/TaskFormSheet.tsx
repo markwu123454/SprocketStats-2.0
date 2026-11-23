@@ -5,7 +5,6 @@ import FormFooter from "@/components/ui/FormFooter"
 import Sheet from "@/components/ui/Sheet"
 import Toggle from "@/components/ui/Toggle"
 import AreaInput from "@/components/tasks/AreaInput"
-import HelpTip from "@/components/tasks/HelpTip"
 import { useDiscardGuard, useIsDirty } from "@/lib/useDiscardGuard"
 import { BUCKET_OPTIONS } from "@/lib/taskBuckets"
 import {
@@ -13,10 +12,10 @@ import {
     type CreateTaskInput, type Person, type Task, type TaskPriority, type UpdateTaskInput,
 } from "@/lib/tasksApi"
 import {
-    DANGER_RED, failMessage, priorityChoices, tint, tintColor, assigneeOptions, areaSuggestions, TASK_FIELD_HELP,
+    DANGER_RED, failMessage, priorityChoices, tint, tintColor, assigneeOptions, areaSuggestions,
 } from "@/lib/taskFormat"
 import type { TaskBoard } from "@/lib/useTaskBoard"
-import { fieldLabelClass, focusRing, helperClass, inputClass } from "@/lib/uiClasses"
+import { fieldLabelClass, focusRing, inputClass } from "@/lib/uiClasses"
 
 // ── New / Edit task sheet ────────────────────────────────────────────────
 
@@ -97,28 +96,28 @@ export default function TaskFormSheet({ mode, task, board, people, defaultBucket
             }
         >
             <form id={formId} onSubmit={e => void handleSubmit(e)} className="flex flex-col gap-4">
-                <Field label="Task" help={TASK_FIELD_HELP.title}>
+                <Field label="Task">
                     <input value={title} onChange={e => setTitle(e.target.value)} placeholder="What needs doing?" aria-label="Task" autoFocus className={`${inputClass} w-full`} />
                 </Field>
 
                 <div className="flex gap-3">
                     <div className="flex-1 min-w-0">
-                        <Field label="Subteam" help={TASK_FIELD_HELP.bucket}>
+                        <Field label="Subteam">
                             <Dropdown value={bucket} onChange={setBucket} options={BUCKET_OPTIONS} triggerClassName={inputClass} label="Subteam" />
                         </Field>
                     </div>
                     <div className="flex-1 min-w-0">
-                        <Field label="Area" help={TASK_FIELD_HELP.area}>
+                        <Field label="Area">
                             <AreaInput value={area} onChange={setArea} suggestions={areaSuggestions(board.tasks, bucket)} placeholder="General" className={`${inputClass} w-full`} />
                         </Field>
                     </div>
                 </div>
 
-                <Field label="Due date" help={TASK_FIELD_HELP.due}>
+                <Field label="Due date">
                     <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} aria-label="Due date" className={`${inputClass} w-full`} />
                 </Field>
 
-                <Field label="Priority" help={TASK_FIELD_HELP.priority}>
+                <Field label="Priority">
                     {/* "Perish if not done" gets its own full-width row above the
                         three regular segments -- four labels don't fit across a phone. */}
                     {priorityChoices(board.canAssign, task?.priority).includes("critical") && (
@@ -136,17 +135,14 @@ export default function TaskFormSheet({ mode, task, board, people, defaultBucket
                 </Field>
 
                 {board.canAssign && (
-                    <Field label="Assign to" help={TASK_FIELD_HELP.assignee}>
+                    <Field label="Assign to">
                         <Dropdown value={assigneeId} onChange={setAssigneeId} options={assigneeOptions(people)} triggerClassName={inputClass} searchable label="Assign to" />
                     </Field>
                 )}
 
                 {mode === "create" && !board.canAssign && (
                     <div className="flex items-center justify-between gap-3 p-3 rounded-xl border" style={{ borderColor: tint("--theme-border", 75), background: "var(--theme-button-bg)" }}>
-                        <div>
-                            <div id={claimLabelId} className="text-sm font-semibold theme-h1-color">Claim it for myself</div>
-                            <div className={helperClass}>Off leaves it in the unclaimed pool</div>
-                        </div>
+                        <div id={claimLabelId} className="text-sm font-semibold theme-h1-color">Claim it for myself</div>
                         <Toggle checked={claimSelf} onChange={setClaimSelf} aria-labelledby={claimLabelId} />
                     </div>
                 )}
@@ -155,13 +151,10 @@ export default function TaskFormSheet({ mode, task, board, people, defaultBucket
     )
 }
 
-function Field({ label, help, children }: { label: string; help?: string; children: ReactNode }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
     return (
         <div className="flex flex-col gap-1.5">
-            <span className={`${fieldLabelClass} flex items-center gap-1.5`}>
-                {label}
-                {help && <HelpTip text={help} />}
-            </span>
+            <span className={fieldLabelClass}>{label}</span>
             {children}
         </div>
     )

@@ -191,7 +191,7 @@ export default function EventScheduleEditor({ event: existing, onSaved, onCancel
                 <fieldset className="flex flex-col gap-2">
                     <legend className={`${fieldLabelClass} mb-1`}>Check-in roles</legend>
                     <p className={`${helperClass} -mt-1`}>
-                        Members pick one when they check in. Renaming a role keeps everyone already checked in under it.
+                        Renaming a role keeps everyone already checked in under it.
                     </p>
                     {roles.map((r, i) => (
                         <div key={r.id} className="flex items-center gap-2">
@@ -236,7 +236,6 @@ export default function EventScheduleEditor({ event: existing, onSaved, onCancel
                         placeholder="Introduce the event: what it is, who should come, what to bring…"
                         className={`${inputClass} resize-y`}
                     />
-                    <p className={helperClass}>Shown at the top of the event's Overview page.</p>
                 </div>
             )}
 
@@ -313,7 +312,7 @@ function MomentField({ label, hint, value, onChange, disabled, clearable }: Mome
                     </Button>
                 )}
             </div>
-            <p className={helperClass}>{hint ?? "Time is optional. Leave it empty for all day."}</p>
+            <p className={helperClass}>{hint ?? "Leave it empty for all day."}</p>
         </div>
     )
 }

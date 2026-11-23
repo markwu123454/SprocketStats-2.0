@@ -50,7 +50,7 @@ export default function MeetingsPage() {
                         {[0, 1, 2].map(i => <div key={i} className="flex gap-3.5"><Skeleton className="w-14 h-16 shrink-0 rounded-[14px]" /><Skeleton className="h-32 flex-1 rounded-2xl" /></div>)}
                     </div>
                     : error ? <div className={`rounded-2xl border theme-border p-3.5 ${CARD_BG}`}><Notice>Couldn't load meetings. <Button variant="text" onClick={retry}>Try again</Button></Notice></div>
-                    : upcoming.length === 0 ? <div className={`rounded-2xl border theme-border p-3.5 ${CARD_BG}`}><EmptyState>No upcoming meetings scheduled. Check back soon for the next team meeting.</EmptyState></div>
+                    : upcoming.length === 0 ? <div className={`rounded-2xl border theme-border p-3.5 ${CARD_BG}`}><EmptyState>No upcoming meetings scheduled.</EmptyState></div>
                     : <>
                     {absencesError && <Notice>Couldn't load absences. <Button variant="text" onClick={retryAbsences}>Try again</Button></Notice>}
                     {days.map((day, dayIndex) => {

@@ -34,7 +34,7 @@ keep that behavior for searchable lists.
 
 These are not menus, so they don't become sheets:
 
-- **Tooltips** such as `HelpTip`. They hold no actions, and a sheet is too heavy for one sentence.
+- **Tooltips**. They hold no actions, and a sheet is too heavy for one sentence.
 - **Input suggestions** such as `AreaInput`. They must stay attached to the field while typing.
 
 ## Menu rows

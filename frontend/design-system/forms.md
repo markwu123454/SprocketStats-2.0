@@ -62,7 +62,7 @@ Staged list edits, like Members, do use the footer, scoped to the list container
 |---|---|
 | Label | `label` above the input; no floating labels |
 | Input | `rounded-lg border px-3 py-2.5`, `input` type token, min 44px, `--theme-outline` border |
-| Helper | `caption` in muted, below the input, linked by `aria-describedby` |
+| Helper | `caption` in muted, below the input, linked by `aria-describedby`; only when it passes [Supporting text](../DESIGN_SYSTEM.md#61-supporting-text) |
 | Error | `caption` in `--theme-danger` with an icon, `aria-invalid`, replacing the helper |
 | Required | Mark optional fields "(optional)" rather than starring required ones |
 | Select | `Dropdown`; anchored menu on web, drag sheet on mobile |

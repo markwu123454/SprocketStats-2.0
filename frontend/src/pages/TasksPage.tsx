@@ -23,7 +23,7 @@ import { focusRing } from "@/lib/uiClasses"
 type View = "mine" | "open" | "all"
 const VIEWS: { key: View; label: string }[] = [
     { key: "mine", label: "Mine" },
-    { key: "open", label: "Open" },
+    { key: "open", label: "Unclaimed" },
     { key: "all", label: "All" },
 ]
 const CONTROL = "rounded-lg border theme-outline theme-bg theme-text px-3 min-h-11 md:min-h-10 text-sm"
@@ -52,7 +52,7 @@ function useWindowWidth(): number {
 /**
  * The task board: one layout for every screen. Tasks are grouped by status,
  * as columns on web and stacked sections on phones, under four controls:
- * Mine / Open / All, subteam, search, and a Filter row for the rest
+ * Mine / Unclaimed / All, subteam, search, and a Filter row for the rest
  * (person, overdue only, sort). A card opens its details: a side panel on a
  * wide screen, a sheet otherwise.
  */
@@ -261,9 +261,7 @@ export default function TasksPage() {
                 </div>
             ) : nothingShown ? (
                 <div className="rounded-xl border border-dashed theme-border theme-bg">
-                    <EmptyState variant="screen" title={view === "mine" && !query && !activeFilters ? "Nothing on your plate" : "No tasks match"}>
-                        {view === "mine" && !query && !activeFilters ? "Open shows tasks nobody has claimed yet." : "Try another subteam, clear the search, or switch to All."}
-                    </EmptyState>
+                    <EmptyState variant="screen" title={view === "mine" && !query && !activeFilters ? "Nothing on your plate" : "No tasks match"}/>
                 </div>
             ) : (
                 <div className="flex items-start gap-5">

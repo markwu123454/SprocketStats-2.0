@@ -95,7 +95,7 @@ export default function NotesThread({ taskId, currentUserId, currentUserGivenNam
                     <Skeleton className="h-10 w-full" />
                 </div>
             ) : notes.length === 0 ? (
-                <EmptyState>{readOnly ? "No notes yet." : "No notes yet — leave context for whoever picks this up."}</EmptyState>
+                <EmptyState>No notes yet.</EmptyState>
             ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                     {notes.map((note, i) => {
