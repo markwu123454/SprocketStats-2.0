@@ -342,15 +342,17 @@ export function isTimelineDone(item: TimelineItem): boolean {
     return timelineEvents(item).every((e) => e.status === "done")
 }
 
-// The date badge on the timeline rail: "JAN" over "9", "JAN" over "11–17",
-// or "MAR–APR" over "30–2" when the span crosses a month.
-export function dateBadgeOf(start: string, end?: string): { month: string; days: string; range: boolean } {
+// The date badge on the timeline rail: always the start, "JAN" over "9", so every
+// badge's day is the same size. A span adds a small end line under it: "19" in the
+// same month, "FEB 2" when it crosses into the next.
+export function dateBadgeOf(start: string, end?: string): { month: string; day: string; until?: string } {
     const s = parseEventDate(start)
     const e = parseEventDate(end ?? start)
     const sm = MONTHS[s.getMonth()].toUpperCase()
     const em = MONTHS[e.getMonth()].toUpperCase()
-    if (s.toDateString() === e.toDateString()) return { month: sm, days: String(s.getDate()), range: false }
-    return { month: sm === em ? sm : `${sm}–${em}`, days: `${s.getDate()}–${e.getDate()}`, range: true }
+    const badge = { month: sm, day: String(s.getDate()) }
+    if (s.toDateString() === e.toDateString()) return badge
+    return { ...badge, until: sm === em ? String(e.getDate()) : `${em} ${e.getDate()}` }
 }
 
 // "in 60d" style short countdown for compact rows -- whole days, or hours

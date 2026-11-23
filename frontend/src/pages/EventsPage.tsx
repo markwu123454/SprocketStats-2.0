@@ -1,5 +1,5 @@
 import {useEffect, useState} from "react"
-import {ChevronDown, ChevronUp, Pencil, Plus} from "lucide-react"
+import {Check, ChevronDown, ChevronUp, Pencil, Plus} from "lucide-react"
 import {Link} from "react-router-dom";
 import {
     type EventEntry, type ResolvedEvent, type TimelineItem,
@@ -8,13 +8,14 @@ import {
 } from "@/lib/events.ts"
 import {useBootstrapped} from "@/contexts/bootstrapContext"
 import {useOnboardedUser} from "@/contexts/authContext"
+import {usePageHeader} from "@/contexts/pageHeaderContext"
 import {can} from "@/lib/permissions"
 import EventScheduleEditor from "@/components/events/EventScheduleEditor"
 import EventEditSheet from "@/components/events/EventEditSheet"
 import {confirmAnyDiscard} from "@/lib/useDiscardGuard"
 import {useIsMobile} from "@/lib/useIsMobile"
 import Button from "@/components/ui/Button"
-import {focusRing, typeH1} from "@/lib/uiClasses"
+import {focusRing} from "@/lib/uiClasses"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -44,6 +45,7 @@ function shortStatus(event: ResolvedEvent, now: number): string {
 }
 
 export default function EventsPage() {
+    usePageHeader("Events")
     const [rawEvents, setRawEvents] = useBootstrapped<EventEntry[]>("events", [])
 
     useEffect(() => {
@@ -154,43 +156,20 @@ export default function EventsPage() {
     const shown = showCompleted ? [...doneItems, ...liveItems] : liveItems
 
     return (
-        <div className="mx-auto w-full max-w-[960px] px-4 py-8 flex flex-col">
-            <div className="flex items-end justify-between gap-3 mb-6 sm:mb-7">
-                <div>
-                    <h1 className={`${typeH1} sm:text-[32px] theme-h1-color`}>Events</h1>
-                    <p className="text-sm sm:text-base theme-subtext-color">Season schedule</p>
-                </div>
-                {isEditor && (
-                    <Button className="shrink-0" onClick={() => void confirmAnyDiscard().then(ok => { if (ok) { setEditingId(null); setCreating(true) } })}>
-                        <Plus size={16}/>
-                        New event
-                    </Button>
-                )}
-            </div>
-
-            {doneItems.length > 0 && (
-                <button
-                    type="button"
-                    aria-expanded={showCompleted}
-                    onClick={() => setShowCompleted(v => !v)}
-                    className={`flex items-center gap-3 px-4 py-2.5 mb-5 sm:mb-6 rounded-xl border theme-border text-sm theme-subtext-color text-left ${focusRing}`}
-                    style={{background: "color-mix(in oklch, var(--theme-bg) 85%, transparent)"}}
-                >
-                    <span className="font-semibold shrink-0">Completed ({doneItems.length})</span>
-                    <span className="min-w-0 truncate hidden sm:inline">
-                        {doneItems.map(i => i.kind === "single" ? i.event.name : i.base).join(" · ")}
-                    </span>
-                    <span className="ml-auto shrink-0 flex items-center gap-1 font-semibold" style={{color: ACCENT}}>
-                        {showCompleted ? "Hide" : "Show"}
-                        {showCompleted ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
-                    </span>
-                </button>
+        <div className={`mx-auto w-full max-w-[960px] px-4 py-8 flex flex-col ${isEditor ? "pb-28" : ""}`}>
+            {isEditor && (
+                <Button variant="fab" aria-label="New event" onClick={() => void confirmAnyDiscard().then(ok => { if (ok) { setEditingId(null); setCreating(true) } })}>
+                    <Plus size={21}/>
+                </Button>
             )}
 
             <div className="relative flex flex-col gap-3.5">
                 {/* Rail through the centre of the date badges */}
-                {shown.length > 1 && (
+                {shown.length + (doneItems.length > 0 ? 1 : 0) > 1 && (
                     <div aria-hidden className="absolute top-5 bottom-5 w-0.5 left-[23px] sm:left-[35px]" style={{background: "var(--theme-border)"}}/>
+                )}
+                {doneItems.length > 0 && (
+                    <CompletedRow open={showCompleted} onToggle={() => setShowCompleted(v => !v)}/>
                 )}
                 {shown.map(item => renderItem(item, item === featuredItem))}
             </div>
@@ -214,23 +193,50 @@ export default function EventsPage() {
 }
 
 function DateBadge({start, end, filled}: {start: string, end?: string, filled: boolean}) {
-    const {month, days, range} = dateBadgeOf(start, end)
+    const {month, day, until} = dateBadgeOf(start, end)
+    return <Badge eyebrow={month} big={day} small={until && `–${until}`} filled={filled}/>
+}
+
+/** The square on the timeline rail: a small label over a big number, and an
+ *  optional small line under it (a date span's end). Same width for every row. */
+function Badge({eyebrow, big, small, filled}: {eyebrow: string, big: string, small?: string, filled: boolean}) {
+    const quiet = filled ? undefined : {color: "var(--theme-subtext-color)"}
     return (
         <div
             className={`relative w-12 sm:w-[72px] shrink-0 text-center rounded-[14px] py-2 ${filled ? "" : "border theme-outline"}`}
             style={filled ? {background: ACCENT, color: "var(--theme-bg)"} : {background: "var(--theme-bg)"}}
         >
-            <div
-                className={`font-bold whitespace-nowrap ${month.length > 3 ? "text-[9px] sm:text-[11px] tracking-normal" : "text-[11px] tracking-[.1em]"}`}
-                style={filled ? undefined : {color: "var(--theme-subtext-color)"}}
-            >
-                {month}
+            <div className="text-[11px] font-bold tracking-[.1em] whitespace-nowrap" style={quiet}>{eyebrow}</div>
+            <div className="text-[22px] sm:text-[28px] font-extrabold tabular-nums leading-none whitespace-nowrap" style={filled ? undefined : {color: ACCENT}}>
+                {big}
             </div>
-            <div
-                className={`font-extrabold tabular-nums whitespace-nowrap ${range ? "text-[15px] sm:text-[22px] leading-[1.1]" : "text-[22px] sm:text-[28px] leading-none"}`}
-                style={filled ? undefined : {color: ACCENT}}
-            >
-                {days}
+            {small && <div className="mt-1 text-[10px] sm:text-[11px] font-bold tabular-nums whitespace-nowrap" style={quiet}>{small}</div>}
+        </div>
+    )
+}
+
+/** Past events, folded into one row of the timeline: a check badge and a card
+ *  styled like a series header, opening to show them above the rest. */
+function CompletedRow({open, onToggle}: {open: boolean, onToggle: () => void}) {
+    return (
+        <div className="relative flex gap-3 sm:gap-4 items-start opacity-60 hover:opacity-90 transition-opacity">
+            {/* A check, not a number: a number in this square reads as a date. Sized like a one-line date badge. */}
+            <div className="w-12 sm:w-[72px] h-[54px] sm:h-[60px] shrink-0 flex items-center justify-center rounded-[14px] border theme-outline" style={{background: "var(--theme-bg)"}}>
+                <Check size={22} strokeWidth={2.5} aria-hidden="true" style={{color: "var(--theme-subtext-color)"}}/>
+            </div>
+            <div className="flex-1 min-w-0 rounded-[18px] border theme-border backdrop-blur-sm overflow-hidden" style={{background: CARD_BG}}>
+                <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={onToggle}
+                    className={`w-full flex items-center gap-3 sm:gap-6 px-4 py-3.5 sm:px-6 sm:py-4 text-left ${focusRing}`}
+                >
+                    <div className="flex-1 min-w-0 text-base sm:text-[19px] font-bold theme-h1-color">Completed</div>
+                    <span className="shrink-0 flex items-center gap-1 text-sm font-semibold" style={{color: ACCENT}}>
+                        {open ? "Hide" : "Show"}
+                        {open ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
+                    </span>
+                </button>
             </div>
         </div>
     )

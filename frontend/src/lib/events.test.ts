@@ -196,8 +196,8 @@ describe("groupTimeline", () => {
 
 describe("dateBadgeOf", () => {
     it("formats single days, ranges and month-crossing ranges", () => {
-        expect(dateBadgeOf("2027-01-09")).toEqual({ month: "JAN", days: "9", range: false })
-        expect(dateBadgeOf("2027-01-11", "2027-01-17")).toEqual({ month: "JAN", days: "11–17", range: true })
-        expect(dateBadgeOf("2027-03-30T09:00", "2027-04-02T17:00")).toEqual({ month: "MAR–APR", days: "30–2", range: true })
+        expect(dateBadgeOf("2027-01-09")).toEqual({ month: "JAN", day: "9" })
+        expect(dateBadgeOf("2027-01-11", "2027-01-17")).toEqual({ month: "JAN", day: "11", until: "17" })
+        expect(dateBadgeOf("2027-03-30T09:00", "2027-04-02T17:00")).toEqual({ month: "MAR", day: "30", until: "APR 2" })
     })
 })
