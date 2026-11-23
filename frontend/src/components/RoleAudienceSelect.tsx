@@ -5,8 +5,8 @@
  *
  * Layout: a row of quick-pick chips (Everyone / All Members / Subteam Leads /
  * Staff / Clear), then one section per org division (Engineering / Business),
- * each holding a grid of **subteam cards**. A card has a tri-state toggle for
- * the whole subteam plus a Member / Lead chip per tier. Team-wide roles with no
+ * each holding a grid of **subteam cards**. A card is one line: a tri-state toggle
+ * for the whole subteam, then a Member / Lead chip per tier. Team-wide roles with no
  * subteam (Captain / Mentor / Alumni) sit in a final "Staff & Others" chip row,
  * so nothing is ever dropped.
  *
@@ -206,19 +206,18 @@ export default function RoleAudienceSelect(
                                 const tiers = bySubteam.get(s) ?? []
                                 const values = tiers.map(r => r.value)
                                 const state = triState(values, checked)
-                                const onCount = values.filter(v => checked.has(v)).length
                                 return (
-                                    <div key={s} className="flex flex-col gap-2 rounded-xl border p-3 theme-border theme-bg sm:[&:last-child:nth-child(odd)]:col-span-2">
+                                    // One line: the subteam toggle, then its Member / Lead chips.
+                                    <div key={s} className="flex items-center gap-2 rounded-xl border px-3 py-1.5 theme-border theme-bg sm:[&:last-child:nth-child(odd)]:col-span-2">
                                         <button
                                             type="button"
                                             onClick={() => setRoles(values, state !== "all")}
-                                            className={`flex items-center gap-2 min-h-11 md:min-h-8 rounded-lg ${focusRing}`}
+                                            className={`flex flex-1 min-w-0 items-center gap-2 min-h-11 md:min-h-8 rounded-lg ${focusRing}`}
                                         >
                                             <TriBox state={state} />
-                                            <span className="flex-1 text-left text-sm font-semibold theme-text">{subteamLabel(tiers[0])}</span>
-                                            <span className="text-xs theme-subtext-color">{onCount ? `${onCount}/${values.length}` : ""}</span>
+                                            <span className="flex-1 min-w-0 truncate text-left text-sm font-semibold theme-text">{subteamLabel(tiers[0])}</span>
                                         </button>
-                                        <div className="flex flex-wrap gap-2">
+                                        <div className="flex shrink-0 gap-2">
                                             {tiers.map(t => {
                                                 const on = checked.has(t.value)
                                                 return (

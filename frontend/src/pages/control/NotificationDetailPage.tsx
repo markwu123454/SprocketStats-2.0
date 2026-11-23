@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Link, useNavigate, useParams } from "react-router-dom"
-import { ChevronLeft, Download, X } from "lucide-react"
+import { useNavigate, useParams } from "react-router-dom"
+import { Download, X } from "lucide-react"
 import { AgGridReact } from "ag-grid-react"
 import type { ColDef, ValueFormatterParams } from "ag-grid-community"
 import "@/lib/agGrid"
 import { useBootstrapped } from "@/contexts/bootstrapContext"
+import { usePageHeader } from "@/contexts/pageHeaderContext"
 import RoleAudienceSelect, { type RoleMeta } from "@/components/RoleAudienceSelect"
 import Checkbox from "@/components/ui/Checkbox"
 import Button from "@/components/ui/Button"
@@ -12,7 +13,8 @@ import FormFooter from "@/components/ui/FormFooter"
 import Notice from "@/components/ui/Notice"
 import Skeleton from "@/components/ui/Skeleton"
 import { isDirtyVs, useDiscardGuard } from "@/lib/useDiscardGuard"
-import { fieldLabelClass, focusRing, inputClass, typeBadge, typeH1, typeH2 } from "@/lib/uiClasses"
+import { confirmDialog } from "@/lib/confirmDialog"
+import { fieldLabelClass, focusRing, inputClass, typeH2 } from "@/lib/uiClasses"
 
 const API = import.meta.env.VITE_BACKEND_URL
 
@@ -96,9 +98,9 @@ function formatRoles(roles: string[], roleLabels: Record<string, string>): strin
  * Overview (the message + a big response-rate readout and answer breakdown),
  * Responses (the searchable/exportable AG Grid, kept because it's what holds
  * up at hundreds of eligible people), and Settings (the edit form). Landing on
- * Overview answers "how's this landing?" without scrolling past a giant grid;
- * actions live in the header so they're always in reach. `isNew` renders just
- * the form.
+ * Overview answers "how's this landing?" without scrolling past a giant grid.
+ * Each tab carries its own actions: Export CSV on Responses, Deactivate at the
+ * bottom of Settings. `isNew` renders just the form.
  */
 export default function NotificationDetailPage({ isNew = false }: { isNew?: boolean }) {
     const { id } = useParams<{ id: string }>()
@@ -242,17 +244,19 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
         },
     ], [])
 
+    // The title, its Active badge and the way back live in the app's top bar.
+    const headerNotice = detail?.notification
+    usePageHeader(isNew ? "New notice" : (headerNotice?.title ?? "Notice"), {
+        back: { to: "/control/notifications", label: "Notifications" },
+        badge: !isNew && headerNotice
+            ? { label: headerNotice.active ? "Active" : "Deactivated", tone: headerNotice.active ? "accent" : "muted" }
+            : undefined,
+    })
+
     // ---------- New notice: form only ----------
     if (isNew) {
         return (
             <div className="px-4 md:px-6 py-6 flex flex-col gap-4 h-full mx-auto w-full max-w-2xl">
-                <div className="flex items-center gap-2">
-                    <Link to="/control/notifications" aria-label="Back to Notifications"
-                          className={`flex items-center justify-center w-11 h-11 -ml-3 -mr-3 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity ${focusRing}`}>
-                        <ChevronLeft size={21} />
-                    </Link>
-                    <h1 className={`${typeH1} theme-h1-color`}>New Notice</h1>
-                </div>
                 {error && <Notice>{error}</Notice>}
                 <NoticeForm
                     isNew form={form} setForm={setForm} catalog={catalog} optionDraft={optionDraft}
@@ -271,52 +275,11 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
     const canEdit = !!n?.can_edit
 
     return (
-        <div className="px-4 md:px-6 py-6 flex flex-col gap-4 h-full">
-            {/* Header */}
-            <div className="flex items-center gap-2 flex-wrap">
-                <Link to="/control/notifications" aria-label="Back to Notifications"
-                      className={`flex items-center justify-center w-11 h-11 -ml-3 -mr-3 rounded-lg theme-text opacity-60 hover:opacity-100 transition-opacity ${focusRing}`}>
-                    <ChevronLeft size={21} />
-                </Link>
-                <h1 className={`${typeH1} theme-h1-color`}>{n?.title ?? "Notice"}</h1>
-                {n && (
-                    <span
-                        className={`rounded-full border px-2.5 py-0.5 theme-bg ${typeBadge}`}
-                        style={n.active
-                            ? { color: "var(--theme-text-contrast)", borderColor: "color-mix(in oklch, var(--theme-text-contrast) 50%, transparent)" }
-                            : { color: "var(--theme-subtext-color)", borderColor: "var(--theme-border)" }}
-                    >
-                        {n.active ? "ACTIVE" : "DEACTIVATED"}
-                    </span>
-                )}
-                {n && (
-                    <div className="ml-auto flex items-center gap-2">
-                        <Button
-                            variant="outlined"
-                            aria-label="Export CSV"
-                            onClick={() => gridRef.current?.api.exportDataAsCsv({
-                                fileName: `${n.title.replace(/[^a-z0-9]+/gi, "-")}-responses.csv`,
-                            })}
-                        >
-                            <Download size={16} /> <span className="hidden sm:inline">Export CSV</span>
-                        </Button>
-                        {canEdit && n.active && (
-                            <Button
-                                variant="dangerOutlined"
-                                onClick={() => void handleDeactivate()}
-                                disabled={saving}
-                            >
-                                Deactivate
-                            </Button>
-                        )}
-                    </div>
-                )}
-            </div>
+        <div className="px-4 md:px-6 py-4 md:py-6 flex flex-col gap-4 h-full">
+            {error && <Notice onDismiss={() => setError(null)}>{error}</Notice>}
 
-            {error && <Notice>{error}</Notice>}
-
-            {detailLoading && (
-                <div className="flex flex-col gap-3" role="status" aria-label="Loading notice">
+            {detailLoading && !detail && (
+                <div className="flex flex-col gap-3 max-w-3xl" role="status" aria-label="Loading notice">
                     <Skeleton className="h-10 w-full" />
                     <Skeleton className="h-32 w-full" />
                 </div>
@@ -324,96 +287,84 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
 
             {detail && n && (
                 <>
-                    {/* Tabs */}
-                    <div className="flex gap-6 border-b theme-border">
+                    {/* Tabs only: each tab carries its own actions. */}
+                    <div role="tablist" className="flex gap-6 border-b theme-border">
                         {([["overview", "Overview"], ["responses", `Responses · ${responded}`]] as const).map(([k, label]) => (
                             <TabButton key={k} active={tab === k} label={label} onClick={() => setTab(k)} />
                         ))}
                         {canEdit && <TabButton active={tab === "settings"} label="Settings" onClick={() => setTab("settings")} />}
                     </div>
 
-                    {/* Overview */}
+                    {/* Overview: how it's landing, then what it says. */}
                     {tab === "overview" && (
-                        <div className="flex flex-col lg:flex-row gap-5 flex-1 min-h-0 overflow-y-auto theme-scrollbar">
-                            <div className="flex flex-col gap-4 flex-1 min-w-0">
-                                <div className="rounded-xl border p-4 theme-border theme-bg backdrop-blur-sm">
-                                    <p className="text-sm theme-text whitespace-pre-wrap">{n.body}</p>
-                                    {n.link && (
-                                        <a href={n.link} target="_blank" rel="noopener noreferrer"
-                                           className="inline-block mt-2.5 text-sm underline underline-offset-2 theme-text-contrast">
-                                            {n.link}
-                                        </a>
-                                    )}
-                                </div>
-                                <div className="flex flex-wrap gap-2 rounded-xl border p-4 theme-border theme-bg backdrop-blur-sm">
-                                    {[
-                                        n.hard_block ? "Hard block · must respond" : "Soft",
-                                        formatRoles(n.target_roles, roleLabels),
-                                        `By ${n.created_by_is_self ? "You" : n.created_by_name ?? "—"}`,
-                                        n.response_options.length > 0 ? (n.response_mode === "multi" ? "Multi-select" : "Single-select") : "Acknowledgement",
-                                    ].map((m, i) => (
-                                        <span key={i} className="rounded-full border px-3 py-1 text-xs theme-border theme-subtext-color">{m}</span>
-                                    ))}
-                                </div>
-                                <div className="rounded-xl border p-4 flex flex-col gap-3 theme-border theme-bg backdrop-blur-sm">
-                                    <p className={`${typeH2} theme-subtext-color`}>
-                                        {n.response_options.length > 0 ? "Answer breakdown" : "Acknowledgements"}
-                                    </p>
-                                    {n.response_options.length > 0 ? (
-                                        detail.tally.map(t => {
-                                            const pct = eligible > 0 ? (t.count / eligible) * 100 : 0
-                                            return (
-                                                <div key={t.option} className="flex flex-col gap-1">
-                                                    <div className="flex justify-between text-sm theme-text">
-                                                        <span>{t.option}</span>
-                                                        <span className="theme-subtext-color">{t.count}</span>
-                                                    </div>
-                                                    <div className="w-full rounded-full overflow-hidden h-2"
-                                                         style={{ background: "color-mix(in oklch, var(--theme-border) 80%, transparent)" }}>
-                                                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--theme-text-contrast)" }} />
-                                                    </div>
-                                                </div>
-                                            )
-                                        })
-                                    ) : (
-                                        <p className="text-sm theme-subtext-color">{detail.ack_count} acknowledged</p>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="flex flex-col gap-3 lg:w-72 lg:shrink-0">
-                                <div className="rounded-xl border p-5 flex flex-col items-center gap-2 text-center theme-border theme-bg backdrop-blur-sm">
-                                    <span className={`${typeH2} theme-subtext-color`}>Response rate</span>
+                        <div className="flex flex-col gap-4 w-full max-w-3xl">
+                            <section aria-label="Response rate" className="rounded-xl border theme-border theme-bg p-5 flex flex-col gap-3">
+                                <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
                                     <span className="text-5xl font-extrabold leading-none theme-text-contrast">{ratePct}%</span>
-                                    <span className="text-sm theme-subtext-color">{responded} of {eligible} eligible</span>
-                                    <div className="w-full rounded-full overflow-hidden h-2 mt-1"
-                                         style={{ background: "color-mix(in oklch, var(--theme-border) 80%, transparent)" }}>
-                                        <div className="h-full rounded-full" style={{ width: `${ratePct}%`, background: "var(--theme-text-contrast)" }} />
-                                    </div>
+                                    <span className="text-sm theme-subtext-color pb-1">
+                                        {responded} of {eligible} answered · {Math.max(0, eligible - responded)} waiting
+                                    </span>
                                 </div>
-                                <div className="rounded-xl border p-4 flex items-center justify-between theme-border theme-bg backdrop-blur-sm">
-                                    <span className="text-sm theme-text">Awaiting response</span>
-                                    <span className="text-xl font-bold theme-h1-color">{Math.max(0, eligible - responded)}</span>
-                                </div>
-                                {canEdit && (
-                                    <Button variant="outlined" onClick={() => setTab("settings")}>
-                                        Edit notice
-                                    </Button>
+                                <Bar pct={ratePct} />
+                            </section>
+
+                            <section aria-label="Message" className="rounded-xl border theme-border theme-bg p-5 flex flex-col gap-3">
+                                <p className="text-sm theme-text whitespace-pre-wrap break-words">{n.body}</p>
+                                {n.link && (
+                                    <a href={n.link} target="_blank" rel="noopener noreferrer"
+                                       className={`self-start text-sm underline underline-offset-2 theme-text-contrast break-all ${focusRing}`}>
+                                        {n.link}
+                                    </a>
                                 )}
-                            </div>
+                                <p className="text-xs theme-subtext-color border-t theme-border pt-3">
+                                    {[
+                                        n.hard_block ? "Required: members answer before using the app" : "Optional",
+                                        `For ${formatRoles(n.target_roles, roleLabels)}`,
+                                        n.response_options.length > 0 ? (n.response_mode === "multi" ? "Pick any" : "Pick one") : "Got it to acknowledge",
+                                        `By ${n.created_by_is_self ? "you" : n.created_by_name ?? "someone"}`,
+                                    ].join(" · ")}
+                                </p>
+                            </section>
+
+                            <section aria-label="Answers" className="rounded-xl border theme-border theme-bg p-5 flex flex-col gap-3">
+                                <h2 className={`${typeH2} theme-subtext-color`}>{n.response_options.length > 0 ? "Answers" : "Acknowledged"}</h2>
+                                {n.response_options.length > 0 ? detail.tally.map(t => (
+                                    <div key={t.option} className="flex flex-col gap-1">
+                                        <div className="flex justify-between gap-3 text-sm theme-text">
+                                            <span className="min-w-0 break-words">{t.option}</span>
+                                            <span className="theme-subtext-color shrink-0">{t.count}</span>
+                                        </div>
+                                        <Bar pct={eligible > 0 ? (t.count / eligible) * 100 : 0} thin />
+                                    </div>
+                                )) : (
+                                    <p className="text-sm theme-subtext-color">{detail.ack_count} of {eligible} have tapped Got it.</p>
+                                )}
+                            </section>
                         </div>
                     )}
 
-                    {/* Responses */}
+                    {/* Responses: everyone it went to, with search and export. */}
                     {tab === "responses" && (
-                        <div className="flex flex-col gap-3 flex-1 min-h-0">
-                            <input
-                                value={gridSearch}
-                                onChange={e => setGridSearch(e.target.value)}
-                                placeholder="Search by name or email…"
-                                aria-label="Search responses"
-                                className={`w-full max-w-xs ${inputClass}`}
-                            />
+                        <div className="flex flex-col gap-3 flex-1 min-h-[420px]">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <input
+                                    type="search"
+                                    value={gridSearch}
+                                    onChange={e => setGridSearch(e.target.value)}
+                                    placeholder="Search by name or email"
+                                    aria-label="Search responses"
+                                    className={`flex-1 min-w-40 max-w-xs ${inputClass}`}
+                                />
+                                <Button
+                                    variant="outlined"
+                                    className="ml-auto"
+                                    onClick={() => gridRef.current?.api.exportDataAsCsv({
+                                        fileName: `${n.title.replace(/[^a-z0-9]+/gi, "-")}-responses.csv`,
+                                    })}
+                                >
+                                    <Download size={16} /> Export CSV
+                                </Button>
+                            </div>
                             <div className="rounded-xl border overflow-hidden theme-border flex-1 min-h-0">
                                 <AgGridReact<ResponseRow>
                                     ref={gridRef}
@@ -427,9 +378,9 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
                         </div>
                     )}
 
-                    {/* Settings */}
+                    {/* Settings: the form, then deactivating it. */}
                     {tab === "settings" && canEdit && (
-                        <div className="flex-1 min-h-0 overflow-y-auto theme-scrollbar">
+                        <div className="flex flex-col gap-4 w-full max-w-2xl">
                             <NoticeForm
                                 isNew={false} form={form} setForm={setForm} catalog={catalog} optionDraft={optionDraft}
                                 setOptionDraft={setOptionDraft} addOption={addOption} removeOption={removeOption}
@@ -441,10 +392,31 @@ export default function NotificationDetailPage({ isNew = false }: { isNew?: bool
                                     setTab("overview")
                                 })}
                             />
+                            {n.active && (
+                                <section aria-label="Deactivate" className="rounded-xl border theme-border theme-bg p-5 flex flex-wrap items-center gap-3">
+                                    <div className="flex-1 min-w-48">
+                                        <p className="text-sm font-semibold theme-h1-color">Deactivate this notice</p>
+                                        <p className="text-xs theme-subtext-color">Members stop seeing it. Answers so far are kept.</p>
+                                    </div>
+                                    <Button variant="dangerOutlined" disabled={saving} onClick={() => void confirmDialog({
+                                        title: "Deactivate this notice?", body: "Members stop seeing it. You can't turn it back on.", confirmLabel: "Deactivate", danger: true,
+                                    }).then(ok => { if (ok) void handleDeactivate() })}>
+                                        Deactivate
+                                    </Button>
+                                </section>
+                            )}
                         </div>
                     )}
                 </>
             )}
+        </div>
+    )
+}
+
+function Bar({ pct, thin = false }: { pct: number, thin?: boolean }) {
+    return (
+        <div className={`w-full rounded-full overflow-hidden ${thin ? "h-1.5" : "h-2"}`} style={{ background: "color-mix(in oklch, var(--theme-border) 80%, transparent)" }}>
+            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--theme-text-contrast)" }} />
         </div>
     )
 }
@@ -517,19 +489,8 @@ function NoticeForm(props: {
                     checked={form.hard_block}
                     onChange={() => setForm(prev => ({ ...prev, hard_block: !prev.hard_block }))}
                 />
-                Hard block (must respond to dismiss, no "Later")
+                Required (members answer before using the app; no "Later")
             </label>
-
-            <div className="border-t theme-border" />
-
-            <div className="flex flex-col gap-2">
-                <p className={fieldLabelClass}>Applies to</p>
-                <RoleAudienceSelect
-                    catalog={catalog}
-                    selected={form.target_roles}
-                    onChange={roles => setForm(prev => ({ ...prev, target_roles: roles }))}
-                />
-            </div>
 
             <div className="border-t theme-border" />
 
@@ -566,6 +527,17 @@ function NoticeForm(props: {
                         Allow selecting multiple options
                     </label>
                 )}
+            </div>
+
+            <div className="border-t theme-border" />
+
+            <div className="flex flex-col gap-2">
+                <p className={fieldLabelClass}>Applies to</p>
+                <RoleAudienceSelect
+                    catalog={catalog}
+                    selected={form.target_roles}
+                    onChange={roles => setForm(prev => ({ ...prev, target_roles: roles }))}
+                />
             </div>
 
             <FormFooter className="-mx-5 -mb-5 rounded-b-xl">
