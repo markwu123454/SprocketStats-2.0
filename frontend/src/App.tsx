@@ -39,6 +39,8 @@ const ControlAttendancePage = lazy(() => import("@/pages/control/AttendancePage"
 const NotificationsPage = lazy(() => import("@/pages/control/NotificationsPage"))
 const NotificationDetailPage = lazy(() => import("@/pages/control/NotificationDetailPage"))
 const PushNotificationsPage = lazy(() => import("@/pages/control/PushNotificationsPage"))
+const PushComposePage = lazy(() => import("@/pages/control/PushNotificationsPage").then(m => ({ default: m.PushComposePage })))
+const PushDetailPage = lazy(() => import("@/pages/control/PushNotificationsPage").then(m => ({ default: m.PushDetailPage })))
 const SettingPage    = lazy(() => import("@/pages/SettingPage"))
 const NotFoundPage   = lazy(() => import("@/pages/NotFoundPage"))
 const PrivacyPage    = lazy(() => import("@/pages/PrivacyPage"))
@@ -102,6 +104,8 @@ export default function App() {
                                         <Route path="/control/notifications/new" element={<ControlGuard section="notifications"><NotificationDetailPage isNew/></ControlGuard>}/>
                                         <Route path="/control/notifications/:id" element={<ControlGuard section="notifications"><NotificationDetailPage/></ControlGuard>}/>
                                         <Route path="/control/push"           element={<ControlGuard section="push"><PushNotificationsPage/></ControlGuard>}/>
+                                        <Route path="/control/push/new"       element={<ControlGuard section="push"><PushComposePage/></ControlGuard>}/>
+                                        <Route path="/control/push/:id"       element={<ControlGuard section="push"><PushDetailPage/></ControlGuard>}/>
                                         <Route path="/settings"    element={<SettingPage/>}/>
 
                                         {/* Catches any authenticated dead-end not matched above.
