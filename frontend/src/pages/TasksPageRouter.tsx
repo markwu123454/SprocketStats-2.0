@@ -1,12 +1,3 @@
-import { useIsMobile } from "@/lib/useIsMobile"
-import TasksPageDesktop from "./TasksPageDesktop"
-import TasksPageMobile from "./TasksPageMobile"
-
+// The /tasks route. One page now serves every screen size (see TasksPage).
 export type { TasksPageState } from "@/lib/taskFormat"
-
-/** Picks the mobile or desktop task board, mirroring `LoginPageRouter`'s
- *  `useIsMobile()` split. */
-export default function TasksPageRouter() {
-    const isMobile = useIsMobile()
-    return isMobile ? <TasksPageMobile /> : <TasksPageDesktop />
-}
+export { default } from "./TasksPage"
