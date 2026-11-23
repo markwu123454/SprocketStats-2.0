@@ -50,6 +50,19 @@ async def get_user_by_code_number(code_number: int) -> asyncpg.Record | None:
             raise HTTPException(status_code=500, detail="Failed to fetch user")
 
 
+async def get_user_by_email(email: str) -> asyncpg.Record | None:
+    """The user whose Google email matches ``email``, ignoring case."""
+    async with db_connection(DB_NAME) as conn:
+        try:
+            return await conn.fetchrow(
+                "SELECT * FROM users WHERE lower(email) = lower($1) ORDER BY last_login DESC NULLS LAST LIMIT 1",
+                email,
+            )
+        except Exception as e:
+            logger.error("get_user_by_email failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to fetch user")
+
+
 async def ensure_code_number(user_id: str) -> int | None:
     """The member's code number, assigning the next one on first use.
 
@@ -330,6 +343,7 @@ __all__ = [
     "upsert_user",
     "get_user",
     "get_user_by_code_number",
+    "get_user_by_email",
     "ensure_code_number",
     "update_user_onboarding",
     "update_display_name",

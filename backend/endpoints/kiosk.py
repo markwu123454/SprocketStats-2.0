@@ -127,6 +127,13 @@ async def require_verified_kiosk(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Kiosk deauthorized",
         )
+    # A task board (endpoints/board.py) is a kiosk row too, but it only shows
+    # tasks: it must never check anyone in or out.
+    if kiosk.get("kind", "attendance") != "attendance":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not an attendance kiosk",
+        )
 
     # The result is the row of the member who set the kiosk up (still allowed
     # to run kiosks), plus the kiosk id.
@@ -414,7 +421,8 @@ async def _require_kiosk_operator(session: dict = Depends(require_active)) -> di
 
 async def _own_scanner(kiosk_id: str, user: dict) -> None:
     kiosk = await db.get_kiosk(kiosk_id)
-    if kiosk is None or kiosk["authorized_by"] != user["id"] or kiosk["revoked_at"] is not None:
+    if (kiosk is None or kiosk["authorized_by"] != user["id"] or kiosk["revoked_at"] is not None
+            or kiosk.get("kind", "attendance") != "attendance"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scanner closed. Open it again.")
     await db.touch_kiosk(kiosk_id)
 

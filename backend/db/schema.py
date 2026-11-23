@@ -1037,6 +1037,27 @@ async def _migration_0019_first_team(conn) -> None:
     await _add_users_constraint(conn, "users_first_team_valid", f"CHECK ({_FIRST_TEAM_CHECK})")
 
 
+
+async def _migration_0020_task_boards(conn) -> None:
+    """Task boards: a TV in the shop showing the task board, registered like an
+    attendance kiosk (a lead shows their code to its camera) but kept apart, so
+    a board's cookie can never check anyone in. `bucket` is the subteam it
+    shows by default (NULL: every subteam). Existing kiosks are attendance."""
+    await conn.execute("ALTER TABLE kiosks ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'attendance'")
+    await conn.execute("ALTER TABLE kiosks ADD COLUMN IF NOT EXISTS bucket TEXT")
+    await conn.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conrelid = 'public.kiosks'::regclass AND conname = 'kiosks_kind_valid'
+            ) THEN
+                ALTER TABLE kiosks ADD CONSTRAINT kiosks_kind_valid CHECK (kind IN ('attendance', 'board'));
+            END IF;
+        END $$
+    """)
+
+
 # Append-only: never edit or renumber a migration that has shipped. Each must
 # be idempotent against init_db's current schema, because a fresh database
 # gets that schema first and then runs every migration.
@@ -1060,6 +1081,7 @@ _MIGRATIONS = [
     (17, _migration_0017_drop_offline_code),
     (18, _migration_0018_hide_picture),
     (19, _migration_0019_first_team),
+    (20, _migration_0020_task_boards),
 ]
 
 

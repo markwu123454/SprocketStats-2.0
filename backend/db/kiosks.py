@@ -17,22 +17,34 @@ def _new_kiosk_id() -> str:
     return "K-" + "".join(secrets.choice(_KIOSK_ID_DIGITS) for _ in range(6))
 
 
-async def create_kiosk(authorized_by: str) -> str:
-    """Register a kiosk and return its id (``K-`` + 6 hex digits)."""
+async def _insert_kiosk(authorized_by: str, kind: str, bucket: str | None) -> str:
     async with db_connection(DB_NAME) as conn:
         try:
             for _ in range(5):
                 kiosk_id = await conn.fetchval(
-                    "INSERT INTO kiosks (id, authorized_by) VALUES ($1, $2) "
+                    "INSERT INTO kiosks (id, authorized_by, kind, bucket) VALUES ($1, $2, $3, $4) "
                     "ON CONFLICT (id) DO NOTHING RETURNING id",
-                    _new_kiosk_id(), authorized_by,
+                    _new_kiosk_id(), authorized_by, kind, bucket,
                 )
                 if kiosk_id:
                     return kiosk_id
         except Exception as e:
-            logger.error("create_kiosk failed: %s", e)
+            logger.error("create %s kiosk failed: %s", kind, e)
             raise HTTPException(status_code=500, detail="Failed to register kiosk")
     raise HTTPException(status_code=500, detail="Failed to register kiosk")
+
+
+async def create_kiosk(authorized_by: str) -> str:
+    """Register an attendance kiosk and return its id (``K-`` + 6 hex digits)."""
+    return await _insert_kiosk(authorized_by, "attendance", None)
+
+
+async def create_board(authorized_by: str, bucket: str | None) -> str:
+    """Register a task board (a kiosk row of kind ``board``) and return its id.
+
+    ``bucket`` is the subteam it shows by default; None shows every subteam.
+    """
+    return await _insert_kiosk(authorized_by, "board", bucket)
 
 
 async def get_kiosk(kiosk_id: str) -> asyncpg.Record | None:
@@ -136,6 +148,7 @@ async def member_scanned_recently(user_id: str, exclude_scan_id: uuid.UUID, with
 
 __all__ = [
     "create_kiosk",
+    "create_board",
     "get_kiosk",
     "touch_kiosk",
     "revoke_kiosk",

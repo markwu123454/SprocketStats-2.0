@@ -12,6 +12,7 @@ from .kiosk import router as kiosk_router
 from .tags import router as tags_router
 from .events import router as events_router
 from .tasks import router as tasks_router
+from .board import router as board_router
 from .dev_auth import router as dev_auth_router, dev_mode_enabled
 
 router = APIRouter()
@@ -28,6 +29,7 @@ router.include_router(kiosk_router, prefix="/kiosk")
 router.include_router(tags_router, prefix="/tags")
 router.include_router(events_router, prefix="/events")
 router.include_router(tasks_router, prefix="/tasks")
+router.include_router(board_router, prefix="/board")
 
 # Sign in without Google, for testing on a phone. Development only: a deployed
 # server (ENV=production) has no such routes. See endpoints/dev_auth.py.

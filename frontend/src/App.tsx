@@ -45,6 +45,7 @@ const SettingPage    = lazy(() => import("@/pages/SettingPage"))
 const NotFoundPage   = lazy(() => import("@/pages/NotFoundPage"))
 const PrivacyPage    = lazy(() => import("@/pages/PrivacyPage"))
 const TermsPage      = lazy(() => import("@/pages/TermsPage"))
+const BoardPage      = lazy(() => import("@/pages/BoardPage"))
 
 function Protected({children}: {children: ReactNode}) {
     return <AuthWrapper>{children}</AuthWrapper>
@@ -68,6 +69,9 @@ export default function App() {
                                     <Route path="/onboarding" element={<OnboardingPageRouter/>}/>
                                     <Route path="/privacy" element={<PrivacyPage/>}/>
                                     <Route path="/terms" element={<TermsPage/>}/>
+                                    {/* The task board on a TV: nobody signs in, the board
+                                        has its own cookie (pages/BoardPage.tsx). */}
+                                    <Route path="/board" element={<BoardPage/>}/>
 
                                     {/* One guard for the whole shell: AuthWrapper gates
                                         AppShell + every child page, so all of them are
