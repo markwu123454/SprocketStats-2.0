@@ -135,7 +135,7 @@ export function MeetingMetricsPanel({ metrics, onOpen, onClose }: {
     )
 }
 
-/** The next meetings with who has called out: the most prominent block on the page. */
+/** The next meetings with who has called out: a card like the rest of the page, not a loud frame. */
 export function UpcomingAbsences({ summary, group, now, onOpen, chipLimit, phone = false }: {
     summary: GroupSummary, group: AttendanceGroup, now: number, onOpen: (chip: PersonChip) => void, chipLimit: number, phone?: boolean,
 }) {
@@ -145,9 +145,9 @@ export function UpcomingAbsences({ summary, group, now, onOpen, chipLimit, phone
     const Heading = phone ? "h2" : "h3"
     return (
         <section aria-label="Upcoming absences"
-            className={`flex flex-col gap-3 md:gap-4 border-2 border-[var(--theme-text-contrast)] ${phone ? "p-4 rounded-[18px] theme-bg" : "px-7 py-6 rounded-2xl bg-[var(--ag-grid-chrome-bg)]"}`}>
+            className="flex flex-col gap-3 md:gap-4 rounded-xl border theme-border theme-bg p-4 md:p-5">
             <div className="flex flex-wrap justify-between items-baseline gap-2">
-                <Heading className={`${phone ? "text-xl" : "text-2xl"} font-bold theme-h1-color`}>Upcoming absences</Heading>
+                <Heading className={LABEL}>Upcoming absences</Heading>
                 <span className="text-sm theme-subtext-color">
                     {upcoming.length === 0 ? "No meetings scheduled" : `${total} across the next ${upcoming.length === 1 ? "meeting" : `${upcoming.length} meetings`}`}
                 </span>
@@ -170,13 +170,13 @@ export function UpcomingAbsences({ summary, group, now, onOpen, chipLimit, phone
                             return next
                         })
                         return (
-                            <li key={g.meeting.id} className={`flex flex-col gap-3 md:gap-3.5 p-3.5 md:px-5 md:py-[18px] rounded-2xl border theme-border ${phone ? "bg-[var(--ag-grid-chrome-bg)]" : "theme-bg"}`}>
+                            <li key={g.meeting.id} className="flex flex-col gap-3 p-3.5 md:p-4 rounded-xl border theme-border bg-[var(--ag-grid-chrome-bg)]">
                                 <div className="flex justify-between items-baseline gap-2">
                                     <span className={`${typeBadge} theme-text-contrast`}>{when}</span>
                                     <span className="text-xs md:text-[13px] theme-subtext-color">{inDays(g.meeting.start_time, now)}</span>
                                 </div>
                                 <div className="flex flex-col gap-2">
-                                    <span className={`${phone ? "text-lg" : "text-[22px]"} font-bold theme-h1-color`}>
+                                    <span className="text-lg font-bold theme-h1-color">
                                         {coming} of {g.expected} coming <span className="text-sm font-normal theme-subtext-color">· {pct(coming, g.expected)}%</span>
                                     </span>
                                     <span role="img" aria-label={`${coming} of ${g.expected} coming`} className="flex gap-[3px] md:gap-1">
@@ -194,7 +194,7 @@ export function UpcomingAbsences({ summary, group, now, onOpen, chipLimit, phone
                                             {shown.map(p => (
                                                 <button key={p.userId} type="button" onClick={() => onOpen(p)}
                                                     aria-label={`Open ${p.name}, ${when} absence and reason`}
-                                                    className={`inline-flex items-baseline gap-1.5 min-h-9 px-3 py-1.5 rounded-full border theme-outline ${phone ? "theme-bg" : "bg-[var(--ag-grid-chrome-bg)]"} hover:bg-[var(--theme-button-hover)] ${focusRing}`}>
+                                                    className={`inline-flex items-baseline gap-1.5 min-h-9 px-3 py-1.5 rounded-full border theme-outline theme-bg hover:bg-[var(--theme-button-hover)] ${focusRing}`}>
                                                     <span className="text-[15px] font-bold theme-h1-color">{p.name}</span>
                                                     {p.lead && <span className={`${typeBadge} !text-[10px] theme-text-contrast`}>Lead</span>}
                                                 </button>

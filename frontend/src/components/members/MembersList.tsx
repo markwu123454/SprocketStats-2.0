@@ -88,7 +88,8 @@ export default function MembersList({ members, loading, order, query, onQueryCha
                     </div>
                 ) : groups.map(g => (
                     <div key={g.key} className="flex flex-col">
-                        <div className="sticky top-0 z-10 flex items-baseline gap-2.5 px-4 pt-3.5 pb-2 border-b theme-border theme-bg">
+                        {/* Scrolls with the list, not sticky: each row already shows its role. */}
+                        <div className="flex items-baseline gap-2.5 px-4 pt-3.5 pb-2 border-b theme-border theme-bg">
                             <span className="text-sm font-semibold theme-h1-color">{g.name}</span>
                             <span className="text-xs theme-subtext-color">{g.rows.length}</span>
                         </div>

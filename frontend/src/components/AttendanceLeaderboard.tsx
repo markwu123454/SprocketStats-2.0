@@ -16,10 +16,16 @@ interface LeaderboardRow {
     is_current_user: boolean
 }
 
-function formatSecondsClocked(totalSeconds: number): string {
+/** "12 hrs 5 mins", "1 hr", "45 mins": spelled out, since "12:05" reads like a clock time. */
+function ClockedTime({ totalSeconds }: { totalSeconds: number }) {
     const h = Math.floor(totalSeconds / 3600)
     const m = Math.floor((totalSeconds % 3600) / 60)
-    return `${h}:${String(m).padStart(2, "0")}`
+    const parts: [number, string][] = []
+    if (h > 0) parts.push([h, h === 1 ? "hr" : "hrs"])
+    if (m > 0 || h === 0) parts.push([m, m === 1 ? "min" : "mins"])
+    return <>{parts.map(([n, unit], i) => (
+        <span key={unit}>{i > 0 && " "}{n} <span className="theme-subtext-color font-normal">{unit}</span></span>
+    ))}</>
 }
 
 export default function AttendanceLeaderboard() {
@@ -60,7 +66,7 @@ export default function AttendanceLeaderboard() {
                             style={{ background: row.checked_in ? "#22c55e" : "#9ca3af" }}
                             role="img" aria-label={row.checked_in ? "Checked in" : "Checked out"}
                             title={row.checked_in ? "Checked in" : "Checked out"} />{row.name}{row.is_current_user ? " · You" : ""}</span>
-                        <span className="font-semibold theme-text shrink-0">{formatSecondsClocked(row.total_seconds)} <span className="theme-subtext-color font-normal">hrs</span></span>
+                        <span className="font-semibold theme-text shrink-0 tabular-nums"><ClockedTime totalSeconds={row.total_seconds} /></span>
                     </div>
                     <div className="h-1 rounded-full theme-button-bg overflow-hidden" aria-hidden="true">
                         <div className="h-full rounded-full" style={{ width: `${row.total_seconds / maxSeconds * 100}%`, background: "var(--theme-text-contrast)" }} />
